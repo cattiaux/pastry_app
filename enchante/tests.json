@@ -1,0 +1,137 @@
+{
+    "_comment": "create ingredient. create category and label if not exist. Not case sensitive",
+    "ingredient_name": "Test",
+    "categories": [{"name": "Category1"}, {"name": "Category2"}],
+    "labels": [{"name": "Label1"}, {"name": "Label2"}],
+    "prices": [
+        {
+            "brand": "Brand A",
+            "store_name": "Store A",
+            "date": "2023-11-13",
+            "quantity": 1.0,
+            "unit": "kg",
+            "price": 2.99
+        },
+        {
+            "brand": "Brand B",
+            "store_name": "Store B",
+            "date": "2023-11-13",
+            "quantity": 1.0,
+            "unit": "kg",
+            "price": 2.89
+        }
+    ]
+} 
+
+{
+    "_comment": "update ingredient. delete ingredientPrice if not in the json. Create ingredientPrice if no id provided",
+    "ingredient_name": "toto",
+    "categories": [{"name": "Category1"}, {"name": "Category2"}],
+    "labels": [{"name": "Label1"}, {"name": "Label2"}],
+    "prices": [
+        {
+            "id": 15,
+            "brand": "Brand Z",
+            "store_name": "Store A",
+            "date": "2023-11-16",
+            "quantity": 1.0,
+            "unit": "kg",
+            "price": 22.99
+        },
+        {
+            "id": 16,
+            "brand": "Brand B",
+            "store_name": "Store B",
+            "date": "2023-11-13",
+            "quantity": 1.0,
+            "unit": "kg",
+            "price": 2.89
+        }
+    ]
+}
+
+{
+    "_comment": "create recipe",
+    "recipe_name": "Test Recipe",
+    "chef": "Test Chef",
+    "ingredients": [
+        {
+            "ingredient": 1,
+            "quantity": 2.0
+        },
+        {
+            "ingredient": 2,
+            "quantity": 3.0
+        }
+    ],
+    "steps": [
+        {
+            "step_number": 1,
+            "instruction": "Test instruction 1",
+            "trick": "Test trick 1"
+        },
+        {
+            "step_number": 2,
+            "instruction": "Test instruction 2",
+            "trick": "Test trick 2"
+        }
+    ],
+    "sub_recipes": [
+        {
+            "sub_recipe": 1,
+            "quantity": 2.0
+        }
+    ],
+    "default_volume": 1.0,
+    "default_servings": 2,
+    "pan": 1
+}
+
+{
+    "_url": "PUT request : localhost:8000/recipes/6/"
+    "_comment": "update recipe. Create if no id provided",
+    "recipe_name": "Updated Recipe",
+    "chef": "Updated Chef",
+    "ingredients": [
+        {
+            "id": 1,
+            "ingredient": 15,
+            "quantity": 2.5
+        },
+        {
+            "ingredient": 17,
+            "quantity": 4.0
+        }
+    ],
+    "steps": [
+        {
+            "id": 1,
+            "step_number": 1,
+            "instruction": "Updated instruction 1",
+            "trick": "Updated trick 1"
+        },
+        {
+            "step_number": 3,
+            "instruction": "New instruction",
+            "trick": "New trick"
+        }
+    ],
+    "sub_recipes": [
+        {
+            "id": 1,
+            "sub_recipe": 2,
+            "quantity": 20
+        }
+    ],
+    "default_volume": 1.5,
+    "default_servings": 3,
+    "pan": 2
+}
+
+{
+    "_comment": "Create or Update a roundPan",
+    "pan_name": "Test Round Pan",
+    "pan_type": "ROUND",
+    "diameter": 10.0,
+    "height": 5.0
+}

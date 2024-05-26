@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ingredients</title>
+</head>
+<body>
+    <h1>Ingredients</h1>
+    <p><a href="/ingredients/new">Add new ingredient</a></p>
+    <ul>
+        {% for ingredient in ingredients %}
+            <li>{{ ingredient.ingredient_name }}</li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add New Recipe</title>
+</head>
+<body>
+    <h1>Add New Recipe</h1>
+    <form method="POST">
+        {% csrf_token %}
+        {{ form.as_p }}
+        {{ formset.management_form }}
+        {% for ingredient_form in formset %}
+            {{ ingredient_form.as_p }}
+        {% endfor %}
+        <button type="submit">Submit</button>
+    </form>    
+</body>
+</html>
