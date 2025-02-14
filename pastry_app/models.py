@@ -1,10 +1,8 @@
 from math import pi
 from django.db import models
-from django.contrib.contenttypes.fields import GenericForeignKey
-from django.contrib.contenttypes.models import ContentType
 from django.core.validators import MinValueValidator
 from django.utils.timezone import now
-from .constants import UNIT_CHOICES, CATEGORY_DEFINITIONS, CATEGORY_TYPE_MAP, CATEGORY_NAME_CHOICES
+from .constants import UNIT_CHOICES, CATEGORY_TYPE_MAP, LABEL_TYPE_MAP
 from django.core.exceptions import ValidationError
 
 class BaseModel(models.Model):
@@ -101,22 +99,15 @@ class CustomPan(Pan):
 class Category(models.Model):
     """
     ⚠️ IMPORTANT ⚠️
-    - Actuellement, nous utilisons SQLite, qui ne supporte pas `on_delete=PROTECT`.
-    - La suppression est donc gérée dans l’API (voir `CategoryViewSet.destroy()`).
-    - Une fois en production, nous prévoyons de migrer vers PostgreSQL.
-    - Après migration, vérifier que `on_delete=PROTECT` fonctionne et mettre à jour `destroy()`.
-
     - Actuellement, `category_name` N'A PAS `unique=True` pour éviter les conflits en développement.
-    - Une fois en production avec PostgreSQL, AJOUTER `unique=True` sur `category_name`.
+    - Une fois en production, AJOUTER `unique=True` sur `category_name`.
     """
-
     CATEGORY_CHOICES = [
         ('ingredient', 'Ingrédient'),
         ('recipe', 'Recette'),
         ('both', 'Les deux'),
     ]
-    # Note : 
-    # `unique=True` dans le field 'category_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
+    # Note : `unique=True` dans le field 'category_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
     # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
     category_name = models.CharField(max_length=200) #unique=True à activer en production
     category_type = models.CharField(max_length=10, choices=CATEGORY_CHOICES, default='both')
@@ -124,20 +115,6 @@ class Category(models.Model):
 
     def __str__(self):
         return self.category_name
-
-    # def clean(self):
-    #     """ Validation avant sauvegarde (nettoyage et règles métier)."""
-    #     self.category_name = " ".join(self.category_name.lower().strip().split()) # Lower + supprime espaces inutiles
-
-    #     # Vérifier la longueur minimale
-    #     if len(self.category_name) < 2:
-    #         raise ValidationError("Le nom de la catégorie doit contenir au moins 2 caractères.")
-
-    #     # Empêcher les noms uniquement numériques
-    #     if self.category_name.isdigit():
-    #         raise ValidationError("Le nom de la catégorie ne peut pas être uniquement numérique.")
-        
-    #     super().clean()  # Permet à Django d'exécuter d'autres validations éventuelles
 
     def save(self, *args, **kwargs):
         """ 
@@ -155,43 +132,48 @@ class Category(models.Model):
         super().save(*args, **kwargs)
 
 class Label(models.Model):
+    """
+    ⚠️ IMPORTANT ⚠️
+    - Actuellement, `label_name` N'A PAS `unique=True` pour éviter les conflits en développement.
+    - Une fois en production, AJOUTER `unique=True` sur `label_name`.
+    """
     LABEL_CHOICES = [
         ('ingredient', 'Ingrédient'),
         ('recipe', 'Recette'),
         ('both', 'Les deux'),
     ]
-    label_name = models.CharField(max_length=200, unique=True)
+    # Note : `unique=True` dans le field 'label_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
+    # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
+    label_name = models.CharField(max_length=200, unique=True) #unique=True à activer en production
     label_type = models.CharField(max_length=10, choices=LABEL_CHOICES, default='both')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.label_name
 
-    def clean(self):
-        """ Validation avant sauvegarde."""
-        self.label_name = " ".join(self.label_name.lower().strip().split())
-
-        # Vérifier la longueur minimale
-        if len(self.label_name) < 2:
-            raise ValidationError("Le nom du label doit contenir au moins 2 caractères.")
-
-        # Empêcher les noms uniquement numériques
-        if self.label_name.isdigit():
-            raise ValidationError("Le nom du label ne peut pas être uniquement numérique.")
-
     def save(self, *args, **kwargs):
-        self.label_name = self.label_name.lower() if self.label_name else ""
-        self.full_clean()
+        """ 
+        Validation avant sauvegarde : nettoyage, validation et attribution du type automatique.
+        """
+        self.label_name = " ".join(self.label_name.lower().strip().split()) # Lower + supprime espaces inutiles
+
+        # Vérifier si `label_name` est valide (dans la liste des choix autorisés)
+        if self.label_name not in LABEL_TYPE_MAP:
+            raise ValidationError(f"'{self.label_name}' n'est pas une catégorie valide.")
+
+        # Assigner automatiquement `label_type`
+        self.label_type = LABEL_TYPE_MAP[self.label_name]
+
         super().save(*args, **kwargs)
 
 ####### AVEC AUTRE QUE SQLITE : POSTRESQL ou MYSQL ###############
-# Utiliser une table intermédiaire avec on_delete=PROTECT était une tentative de forcer Django à empêcher la suppression en base
+# Utiliser une table intermédiaire avec on_delete=PROTECT oblige Django à empêcher la suppression en base
 class IngredientCategory(models.Model):
     ingredient = models.ForeignKey("Ingredient", on_delete=models.CASCADE)
     category = models.ForeignKey("Category", on_delete=models.PROTECT)  # Empêche la suppression d'une catégorie utilisée
 
 ####### AVEC AUTRE QUE SQLITE : POSTRESQL ou MYSQL ###############
-# Utiliser une table intermédiaire avec on_delete=PROTECT était une tentative de forcer Django à empêcher la suppression en base
+# Utiliser une table intermédiaire avec on_delete=PROTECT oblige Django à empêcher la suppression en base
 class RecipeCategory(models.Model):
     recipe = models.ForeignKey("Recipe", on_delete=models.CASCADE)
     category = models.ForeignKey("Category", on_delete=models.PROTECT)  # Empêche la suppression d'une catégorie utilisée
