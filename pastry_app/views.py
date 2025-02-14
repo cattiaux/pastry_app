@@ -72,6 +72,18 @@ class LabelViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ['label_name']
 
+    def destroy(self, request, *args, **kwargs):
+        """Empêche la suppression d'un Label s'il est utilisé par un Ingredient ou par une Recipe."""
+        label = self.get_object()
+        try:
+            label.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except IntegrityError:
+            return Response(
+                {"error": "Ce label est utilisé par un ingrédient ou une recette et ne peut pas être supprimé."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
 class PanViewSet(viewsets.ModelViewSet):
     queryset = Pan.objects.none()
     serializer_class = PanSerializer

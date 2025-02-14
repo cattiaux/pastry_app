@@ -178,6 +178,18 @@ class RecipeCategory(models.Model):
     recipe = models.ForeignKey("Recipe", on_delete=models.CASCADE)
     category = models.ForeignKey("Category", on_delete=models.PROTECT)  # Empêche la suppression d'une catégorie utilisée
 
+####### AVEC AUTRE QUE SQLITE : POSTRESQL ou MYSQL ###############
+# Utiliser une table intermédiaire avec on_delete=PROTECT oblige Django à empêcher la suppression en base
+class IngredientLabel(models.Model):
+    ingredient = models.ForeignKey("Ingredient", on_delete=models.CASCADE)
+    label = models.ForeignKey("Label", on_delete=models.PROTECT)  # Empêche la suppression d'une catégorie utilisée
+
+####### AVEC AUTRE QUE SQLITE : POSTRESQL ou MYSQL ###############
+# Utiliser une table intermédiaire avec on_delete=PROTECT oblige Django à empêcher la suppression en base
+class RecipeLabel(models.Model):
+    recipe = models.ForeignKey("Recipe", on_delete=models.CASCADE)
+    label = models.ForeignKey("Label", on_delete=models.PROTECT)  # Empêche la suppression d'une catégorie utilisée
+
 class Recipe(models.Model):
     recipe_name = models.TextField(max_length=200)
     chef = models.CharField(max_length=200, default="Anonyme")

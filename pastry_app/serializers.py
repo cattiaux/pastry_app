@@ -3,7 +3,7 @@ from rest_framework import serializers
 from django.db import IntegrityError
 from .models import Recipe, Pan, Ingredient, IngredientPrice, Category, Label, RecipeIngredient, RecipeStep, SubRecipe, RoundPan, SquarePan, PanServing
 from .utils import get_pan_model, update_related_instances
-from pastry_app.constants import CATEGORY_NAME_CHOICES
+from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
 
 class IngredientPriceSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
@@ -68,6 +68,30 @@ class LabelSerializer(serializers.ModelSerializer):
         ret = super().to_representation(instance)
         ret['label_name'] = ret['label_name'].lower()
         return ret
+    
+    def create(self, validated_data):
+        """ Vérifie l’unicité via l’API et capture IntegrityError pour plus de sécurité """
+        if Label.objects.filter(label_name__iexact=validated_data["label_name"]).exists():
+            raise serializers.ValidationError({"label_name": "Un label avec ce nom existe déjà."})
+        try:
+            return super().create(validated_data)
+        except IntegrityError:
+            raise serializers.ValidationError({"label_name": "Erreur d’unicité en base. Contactez un administrateur."})
+
+    def validate_label_name(self, value):
+        """ Vérifie que 'label_name' est valide et vérifie si un autre label existe déjà avec ce nom (insensible à la casse)"""
+        value = value.lower().strip()  # Normalisation
+
+        # Vérifier que le label existe bien dans LABEL_NAME_CHOICES
+        if value not in LABEL_NAME_CHOICES:
+            raise serializers.ValidationError("Ce label n'est pas valide.")
+
+        # Vérifier l'unicité du label_name (insensible à la casse)
+        label_id = self.instance.id if self.instance else None
+        if Label.objects.exclude(id=label_id).filter(label_name__iexact=value).exists():
+            raise serializers.ValidationError("Label with this Label name already exists.")
+
+        return value
 
 class IngredientSerializer(serializers.ModelSerializer):
     prices = IngredientPriceSerializer(source='ingredientprice_set', many=True)

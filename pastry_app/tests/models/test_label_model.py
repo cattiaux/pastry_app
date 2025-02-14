@@ -1,56 +1,44 @@
-from django.test import TestCase
 from pastry_app.models import Label
 from pastry_app.tests.utils import normalize_case
-from django.core.exceptions import ValidationError
+import pytest
+from pastry_app.constants import LABEL_NAME_CHOICES
 
-class LabelModelTest(TestCase):
-    """Tests unitaires du modèle Label"""
 
-    def setUp(self):
-        """Création d’un label pour tester le modèle"""
-        self.label = Label.objects.create(label_name="Vegan")
+# Définir model_name pour les tests de Label
+model_name = "labels"
 
-    def test_label_creation(self):
-        """ Vérifie que l'on peut créer un objet Label"""
-        self.assertIsInstance(self.label, Label)
-        self.assertEqual(self.label.label_name, normalize_case("Vegan"))
+@pytest.fixture(params=LABEL_NAME_CHOICES)
+def label(request):
+    """Création d’un label avant chaque test (dynamique), parmi les choix disponibles de LABEL_NAME_CHOICES"""
+    return Label.objects.create(label_name=request.param)
 
-    def test_label_str_method(self):
-        """ Vérifie que `__str__()` retourne bien le `label_name`"""
-        self.assertEqual(str(self.label), normalize_case("Vegan"))
+@pytest.mark.django_db
+def test_label_creation(label):
+    """ Vérifie que l'on peut créer un objet Label"""
+    assert isinstance(label, Label)
+    assert label.label_name == normalize_case(label.label_name)
 
-    def test_label_update(self):
-        """ Vérifie que l'on peut modifier un Label"""
-        self.label.label_name = "Sans Gluten"
-        self.label.save()
-        self.label.refresh_from_db()
-        self.assertEqual(self.label.label_name, normalize_case("Sans Gluten"))
+@pytest.mark.django_db
+def test_label_str_method(label):
+    """ Vérifie que `__str__()` retourne bien le `label_name`"""
+    assert str(label) == normalize_case(label.label_name)
 
-    def test_label_deletion(self):
-        """ Vérifie que l'on peut supprimer un Label"""
-        label_id = self.label.id
-        self.label.delete()
-        self.assertFalse(Label.objects.filter(id=label_id).exists())
+@pytest.mark.django_db
+def test_label_update(label):
+    """ Vérifie que l'on peut modifier une Label"""
+    # Sélectionner un label différent de `setup_label`
+    label_name = next((name for name in LABEL_NAME_CHOICES if name != label.label_name), None)
+    if not label_name:
+        pytest.skip("Pas assez de labels disponibles pour le test.")
 
-    def test_label_name_cannot_be_empty(self):
-        """ Vérifie qu'on ne peut pas créer un label avec un nom vide."""
-        with self.assertRaises(ValidationError):
-            label = Label(label_name="")
-            label.full_clean()
+    label.label_name = label_name
+    label.save()
+    label.refresh_from_db()
+    assert label.label_name == normalize_case(label_name)
 
-    def test_label_name_cannot_be_too_short(self):
-        """ Vérifie qu'on ne peut pas créer un label avec un nom trop court."""
-        with self.assertRaises(ValidationError):
-            label = Label(label_name="A")
-            label.full_clean()
-
-    def test_label_name_cannot_be_numeric(self):
-        """ Vérifie qu'un label ne peut pas être uniquement composé de chiffres."""
-        with self.assertRaises(ValidationError):
-            label = Label(label_name="12345")
-            label.full_clean()
-
-    def test_label_name_is_normalized(self):
-        """ Vérifie que le `label_name` est bien normalisé (minuscule, sans espaces)."""
-        label = Label.objects.create(label_name="  Bio  ")
-        self.assertEqual(label.label_name, "bio")
+@pytest.mark.django_db
+def test_label_deletion(label):
+    """ Vérifie que l'on peut supprimer un Label"""
+    label_id = label.id
+    label.delete()
+    assert not Label.objects.filter(id=label_id).exists()

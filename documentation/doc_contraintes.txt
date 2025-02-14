@@ -52,3 +52,59 @@ Préparation pour la Production :
         ◦ Actuellement, category_name n’a pas unique=True pour éviter des conflits en développement et permettre des tests.
         ◦ Une fois en production, unique=True sera ajouté pour garantir l’unicité en base.
         ◦ L’API continuera de vérifier l’unicité pour éviter les erreurs 500 Internal Server Error.
+
+
+
+Synthèse des Contraintes pour le Modèle Label
+
+        CONTRAINTES	                                                                 TEST CORRESPONDANT
+Création d’une catégorie	                                                     -> test_create_label
+label_name unique (en API, unique=True en production)                            -> test_create_duplicate_label
+label_name normalisé en minuscule                                                -> test_label_name_is_normalized
+label_name ne peut pas être vide                                                 -> test_create_label_without_name
+Mise à jour du label_name                                                        -> test_update_label
+Suppression d’une catégorie existante                                            -> test_delete_label
+Récupération d’une catégorie existante                                           -> test_get_label
+Erreur 404 si catégorie inexistante	                                             -> test_get_nonexistent_label et test_delete_nonexistent_label
+Suppression bloquée si la catégorie est utilisée (ingredient ou recipe)          -> test_delete_label_with_linked_objects
+label_name doit exister dans LABEL_NAME_CHOICES                                  -> test_create_label_invalid_name
+Le label_type est automatiquement défini                                         -> test_label_type_assignment
+Mise à jour interdite vers un label_name déjà existant                           -> test_update_label_to_duplicate
+(OLD) label_name longueur min ≥ 2                                                -> test_label_name_cannot_be_too_short
+(OLD) label_name ne peut pas être uniquement numérique                           -> test_label_name_cannot_be_numeric
+(OLD) Mise à jour du label_type                                                  -> test_update_label_type
+(OLD) label_type ne peut avoir que certaines valeurs (ingredient, recipe, both)  -> test_label_type_must_be_valid
+
+Contraintes Métier :
+    1. Nom de Catégorie (label_name) :
+        ◦ Doit être unique.
+        ◦ Ne peut pas être vide.
+        ◦ Doit exister dans LABEL_NAME_CHOICES (contrôle strict).
+        ◦ Est normalisé en minuscule.
+    2. Type de Catégorie (label_type) : 
+        ◦ Attribué automatiquement (values: recipe, ingredient, both) en fonction de label_name.
+        ◦ Ne peut plus être défini manuellement par l’utilisateur.
+
+Contraintes Techniques :
+    1. Type de Données :
+        ◦ label_name : CharField (max 200 caractères, valeurs prédéfinies).
+        ◦ label_type : CharField (max 10 caractères, assigné automatiquement).
+    2. Indexation :
+        ◦ label_name est indexé pour des recherches rapides.
+
+Contraintes d'Intégrité :
+    1. Références :
+        ◦ Label est liée aux modèles Ingredient et Recipe.
+    2. Cohérence des Données :
+        ◦ Validations appliquées lors des mises à jour (test_update_label et test_update_label_type).
+        ◦ Suppression gérée avec précaution (test_delete_label_with_linked_objects).
+    3. Protection contre les suppressions invalides
+        ◦ Si une Label est utilisée par un Ingredient ou une Recipe, elle ne peut pas être supprimée (test_delete_label_with_linked_objects).
+        ◦ Gestion via on_delete=PROTECT dans PostgreSQL.
+        ◦ Vérification ajoutée dans destroy() de LabelViewSet
+
+Préparation pour la Production :
+    Ajout de unique=True sur label_name en production :
+        ◦ Actuellement, label_name n’a pas unique=True pour éviter des conflits en développement et permettre des tests.
+        ◦ Une fois en production, unique=True sera ajouté pour garantir l’unicité en base.
+        ◦ L’API continuera de vérifier l’unicité pour éviter les erreurs 500 Internal Server Error.

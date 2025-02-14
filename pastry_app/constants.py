@@ -57,10 +57,10 @@ CATEGORY_NAME_CHOICES = list(CATEGORY_TYPE_MAP.keys())
 #   - nom affiché : Utilisée pour l’affichage utilisateur (ex: dans Django Admin). Peut contenir des majuscules et des accents
 #   - type de label : Permet de classifier chaque label selon son usage.
 LABEL_DEFINITIONS = [
-    ("vegan", "Vegan", "both"),
+    ("vegan", "Vegan", "recipe"),
     ("sans gluten", "Sans Gluten", "both"),
-    ("bio", "Bio/Organique", "both"),
-    ("label rouge", "Label Rouge", "both"),
+    ("bio", "Bio/Organique", "ingredient"),
+    ("label rouge", "Label Rouge", "ingredient"),
     ('other', 'Autre', 'both'),
     # Add more units as needed
 ]
