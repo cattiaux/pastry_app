@@ -1,0 +1,94 @@
+"""
+📌 Contexte du projet
+Tu développes un backend Django REST Framework (DRF) pour une application de pâtisserie.
+L’objectif est de gérer les recettes, les ingrédients, leurs prix, les moules, 
+et de calculer les coûts et quantités nécessaires en fonction des portions ou des moules utilisés.
+
+✅ Fonctionnalités principales :
+    - Gestion des ingrédients avec leurs catégories et labels.
+    - Gestion des recettes, y compris les sous-recettes et les étapes.
+    - Gestion des moules (pans) avec calcul de volumes pour ajuster les quantités.
+    - Calcul automatique du coût d’une recette en fonction du prix des ingrédients.
+    - Tests automatisés (modèles, validation, API CRUD) avec pytest.
+
+📂 Architecture du projet
+1. Applications Django
+    - pastry_app/ (application principale) Contient toute la logique métier de l’application.
+    - enchante/ (paramètres du projet) Contient la configuration globale du projet (settings.py, urls.py, wsgi.py).
+
+2 Principaux fichiers Django
+Fichier	Rôle
+    models.py	Définition des modèles : Ingredient, Recipe, Pan, Category, Label…
+    serializers.py	Sérialisation des données pour Django REST Framework
+    views.py	Logique métier et endpoints API
+    urls.py	Routes de l'API
+    admin.py	Configuration de l’interface d’administration Django
+    constants.py	Variables constantes utilisées dans l’application
+    utils.py	Fonctions utilitaires (ex: calculs liés aux moules)
+    tests/	 Dossier contenant tous les tests (modèle, validation, API/CRUD)
+    settings.py	Configuration principale de Django
+    populate_db.py	Script pour initialiser la base de données
+
+📊 Modèles principaux
+    1. Ingredient (Ingrédients) - Stocke les ingrédients et leurs catégories / labels associés.
+        ingredient_name : Nom unique de l’ingrédient (en lowercase)
+        categories : ManyToMany avec Category (un ingrédient peut appartenir à plusieurs catégories).
+        labels : ManyToMany avec Label (un ingrédient peut avoir plusieurs labels, ex: Bio, Vegan).
+    2. Recipe (Recettes) - Stocke les informations principales d’une recette
+        recipe_name : Nom unique de la recette
+        chef : Nom du chef associé (otionnel)
+        ingredients : Relation avec Ingredient
+    3. RecipeIngredient (Association recette - ingrédients) - Associe des ingrédients à une recette avec une quantité donnée.
+        recipe : ForeignKey vers Recipe.
+        ingredient : ForeignKey vers Ingredient.
+        quantity : Quantité de l’ingrédient requise pour cette recette.
+        unit : Unité de mesure utilisée (grammes, litres, etc.).
+    4. RecipeStep (Étapes de la recette) - Stocke chaque étape de préparation d’une recette.
+        recipe : ForeignKey vers Recipe.
+        step_number : Numéro de l’étape (permet de garder l’ordre).
+        description : Détail de l’étape de préparation.
+    5. SubRecipe (Recette dans une autre recette) - Gère les recettes qui sont des sous-recettes d’une autre recette.
+        main_recipe : ForeignKey vers la recette principale.
+        sub_recipe : ForeignKey vers une autre Recipe (qui est une sous-recette).
+        quantity : Quantité de la sous-recette utilisée dans la recette principale.
+    6. IngredientPrice (Prix des ingrédients par magasin) - Stocke le prix des ingrédients selon le magasin.
+        ingredient : ForeignKey vers Ingredient (chaque prix est lié à un ingrédient précis).
+        store : Nom du magasin où le prix est applicable.
+        price : Prix de l’ingrédient dans ce magasin.
+    7. Category (Catégories d’ingrédients et de recettes) - Classement des ingrédients et des recettes.
+        category_name : Nom unique de la catégorie.
+        Relation ManyToMany avec Ingredient et Recipe (un ingrédient ou une recette peut avoir plusieurs catégories).
+    8. Label (Labels alimentaires et certifications) - Classement par label (ex: Bio, Vegan, AOC, etc.).
+        label_name : Nom unique du label.
+        Relation ManyToMany avec Ingredient et Recipe (un ingrédient ou une recette peut avoir plusieurs labels).
+    9. Pan (Moules) - Gère les différents types de moules avec calcul de volume
+        pan_name : Nom unique du moule
+        pan_type : Type (round, square, custom)
+    10. Modèles spécifiques pour chaque type de moule
+        RoundPan (Moule rond) - Modèle pour un moule circulaire.
+            diameter : Diamètre du moule.
+            height : Hauteur du moule.
+        SquarePan (Moule carré ou rectangulaire) - Modèle pour un moule rectangulaire ou carré.
+            width : Largeur du moule.
+            length : Longueur du moule.
+            height : Hauteur du moule.
+        CustomPan (Moule personnalisé) - Modèle pour un moule de forme non standard.
+            volume : Volume total du moule, défini par l’utilisateur.
+
+📌 Tests mis en place
+Organisation des tests :
+
+tests/
+│── models/  → Tests des modèles (`test_category_model.py`, `test_ingredient_model.py`, etc.)
+│── validation/  → Tests de validation métier (`test_category_validation.py`, `test_recipe_validation.py`, etc.)
+│── crud/  → Tests CRUD via API (`test_category.py`, `test_ingredient.py`, etc.)
+│── base_api_test.py  → Classe `BaseAPITest` pour factoriser les tests API
+
+Tests réalisés :
+
+Type de test     | Fichier concerné	                                            | Ce qui est testé
+Tests modèles    |	test_category_model.py, test_ingredient_model.py            |  Création, suppression, __str__(), unicité…
+Tests validation |	test_category_validation.py, test_ingredient_validation.py  |  full_clean(), contraintes (blank=False, unique=True)
+Tests API (CRUD) |	test_category.py, test_ingredient.py                        |  Création, modification, suppression via l’API
+
+"""
