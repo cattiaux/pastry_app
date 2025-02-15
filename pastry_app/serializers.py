@@ -135,15 +135,31 @@ class IngredientSerializer(serializers.ModelSerializer):
 
         instance.categories.clear()
         for category_data in categories_data:
-            category, created = Category.objects.get_or_create(name=category_data["name"].lower())
+            category, created = Category.objects.get_or_create(name=category_data["category_name"].lower())
             instance.categories.add(category)
 
         instance.labels.clear()
         for label_data in labels_data:
-            label, created = Label.objects.get_or_create(name=label_data["name"].lower())
+            label, created = Label.objects.get_or_create(name=label_data["label_name"].lower())
             instance.labels.add(label)
 
         return instance
+
+    def validate_categories(self, value):
+        """ Vérifie que toutes les catégories existent bien avant d'associer un ingrédient. """
+        existing_categories = set(Category.objects.values_list("id", flat=True))
+        for category in value:
+            if category.id not in existing_categories:
+                raise serializers.ValidationError(f"La catégorie '{category.category_name}' n'existe pas. Veuillez la créer d'abord.")
+        return value
+
+    def validate_labels(self, value):
+        """ Vérifie que tous les labels existent bien avant d'associer un ingrédient. """
+        existing_labels = set(Label.objects.values_list("id", flat=True))
+        for label in value:
+            if label.id not in existing_labels:
+                raise serializers.ValidationError(f"Le label '{label.label_name}' n'existe pas. Veuillez le créer d'abord.")
+        return value
 
 class RecipeIngredientSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
