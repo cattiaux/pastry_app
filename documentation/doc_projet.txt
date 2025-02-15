@@ -5,10 +5,14 @@ L’objectif est de gérer les recettes, les ingrédients, leurs prix, les moule
 et de calculer les coûts et quantités nécessaires en fonction des portions ou des moules utilisés.
 
 ✅ Fonctionnalités principales :
-    - Gestion des ingrédients avec leurs catégories et labels.
-    - Gestion des recettes, y compris les sous-recettes et les étapes.
+    - Gestion des ingrédients avec leurs catégories et labels (+ plusieurs ajouts en une fois : bulk_create).
+    - Gestion des recettes, y compris les sous-recettes et les étapes (+ possibilité de dupliquer une recette ; + archivage ; + favoris).
+    - Recherche de recette par catégorie, par label, par prix, par ingrédient, par temps de préparation, etc.
     - Gestion des moules (pans) avec calcul de volumes pour ajuster les quantités.
-    - Calcul automatique du coût d’une recette en fonction du prix des ingrédients.
+    - Calcul automatique des quantités en fonction des servings, du moule utilisé ou de quantités spécifiques d'un ou plusieurs ingrédient.
+    - Calcul automatique du coût d’une recette en fonction du prix des ingrédients (option : en fonction de quel magasin peuvent provenir les ingrédients).
+    - Possibilité d'application collaborative pour remplir la base de données (le prix des ingrédients de différentes marques et dans les différents magasins).
+    - Gestion de compte utilisateur et compte premium.
     - Tests automatisés (modèles, validation, API CRUD) avec pytest.
 
 📂 Architecture du projet
