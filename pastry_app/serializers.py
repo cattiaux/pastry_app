@@ -46,7 +46,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
     def validate_category_name(self, value):
         """ Vérifie que 'category_name' est valide et vérifie si une autre catégorie existe déjà avec ce nom (insensible à la casse)"""
-        value = value.lower().strip()  # Normalisation
+        value = " ".join(value.lower().strip().split())  # Normalisation
 
         # Vérifier que la catégorie existe bien dans CATEGORY_NAME_CHOICES
         if value not in CATEGORY_NAME_CHOICES:
@@ -80,7 +80,7 @@ class LabelSerializer(serializers.ModelSerializer):
 
     def validate_label_name(self, value):
         """ Vérifie que 'label_name' est valide et vérifie si un autre label existe déjà avec ce nom (insensible à la casse)"""
-        value = value.lower().strip()  # Normalisation
+        value = " ".join(value.lower().strip().split())  # Normalisation
 
         # Vérifier que le label existe bien dans LABEL_NAME_CHOICES
         if value not in LABEL_NAME_CHOICES:
@@ -94,70 +94,36 @@ class LabelSerializer(serializers.ModelSerializer):
         return value
 
 class IngredientSerializer(serializers.ModelSerializer):
-    prices = IngredientPriceSerializer(source='ingredientprice_set', many=True)
-    categories = CategorySerializer(many=True)
-    labels = LabelSerializer(many=True)
+    prices = IngredientPriceSerializer(source='prices', many=True, read_only=True)
+    categories = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), many=True, required=False) #PrimaryKeyRelatedField assure la vérification de l'existence de la category par DRF
+    labels = serializers.PrimaryKeyRelatedField(queryset=Label.objects.all(), many=True, required=False)
 
     class Meta:
         model = Ingredient
-        fields = ['ingredient_name', 'categories', 'labels', 'prices']
+        fields = ['id', 'ingredient_name', 'categories', 'labels', 'prices']
+    
+    def validate_ingredient_name(self, value):
+        """ Vérifie que l'ingrédient n'existe pas déjà (insensible à la casse), sauf s'il s'agit de la mise à jour du même ingrédient. """
+        value = " ".join(value.lower().strip().split())  # Normalisation : minuscule + suppression espaces inutiles
 
-    def create(self, validated_data):
-        try:
-            prices_data = validated_data.pop('ingredientprice_set')
-            categories_data = validated_data.pop('categories')
-            labels_data = validated_data.pop('labels')
-            ingredient = Ingredient.objects.create(**validated_data)
-
-            for category_data in categories_data:
-                category, created = Category.objects.get_or_create(name=category_data["name"].lower())
-                ingredient.categories.add(category)
-
-            for label_data in labels_data:
-                label, created = Label.objects.get_or_create(name=label_data["name"].lower())
-                ingredient.labels.add(label)
-
-            for price_data in prices_data:
-                IngredientPrice.objects.create(ingredient=ingredient, **price_data)
-
-        except IntegrityError:
-            raise serializers.ValidationError("An ingredient with this name already exists.")
-        return ingredient
-
-    def update(self, instance, validated_data):
-        prices_data = validated_data.pop('ingredientprice_set', [])
-        categories_data = validated_data.pop('categories', [])
-        labels_data = validated_data.pop('labels', [])
-        instance.ingredient_name = validated_data.get('ingredient_name', instance.ingredient_name)
-        instance.save()
-
-        update_related_instances(instance, prices_data, 'ingredientprice_set', IngredientPrice, IngredientPriceSerializer, 'ingredient')
-
-        instance.categories.clear()
-        for category_data in categories_data:
-            category, created = Category.objects.get_or_create(name=category_data["category_name"].lower())
-            instance.categories.add(category)
-
-        instance.labels.clear()
-        for label_data in labels_data:
-            label, created = Label.objects.get_or_create(name=label_data["label_name"].lower())
-            instance.labels.add(label)
-
-        return instance
+        ingredient_id = self.instance.id if self.instance else None  # Exclure l'ID courant en cas de mise à jour
+        if Ingredient.objects.exclude(id=ingredient_id).filter(ingredient_name__iexact=value).exists():
+            raise serializers.ValidationError("Un ingrédient avec ce nom existe déjà.")
+        return value
 
     def validate_categories(self, value):
-        """ Vérifie que toutes les catégories existent bien avant d'associer un ingrédient. """
-        existing_categories = set(Category.objects.values_list("id", flat=True))
+        """ Personnalise le message d'erreur si une catégorie n'existe pas. """
+        existing_categories_ids = set(Category.objects.values_list("id", flat=True))
         for category in value:
-            if category.id not in existing_categories:
+            if category.id not in existing_categories_ids:
                 raise serializers.ValidationError(f"La catégorie '{category.category_name}' n'existe pas. Veuillez la créer d'abord.")
         return value
 
     def validate_labels(self, value):
-        """ Vérifie que tous les labels existent bien avant d'associer un ingrédient. """
-        existing_labels = set(Label.objects.values_list("id", flat=True))
+        """ Personnalise le message d'erreur si un label n'existe pas """
+        existing_labels_ids = set(Label.objects.values_list("id", flat=True))
         for label in value:
-            if label.id not in existing_labels:
+            if label.id not in existing_labels_ids:
                 raise serializers.ValidationError(f"Le label '{label.label_name}' n'existe pas. Veuillez le créer d'abord.")
         return value
 

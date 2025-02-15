@@ -258,38 +258,31 @@ class Ingredient(models.Model):
     def __str__(self):
         return self.ingredient_name
 
-    def _validate_m2m_relations(self):
-        """ Vérifie que les `categories` et `labels` existent bien en base."""
-        
-        if not self.pk:  # Vérification avant d’accéder aux ManyToManyField
-            return
-        
-        for category in self.categories.all():
-            if not Category.objects.filter(id=category.id).exists():
-                raise ValidationError(f"La catégorie '{category.name}' n'existe pas en base.")
-
-        for label in self.labels.all():
-            if not Label.objects.filter(id=label.id).exists():
-                raise ValidationError(f"Le label '{label.name}' n'existe pas en base.")
-
     def clean(self):
-        existing_categories = {cat.category_name for cat in Category.objects.all()}
-        existing_labels = {lbl.label_name for lbl in Label.objects.all()}
+        """ Vérifie que les `categories` et `labels` existent bien en base, sans les créer automatiquement. """
+        existing_categories = set(Category.objects.values_list("id", flat=True))
+        existing_labels = set(Label.objects.values_list("id", flat=True))
 
         for category in self.categories.all():
-            if category.category_name not in existing_categories:
-                Category.objects.create(category_name=category.category_name)
+            if category.id not in existing_categories:
+                raise ValidationError(f"La catégorie '{category.category_name}' n'existe pas en base.")
 
         for label in self.labels.all():
-            if label.label_name not in existing_labels:
-                Label.objects.create(label_name=label.label_name)
+            if label.id not in existing_labels:
+                raise ValidationError(f"Le label '{label.label_name}' n'existe pas en base.")
+
+        # Vérifier que le nom est correct, normalisé
+        self.ingredient_name = " ".join(self.ingredient_name.lower().strip().split())
+        
+        # Empêcher les noms trop courts ou entièrement numériques
+        if len(self.ingredient_name) < 2:
+            raise ValidationError("Le nom de l'ingrédient doit contenir au moins 2 caractères.")
+        
+        if self.ingredient_name.isdigit():
+            raise ValidationError("Le nom de l'ingrédient ne peut pas être uniquement numérique.")
 
     def save(self, *args, **kwargs):
         """ Sauvegarde et validation sans duplication d'ID."""
-        
-        # Normalisation du nom de l'ingrédient
-        self.ingredient_name = self.ingredient_name.lower() if self.ingredient_name else None
-        
         # Si l'objet est nouveau, on le sauvegarde une première fois pour obtenir un ID
         is_new = self.pk is None
         if is_new:
@@ -307,7 +300,7 @@ class Ingredient(models.Model):
         self._validate_m2m_relations()
 
 class IngredientPrice(models.Model):
-    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name="prices")
     brand = models.TextField(max_length=200, null=True)
     store_name = models.TextField(max_length=200, null=True)
     city = models.CharField(max_length=100, null=True, blank=True)
