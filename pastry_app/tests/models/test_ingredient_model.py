@@ -59,28 +59,3 @@ def test_ingredient_can_have_labels(ingredient):
 
     assert label in ingredient.labels.all()  # Vérifier l’association
 
-
-
-
-
-
-# def test_ingredient_name_cannot_be_empty(self):
-#     """ Vérifie qu'on ne peut pas créer un ingrédient sans `ingredient_name`"""
-#     with self.assertRaises(Exception):
-#         Ingredient.objects.create(ingredient_name=None)
-
-# def test_cannot_assign_nonexistent_category(self):
-#     """ Vérifie qu'on ne peut pas assigner une catégorie qui n'existe pas."""
-#     ingredient = Ingredient.objects.create(ingredient_name="Chocolat")
-    
-#     with self.assertRaises(IntegrityError):  # La base de données doit lever une erreur
-#         with transaction.atomic():  # ✅ Force Django à exécuter immédiatement la requête SQL
-#             ingredient.categories.set([9999])  # 9999 est un ID qui n'existe pas
-
-# def test_cannot_assign_nonexistent_label(self):
-#     """ Vérifie qu'on ne peut pas assigner un label qui n'existe pas."""
-#     ingredient = Ingredient.objects.create(ingredient_name="Chocolat")
-    
-#     with self.assertRaises(IntegrityError):  # La base de données doit lever une erreur
-#         with transaction.atomic():  # ✅ Force Django à exécuter immédiatement la requête SQL
-#             ingredient.labels.set([9999])  # 9999 est un ID qui n’existe pas
