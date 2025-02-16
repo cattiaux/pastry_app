@@ -28,6 +28,19 @@ class IngredientViewSet(viewsets.ModelViewSet):
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
 
+    def create(self, request, *args, **kwargs):
+        """ Normaliser le nom de l'ingrédient et empêcher les doublons """
+        request.data["ingredient_name"] = " ".join(request.data["ingredient_name"].lower().strip().split())
+
+        # Vérifier si l'ingrédient existe déjà
+        if Ingredient.objects.filter(ingredient_name__iexact=request.data["ingredient_name"]).exists():
+            return Response({"error": "Cet ingrédient existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            return super().create(request, *args, **kwargs)
+        except IntegrityError:
+            return Response({"error": "Erreur d'intégrité en base de données."}, status=status.HTTP_400_BAD_REQUEST)
+
     def destroy(self, request, *args, **kwargs):
         """ Empêcher la suppression d'un ingrédient s'il est utilisé dans une recette """
         ingredient = self.get_object()
