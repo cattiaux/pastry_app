@@ -1,5 +1,5 @@
 import pytest
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError
 from pastry_app.models import Ingredient, Category, Label
 from pastry_app.tests.utils import normalize_case
 from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
@@ -59,3 +59,8 @@ def test_ingredient_can_have_labels(ingredient):
 
     assert label in ingredient.labels.all()  # Vérifier l’association
 
+@pytest.mark.django_db
+def test_ingredient_name_cannot_be_null():
+    """ Vérifie qu'on ne peut pas enregistrer un ingrédient sans `ingredient_name` en base (contrainte SQL). """
+    with pytest.raises(IntegrityError):
+        Ingredient.objects.create(ingredient_name=None)
