@@ -296,8 +296,6 @@ class Ingredient(models.Model):
             return  # On évite un deuxième `save()` si l’objet est déjà en base
         
         super().save(*args, **kwargs)  # Une seule sauvegarde pour éviter `IntegrityError`
-        # Vérification des `ManyToManyField`
-        self._validate_m2m_relations()
 
 class IngredientPrice(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name="prices")
