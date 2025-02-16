@@ -108,3 +108,69 @@ Préparation pour la Production :
         ◦ Actuellement, label_name n’a pas unique=True pour éviter des conflits en développement et permettre des tests.
         ◦ Une fois en production, unique=True sera ajouté pour garantir l’unicité en base.
         ◦ L’API continuera de vérifier l’unicité pour éviter les erreurs 500 Internal Server Error.
+
+
+
+
+Synthèse des Contraintes pour le Modèle Ingredient
+
+        CONTRAINTES	                                                                 TEST CORRESPONDANT
+Création d’un ingrédient	                                                -> test_create_ingredient
+ingredient_name unique (en API, unique=True en production)	                -> test_create_duplicate_ingredient
+ingredient_name normalisé (minuscule, sans espaces inutiles)	            -> test_ingredient_name_is_normalized
+ingredient_name ne peut pas être vide	                                    -> test_ingredient_name_cannot_be_empty
+Mise à jour du ingredient_name	                                            -> test_update_ingredient_name
+Suppression d’un ingrédient existant	                                    -> test_delete_ingredient
+Récupération d’un ingrédient existant                                       -> test_get_ingredient
+Erreur 404 si ingrédient inexistant	                                        -> test_get_nonexistent_ingredient, test_delete_nonexistent_ingredient
+Suppression bloquée si l’ingrédient est utilisé dans une recette        	-> test_delete_ingredient_used_in_recipe
+Ajout d’un ingrédient avec une catégorie existante                      	-> test_create_ingredient_with_category
+Ajout d’un ingrédient avec un label existant	                            -> test_create_ingredient_with_label
+Interdiction d’assigner une catégorie inexistante	                        -> test_create_ingredient_with_nonexistent_category
+Interdiction d’assigner un label inexistant                             	-> test_create_ingredient_with_nonexistent_label
+Mise à jour interdite vers un ingredient_name déjà existant	                -> test_update_ingredient_to_duplicate
+Suppression de catégorie/label uniquement si non utilisé	                -> test_update_ingredient_remove_category, test_update_ingredient_remove_label
+
+
+Contraintes Métier :
+1. Nom de l’Ingrédient (ingredient_name)
+    ◦ Doit être unique.
+    ◦ Ne peut pas être vide.
+    ◦ Est normalisé en minuscule sans espaces superflus.
+    ◦ Ne peut pas être uniquement numérique ("1234" est invalide).
+    ◦ Doit contenir au moins 2 caractères.
+2. Catégories & Labels
+    ◦ Un ingrédient peut appartenir à plusieurs catégories et labels.
+    ◦ Un ingrédient peut ne pas avoir de catégorie ni de label.
+    ◦ Impossible d’assigner une catégorie ou un label inexistant en base.
+3. Gestion des Suppressions
+    ◦ Un ingrédient ne peut pas être supprimé s'il est utilisé dans une recette.
+    ◦ Les catégories et labels peuvent être retirés d’un ingrédient uniquement s’ils existent encore ailleurs.
+
+Contraintes Techniques :
+1. Type de Données
+    ◦ ingredient_name : CharField (200 caractères max, normalisé).
+    ◦ categories : ManyToManyField(Category, related_name="ingredients").
+    ◦ labels : ManyToManyField(Label, related_name="ingredients").
+2. Indexation
+    ◦ ingredient_name est indexé pour accélérer les recherches.
+
+Contraintes d'Intégrité :
+1. Références
+    ◦ Ingredient est lié à Recipe via RecipeIngredient.
+    ◦ Ingredient est lié à Category et Label via ManyToManyField.
+2. Cohérence des Données
+    ◦ Validation en API et en base (full_clean() avant save()).
+    ◦ Impossible d’assigner une catégorie ou un label inexistant.
+    ◦ Suppression sécurisée : on_delete=PROTECT pour empêcher la suppression d’un ingrédient utilisé dans une recette.
+
+Préparation pour la Production
+    1. Ajout de unique=True sur ingredient_name
+        ◦ Actuellement, ingredient_name n’a pas unique=True pour éviter des erreurs bloquantes en développement et permettre les tests.
+        ◦ Une fois en production, unique=True sera activé pour garantir l’unicité en base.
+        ◦ L’API continuera d’appliquer la validation d’unicité pour éviter des erreurs IntegrityError.
+    2. Gestion des Suppressions
+            ◦ Vérification stricte via on_delete=PROTECT pour interdire la suppression d’un ingrédient s’il est utilisé.
+            ◦ Double protection :
+                ◦ Vérification au niveau API (destroy() dans IngredientViewSet).
+                ◦ Vérification en base (PROTECT sur RecipeIngredient.ingredient).

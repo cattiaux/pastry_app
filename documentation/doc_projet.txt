@@ -6,7 +6,7 @@ et de calculer les coûts et quantités nécessaires en fonction des portions ou
 
 ✅ Fonctionnalités principales :
     - Gestion des ingrédients avec leurs catégories et labels (+ plusieurs ajouts en une fois : bulk_create).
-    - Gestion des recettes, y compris les sous-recettes et les étapes (+ possibilité de dupliquer une recette ; + archivage ; + favoris).
+    - Gestion des recettes, y compris les sous-recettes et les étapes (+ possibilité de dupliquer une recette ; + archivage ; + favoris ; + versions).
     - Recherche de recette par catégorie, par label, par prix, par ingrédient, par temps de préparation, etc.
     - Gestion des moules (pans) avec calcul de volumes pour ajuster les quantités.
     - Calcul automatique des quantités en fonction des servings, du moule utilisé ou de quantités spécifiques d'un ou plusieurs ingrédient.
