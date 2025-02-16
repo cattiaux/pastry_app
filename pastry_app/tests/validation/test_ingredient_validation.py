@@ -1,7 +1,7 @@
-import pytest, json, sys
+import pytest, json
 from django.core.exceptions import ValidationError
 from rest_framework import status
-from pastry_app.models import Ingredient, Category, Label
+from pastry_app.models import Ingredient
 from pastry_app.tests.utils import normalize_case
 from pastry_app.tests.base_api_test import api_client, base_url
 
@@ -22,13 +22,13 @@ def test_create_ingredient_without_name(api_client, base_url):
 def test_create_duplicate_ingredient(api_client, base_url):
     """ Vérifie qu'on ne peut PAS créer deux ingrédients avec le même `ingredient_name`"""
     url = base_url(model_name)
-
+    ingredient_name = "Test ingredient"
     # Création de la première instance d'Ingredient via l'API
-    response1 = api_client.post(url, data=json.dumps({"ingredient_name": "Test ingredient"}), content_type="application/json")
+    response1 = api_client.post(url, data=json.dumps({"ingredient_name": ingredient_name}), content_type="application/json")
     assert response1.status_code == status.HTTP_201_CREATED  # Vérifie que la première création réussit
 
     # Essayer de créer un deuxième ingrédient avec le même nom via l'API (avec la même casse ou différente)
-    response2 = api_client.post(url, data=json.dumps({"ingredient_name": normalize_case(" Test  Ingredient ")}), content_type="application/json")
+    response2 = api_client.post(url, data=json.dumps({"ingredient_name": normalize_case(ingredient_name)}), content_type="application/json")
 
     # Vérifier que l'API refuse le doublon avec un code 400
     assert response2.status_code == status.HTTP_400_BAD_REQUEST
@@ -150,5 +150,6 @@ def test_cannot_assign_nonexistent_label(api_client, base_url):
 @pytest.mark.django_db
 def test_ingredient_name_is_normalized():
     """ Vérifie que le `ingredient_name` est bien normalisé (minuscule, sans espaces inutiles). """
-    ingredient = Ingredient.objects.create(ingredient_name="  Chocolat  Noir ")
-    assert ingredient.ingredient_name == "chocolat noir"
+    ingredient_name = "  Chocolat  Noir "
+    ingredient = Ingredient.objects.create(ingredient_name=ingredient_name)
+    assert ingredient.ingredient_name == normalize_case(ingredient_name)

@@ -4,6 +4,7 @@ from django.core.validators import MinValueValidator
 from django.utils.timezone import now
 from .constants import UNIT_CHOICES, CATEGORY_TYPE_MAP, LABEL_TYPE_MAP
 from django.core.exceptions import ValidationError
+from pastry_app.tests.utils import normalize_case
 
 class BaseModel(models.Model):
     class Meta:
@@ -120,7 +121,7 @@ class Category(models.Model):
         """ 
         Validation avant sauvegarde : nettoyage, validation et attribution du type automatique.
         """
-        self.category_name = " ".join(self.category_name.lower().strip().split()) # Lower + supprime espaces inutiles
+        self.category_name = normalize_case(self.category_name) # Lower + supprime espaces inutiles
 
         # Vérifier si `category_name` est valide (dans la liste des choix autorisés)
         if self.category_name not in CATEGORY_TYPE_MAP:
@@ -155,7 +156,7 @@ class Label(models.Model):
         """ 
         Validation avant sauvegarde : nettoyage, validation et attribution du type automatique.
         """
-        self.label_name = " ".join(self.label_name.lower().strip().split()) # Lower + supprime espaces inutiles
+        self.label_name = normalize_case(self.label_name) # Lower + supprime espaces inutiles
 
         # Vérifier si `label_name` est valide (dans la liste des choix autorisés)
         if self.label_name not in LABEL_TYPE_MAP:
@@ -193,7 +194,7 @@ class RecipeLabel(models.Model):
 class Recipe(models.Model):
     recipe_name = models.TextField(max_length=200)
     chef = models.CharField(max_length=200, default="Anonyme")
-    ingredients = models.ManyToManyField('Ingredient', through='RecipeIngredient')
+    ingredients = models.ManyToManyField('Ingredient', through='RecipeIngredient', related_name="recipes")
     categories = models.ManyToManyField(Category, related_name="recipes") 
     default_volume = models.FloatField(null=True, blank=True, validators=[MinValueValidator(0)])
     default_servings = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
@@ -283,7 +284,7 @@ class Ingredient(models.Model):
                 raise ValidationError(f"Le label '{label.label_name}' n'existe pas en base.")
 
         # Vérifier que le nom est correct, normalisé
-        self.ingredient_name = " ".join(self.ingredient_name.lower().strip().split())
+        self.ingredient_name = normalize_case(self.ingredient_name)
         
         # Empêcher les noms trop courts ou entièrement numériques
         if len(self.ingredient_name) < 2:
@@ -294,6 +295,9 @@ class Ingredient(models.Model):
 
     def save(self, *args, **kwargs):
         """ Sauvegarde et validation sans duplication d'ID."""
+        # Forcer la validation `clean()` AVANT `full_clean()`
+        self.clean() 
+        
         # Si l'objet est nouveau, on le sauvegarde une première fois pour obtenir un ID
         is_new = self.pk is None
         if is_new:
@@ -331,7 +335,7 @@ class IngredientPrice(models.Model):
 
 class RecipeIngredient(models.Model):
     recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
-    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.PROTECT)
     quantity = models.FloatField(default=0, validators=[MinValueValidator(0)])
     unit = models.CharField(max_length=50, choices=UNIT_CHOICES, null=True, blank=True)
 

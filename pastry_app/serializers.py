@@ -4,6 +4,7 @@ from django.db import IntegrityError
 from .models import Recipe, Pan, Ingredient, IngredientPrice, Category, Label, RecipeIngredient, RecipeStep, SubRecipe, RoundPan, SquarePan, PanServing
 from .utils import get_pan_model, update_related_instances
 from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
+from pastry_app.tests.utils import normalize_case
 
 class IngredientPriceSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
@@ -80,7 +81,7 @@ class LabelSerializer(serializers.ModelSerializer):
 
     def validate_label_name(self, value):
         """ Vérifie que 'label_name' est valide et vérifie si un autre label existe déjà avec ce nom (insensible à la casse)"""
-        value = " ".join(value.lower().strip().split())  # Normalisation
+        value = normalize_case(value)  # Normalisation
 
         # Vérifier que le label existe bien dans LABEL_NAME_CHOICES
         if value not in LABEL_NAME_CHOICES:
@@ -104,7 +105,7 @@ class IngredientSerializer(serializers.ModelSerializer):
     
     def validate_ingredient_name(self, value):
         """ Vérifie que l'ingrédient n'existe pas déjà (insensible à la casse), sauf s'il s'agit de la mise à jour du même ingrédient. """
-        value = " ".join(value.lower().strip().split())  # Normalisation : minuscule + suppression espaces inutiles
+        value = normalize_case(value)  # Normalisation : minuscule + suppression espaces inutiles
 
         ingredient_id = self.instance.id if self.instance else None  # Exclure l'ID courant en cas de mise à jour
         if Ingredient.objects.exclude(id=ingredient_id).filter(ingredient_name__iexact=value).exists():
@@ -126,6 +127,12 @@ class IngredientSerializer(serializers.ModelSerializer):
             if label.id not in existing_labels_ids:
                 raise serializers.ValidationError(f"Le label '{label.label_name}' n'existe pas. Veuillez le créer d'abord.")
         return value
+    
+    def to_representation(self, instance):
+        """ Assure que l'affichage dans l'API est bien normalisé """
+        representation = super().to_representation(instance)
+        representation["ingredient_name"] = normalize_case(representation["ingredient_name"])
+        return representation
 
 class RecipeIngredientSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)

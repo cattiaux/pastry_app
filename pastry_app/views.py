@@ -7,6 +7,7 @@ from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from django.db.utils import IntegrityError 
 from django.db.models import ProtectedError
+from pastry_app.tests.utils import normalize_case
 
 class PanDeleteView(generics.DestroyAPIView):
     queryset = Pan.objects.all()
@@ -31,14 +32,13 @@ class IngredientViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """ Normaliser le nom de l'ingrédient et empêcher les doublons """
         data = request.data.copy()  # On crée une copie modifiable de request.data
-        ingredient_name = data.get("ingredient_name","").strip().lower()
-
+        ingredient_name = normalize_case(data.get("ingredient_name", ""))
         # Vérifier si l'ingrédient existe déjà AVANT toute validation
         if Ingredient.objects.filter(ingredient_name__iexact=ingredient_name).exists():
             return Response({"ingredient_name": "Cet ingrédient existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Normalisation du nom de l'ingrédient
-        data["ingredient_name"] = " ".join(ingredient_name.split())
+        data["ingredient_name"] = normalize_case(ingredient_name)
 
         # Création de l'ingrédient avec le serializer
         serializer = self.get_serializer(data=data)
