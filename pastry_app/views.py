@@ -6,6 +6,7 @@ from .utils import get_pan_model
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from django.db.utils import IntegrityError 
+from django.db.models import ProtectedError
 
 class PanDeleteView(generics.DestroyAPIView):
     queryset = Pan.objects.all()
@@ -44,7 +45,19 @@ class CategoryViewSet(viewsets.ModelViewSet):
                 {"error": "Cette catégorie est utilisée par un ingrédient ou une recette et ne peut pas être supprimée."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
+    def destroy(self, request, *args, **kwargs):
+        """ Empêche la suppression d'une catégorie si elle est utilisée par un ingrédient ou une recette. """
+        category = self.get_object()
+        try:
+            self.perform_destroy(category)  # Utilisation de DRF
+        except ProtectedError:  
+            return Response(
+                {"error": "Cette catégorie est utilisée par un ingrédient ou une recette et ne peut pas être supprimée."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
         # """
         # OLD destroy method avec SQLITE
         # Lors de la migration vers PostgreSQL, tester si `on_delete=PROTECT` fonctionne. 
@@ -76,13 +89,13 @@ class LabelViewSet(viewsets.ModelViewSet):
         """Empêche la suppression d'un Label s'il est utilisé par un Ingredient ou par une Recipe."""
         label = self.get_object()
         try:
-            label.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except IntegrityError:
+            self.perform_destroy(label)  # Utilisation de DRF
+        except ProtectedError:
             return Response(
                 {"error": "Ce label est utilisé par un ingrédient ou une recette et ne peut pas être supprimé."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 class PanViewSet(viewsets.ModelViewSet):
     queryset = Pan.objects.none()
