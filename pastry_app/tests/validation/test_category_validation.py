@@ -60,7 +60,7 @@ def test_category_name_is_normalized():
 # Solution recommandée :
 # 1️. Tester l'unicité dans l'API avec `validate_category_name()` dans `serializers.py` (sans `unique=True`).
 # 2️. En production, remettre `unique=True` dans `models.py` pour sécuriser la base, mais NE PAS tester cela avec pytest.
-# Si ces tests échouent avec `unique=True`, c'est normal et tu peux ignorer l'erreur !
+#    Si ces tests échouent avec `unique=True`, c'est normal et tu peux ignorer l'erreur !
 @pytest.mark.django_db
 def test_update_category_to_duplicate(api_client, base_url):
     """Vérifie qu'on ne peut PAS modifier une Category pour lui donner un `category_name` déjà existant"""

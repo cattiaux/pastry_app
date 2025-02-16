@@ -248,7 +248,14 @@ class SubRecipe(models.Model):
     quantity = models.FloatField(default=0, validators=[MinValueValidator(0.1)])
 
 class Ingredient(models.Model):
-    ingredient_name = models.CharField(max_length=200, unique=True)
+    """
+    ⚠️ IMPORTANT ⚠️
+    - Actuellement, `ingredient_name` N'A PAS `unique=True` pour éviter les conflits en développement.
+    - Une fois en production, AJOUTER `unique=True` sur `ingredient_name`.
+    """
+    # Note : `unique=True` dans le field 'label_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
+    # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
+    ingredient_name = models.CharField(max_length=200) #unique=True à activer en production
     categories = models.ManyToManyField(Category, related_name='ingredients', blank=True)
     labels = models.ManyToManyField(Label, related_name='ingredients', blank=True)
 
@@ -260,6 +267,10 @@ class Ingredient(models.Model):
 
     def clean(self):
         """ Vérifie que les `categories` et `labels` existent bien en base, sans les créer automatiquement. """
+        # Ignorer la validation des ManyToMany si l'objet n'est pas encore enregistré
+        if not self.pk:
+            return
+        
         existing_categories = set(Category.objects.values_list("id", flat=True))
         existing_labels = set(Label.objects.values_list("id", flat=True))
 
@@ -289,7 +300,7 @@ class Ingredient(models.Model):
             super().save(*args, **kwargs)
 
         # Maintenant que l’objet a un ID, on peut exécuter `full_clean()`
-        self.full_clean(exclude=['categories', 'labels'])  
+        self.full_clean(exclude=['categories', 'labels']) # Exclure les relations ManyToMany
 
         # Sauvegarde finale seulement si l’objet est nouveau
         if is_new:

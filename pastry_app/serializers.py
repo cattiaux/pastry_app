@@ -94,7 +94,7 @@ class LabelSerializer(serializers.ModelSerializer):
         return value
 
 class IngredientSerializer(serializers.ModelSerializer):
-    prices = IngredientPriceSerializer(source='prices', many=True, read_only=True)
+    prices = IngredientPriceSerializer(many=True, read_only=True)
     categories = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), many=True, required=False) #PrimaryKeyRelatedField assure la vérification de l'existence de la category par DRF
     labels = serializers.PrimaryKeyRelatedField(queryset=Label.objects.all(), many=True, required=False)
 

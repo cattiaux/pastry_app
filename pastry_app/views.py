@@ -30,15 +30,24 @@ class IngredientViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """ Normaliser le nom de l'ingrédient et empêcher les doublons """
-        request.data["ingredient_name"] = " ".join(request.data["ingredient_name"].lower().strip().split())
+        data = request.data.copy()  # On crée une copie modifiable de request.data
+        ingredient_name = data.get("ingredient_name","").strip().lower()
 
-        # Vérifier si l'ingrédient existe déjà
-        if Ingredient.objects.filter(ingredient_name__iexact=request.data["ingredient_name"]).exists():
-            return Response({"error": "Cet ingrédient existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
+        # Vérifier si l'ingrédient existe déjà AVANT toute validation
+        if Ingredient.objects.filter(ingredient_name__iexact=ingredient_name).exists():
+            return Response({"ingredient_name": "Cet ingrédient existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Normalisation du nom de l'ingrédient
+        data["ingredient_name"] = " ".join(ingredient_name.split())
+
+        # Création de l'ingrédient avec le serializer
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+    
         try:
-            return super().create(request, *args, **kwargs)
-        except IntegrityError:
+            self.perform_create(serializer)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except IntegrityError:  # Sécurité supplémentaire en cas de requête concurrente
             return Response({"error": "Erreur d'intégrité en base de données."}, status=status.HTTP_400_BAD_REQUEST)
 
     def destroy(self, request, *args, **kwargs):
