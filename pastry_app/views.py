@@ -28,6 +28,18 @@ class IngredientViewSet(viewsets.ModelViewSet):
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
 
+    def destroy(self, request, *args, **kwargs):
+        """ Empêcher la suppression d'un ingrédient s'il est utilisé dans une recette """
+        ingredient = self.get_object()
+        try:
+            self.perform_destroy(ingredient)
+        except ProtectedError:
+            return Response(
+                {"error": "Cet ingrédient est utilisé dans une recette et ne peut pas être supprimé."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all().order_by('category_name')
     serializer_class = CategorySerializer
