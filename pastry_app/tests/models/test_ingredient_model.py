@@ -6,6 +6,25 @@ from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
 
 """Tests unitaires du modèle Ingredient"""
 
+# Création
+# test_ingredient_creation → Vérifie qu'on peut créer un objet Ingredient.
+# test_ingredient_name_cannot_be_empty → Vérifie qu'on ne peut PAS créer un ingrédient avec un ingredient_name vide.
+
+# Lecture
+# test_ingredient_str_method → Vérifie que __str__() retourne bien ingredient_name.
+
+# Mise à jour
+# test_ingredient_update → Vérifie qu'on peut modifier un ingrédient.
+
+# Suppression
+# test_ingredient_deletion → Vérifie qu'on peut supprimer un ingrédient.
+
+# Contraintes Spécifiques
+# test_ingredient_can_have_categories → Vérifie qu'un ingrédient peut être associé à des catégories.
+# test_ingredient_can_have_labels → Vérifie qu'un ingrédient peut être associé à des labels.
+# test_cannot_assign_nonexistent_category → Vérifie qu'on ne peut PAS attribuer une catégorie inexistante via ManyToManyField.
+# test_cannot_assign_nonexistent_label → Vérifie qu'on ne peut PAS attribuer un label inexistant via ManyToManyField.
+
 # Définir model_name pour les tests de Ingredient
 model_name = "ingredients"
 

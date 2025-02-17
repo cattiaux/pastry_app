@@ -7,6 +7,29 @@ from pastry_app.tests.base_api_test import api_client, base_url
 
 """Tests de validation et de gestion des erreurs pour le modèle Ingredient"""
 
+# Création
+# test_create_ingredient_without_name → Vérifie qu'on ne peut PAS créer un ingrédient sans ingredient_name.
+# test_create_duplicate_ingredient → Vérifie qu'on ne peut PAS créer un ingrédient avec un nom déjà existant.
+# test_create_ingredient_with_nonexistent_category → Vérifie qu'on ne peut PAS associer une catégorie inexistante.
+# test_create_ingredient_with_nonexistent_label → Vérifie qu'on ne peut PAS associer un label inexistant.
+
+# Lecture
+# test_get_nonexistent_ingredient → Vérifie qu'on obtient une erreur 404 lorsqu'on tente d'accéder à un ingrédient inexistant.
+
+# Mise à jour
+# test_update_ingredient_to_duplicate → Vérifie qu'on ne peut PAS modifier un ingrédient pour lui donner un ingredient_name déjà existant.
+# test_update_ingredient_add_nonexistent_category → Vérifie qu'on ne peut PAS ajouter une catégorie inexistante à un ingrédient.
+# test_update_ingredient_add_nonexistent_label → Vérifie qu'on ne peut PAS ajouter un label inexistant à un ingrédient.
+
+# Suppression
+# test_delete_nonexistent_ingredient → Vérifie qu'on obtient une erreur 404 lorsqu'on tente de supprimer un ingrédient inexistant.
+
+# Contraintes Spécifiques
+# test_ingredient_name_cannot_be_empty → Vérifie qu'on ne peut PAS créer un ingrédient avec un ingredient_name vide.
+# test_ingredient_name_is_normalized → Vérifie que le ingredient_name est bien normalisé (minuscule, sans espaces inutiles).
+# test_cannot_assign_nonexistent_category → Vérifie qu'on ne peut PAS attribuer une catégorie inexistante via une mise à jour.
+# test_cannot_assign_nonexistent_label → Vérifie qu'on ne peut PAS attribuer un label inexistant via une mise à jour.
+
 # Définir model_name pour les tests de Ingredient
 model_name = "ingredients"
 
