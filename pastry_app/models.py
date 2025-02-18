@@ -312,26 +312,146 @@ class Ingredient(models.Model):
         
         super().save(*args, **kwargs)  # Une seule sauvegarde pour éviter `IntegrityError`
 
-class IngredientPrice(models.Model):
-    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name="prices")
-    brand = models.TextField(max_length=200, null=True)
-    store_name = models.TextField(max_length=200, null=True)
+class Store(models.Model):
+    store_name = models.CharField(max_length=200, default="Non renseigné")
     city = models.CharField(max_length=100, null=True, blank=True)
     zip_code = models.CharField(max_length=10, null=True, blank=True)
-    date = models.DateField(null=True, blank=True, default=now)
-    quantity = models.FloatField(validators=[MinValueValidator(0)])
-    unit = models.TextField(max_length=200, choices=UNIT_CHOICES)
+
+    class Meta:
+        unique_together = ("store_name", "city", "zip_code")  # Empêcher les doublons
+
+    def __str__(self):
+        return f"{self.store_name} ({self.city or 'Ville non renseignée'})"
+
+    def clean(self):
+        """ Vérifie que le magasin a une localisation valide """
+        if self.store_name and not (self.city or self.zip_code):
+            raise ValidationError("Si un magasin est renseigné, vous devez indiquer une ville ou un code postal.")
+        # Normalisation du nom du magasin
+        self.store_name = normalize_case(self.store_name)
+
+    def save(self, *args, **kwargs):
+        self.clean() 
+        super().save(*args, **kwargs)
+
+class IngredientPrice(models.Model):
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name="prices")
+    brand_name = models.TextField(max_length=200, default="Non renseigné", blank=True)
+    store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name="prices", null=True, blank=True)
+
+    quantity = models.FloatField(validators=[MinValueValidator(0)]) # Quantité
+    unit = models.TextField(max_length=50, choices=UNIT_CHOICES)    # Unité de mesure
+    price = models.FloatField(validators=[MinValueValidator(0)])    # Prix normal
+    date = models.DateField(null=True, blank=True, default=now)     # Date d'enregistrement du prix
+
+    is_promo = models.BooleanField(default=False)  # Indique si c'est un prix promo
+    promotion_end_date = models.DateField(null=True, blank=True)  # Date de fin de promo, Facultatif
+
+    def __str__(self):
+        """ Affichage clair du prix de l’ingrédient """
+        promo_text = " (Promo)" if self.is_promo else ""
+        store_name = self.store.store_name if self.store else "Non renseigné"
+        return f"{self.ingredient.ingredient_name} - {self.brand_name} @ {store_name} ({self.quantity}{self.unit} pour {self.price}€{promo_text})"
+
+    def clean(self):
+        """ Validation des contraintes métier avant sauvegarde """
+        # Vérifier que les champs obligatoires sont remplis
+        if self.price is None or self.quantity is None or self.unit is None:
+            raise ValidationError("Le prix, la quantité et l'unité de mesure sont obligatoires.")
+        if self.date is None:
+            self.date = now().date()  # Assigner la date du jour par défaut
+
+        # Vérifier que les prix et les quantités sont positifs
+        if self.price and self.price <= 0:
+            raise ValidationError("Un ingrédient doit avoir un prix strictement supérieur à 0€.")
+        if self.quantity and self.quantity <= 0:
+            raise ValidationError("Une quantité ne peut pas être négative ou nulle.")
+
+        # Vérifier que `unit` est bien dans `UNIT_CHOICES`
+        valid_units = dict(UNIT_CHOICES).keys()  # Récupérer les clés valides
+        if self.unit not in valid_units:
+            raise ValidationError(f"L'unité '{self.unit}' n'est pas valide. Choisissez parmi {list(valid_units)}.")
+
+        # Vérifier la cohérence des promotions
+        if self.promotion_end_date and not self.is_promo:
+            raise ValidationError("Si une date de fin de promo est renseignée, `is_promo` doit être activé.")
+        if self.promotion_end_date and self.promotion_end_date < now().date():
+            raise ValidationError("La date de fin de promo ne peut pas être dans le passé.")
+
+        # Vérifier que si `is_promo=True`, le prix promo est inférieur au dernier prix normal
+        if self.is_promo:
+            last_price = (
+                IngredientPrice.objects.filter(ingredient=self.ingredient, store=self.store)
+                .exclude(is_promo=True)  # Exclure les anciens prix promo
+                .order_by("-date").first())
+            if last_price and self.price >= last_price.price:
+                raise ValidationError(f"Le prix promo ({self.price}€) doit être inférieur au dernier prix normal ({last_price.price}€).")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        # Normaliser la marque
+        if self.brand_name:
+            self.brand_name = normalize_case(self.brand_name)
+
+        filters = {"ingredient": self.ingredient}
+        if self.store:  # Vérifier uniquement si un store est défini
+            filters["store"] = self.store
+        if self.brand_name:  # Vérifier uniquement si une marque est définie
+            filters["brand_name"] = self.brand_name
+
+        # Vérifier si un prix identique existe déjà
+        if IngredientPrice.objects.filter(**filters, date=self.date, price=self.price).exists():
+            raise ValidationError("Ce prix est déjà enregistré pour cet ingrédient, magasin et date.")
+
+        # Vérifier si le prix change et sauvegarder l'historique
+        try:
+            last_price = IngredientPrice.objects.filter(**filters).latest("date")
+            if last_price.price != self.price:
+                IngredientPriceHistory.objects.create(ingredient_price=last_price, date=last_price.date, price=last_price.price)
+        except IngredientPrice.DoesNotExist:
+            pass  # Aucun prix précédent trouvé, pas d'historique à créer
+
+        super().save(*args, **kwargs)
+
+class IngredientPriceHistory(models.Model):
+    ingredient_price = models.ForeignKey(IngredientPrice, on_delete=models.CASCADE, related_name="history")
+    date = models.DateField(default=now)
     price = models.FloatField(validators=[MinValueValidator(0)])
 
     def clean(self):
-        """ Vérifie que city ou zip_code est rempli si store_name est renseigné """
-        if self.store_name and not (self.city or self.zip_code):
-            raise ValidationError("Si un magasin est renseigné, vous devez indiquer une ville ou un code postal.")
+        """ Vérifie la cohérence des données avant sauvegarde. """
+        # Le prix doit être supérieur à 0
+        if self.price <= 0:
+            raise ValidationError("Le prix doit être supérieur à 0.")
+
+        # Empêcher l'enregistrement de prix futurs
+        if self.date > now().date():
+            raise ValidationError("La date ne peut pas être dans le futur.")
+
+        # Vérifier qu'un enregistrement identique n'existe pas déjà
+        if IngredientPriceHistory.objects.filter(ingredient_price=self.ingredient_price, date=self.date, price=self.price).exists():
+            raise ValidationError("Cet enregistrement de prix existe déjà.")
 
     def save(self, *args, **kwargs):
-        self.brand = self.brand.lower() if self.brand else None
-        self.store_name = self.store_name.lower() if self.store_name else None
+        """ Empêche les doublons et n'enregistre que si le prix change. """
+        self.clean()  #Appliquer les validations avant l'enregistrement
+
+        # Récupérer le dernier prix enregistré
+        last_price = IngredientPriceHistory.objects.filter(ingredient_price=self.ingredient_price).order_by("-date").first()
+
+        # Si le prix n’a pas changé, ne pas enregistrer inutilement
+        if last_price and last_price.price == self.price:
+            return  
+
         super().save(*args, **kwargs)
+        
+# Gestion des promos plus avancées (promo nationale + promo magasin par ex., promo conditionnelle 2+1 gratuit)
+# Ajout d'un modèle Promotion
+# class Promotion(models.Model):
+#     ingredient_price = models.ForeignKey(IngredientPrice, on_delete=models.CASCADE, related_name="promotions")
+#     discount_price = models.FloatField(validators=[MinValueValidator(0)])  # Prix promo
+#     start_date = models.DateField(default=now)  # Début de promo
+#     end_date = models.DateField(null=True, blank=True)  # Fin de promo optionnelle
 
 class RecipeIngredient(models.Model):
     recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
@@ -362,3 +482,4 @@ class PanServing(models.Model):
     def __str__(self):
         return f"{self.pan.pan_name} - {self.pan.volume} cm³ - {self.servings_min}-{self.servings_max} servings ({self.recipe_type})"
     
+
