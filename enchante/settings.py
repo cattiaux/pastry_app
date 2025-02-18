@@ -143,3 +143,5 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
     ]
 }
+
+DATE_INPUT_FORMATS = ["%Y-%m-%d"]  # Format standard ISO (AAAA-MM-JJ)

@@ -1,29 +1,104 @@
 # serializers.py
 from rest_framework import serializers
 from django.db import IntegrityError
-from .models import Recipe, Pan, Ingredient, IngredientPrice, Category, Label, RecipeIngredient, RecipeStep, SubRecipe, RoundPan, SquarePan, PanServing
+from django.db.models import Index
+from .models import Recipe, Pan, Ingredient, IngredientPrice, IngredientPriceHistory, Store, Category, Label, RecipeIngredient, RecipeStep, SubRecipe, RoundPan, SquarePan
+from pastry_app.serializers import StoreSerializer
 from .utils import get_pan_model, update_related_instances
 from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
 from pastry_app.tests.utils import normalize_case
+from django.utils.timezone import now
+
+class StoreSerializer(serializers.ModelSerializer):
+    """ Sérialise les magasins où sont vendus les ingrédients. """
+    city = serializers.CharField(required=False, allow_blank=True)
+    zip_code = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        model = Store
+        fields = ["id", "store_name", "city", "zip_code"]
+
+    def validate_store_name(self, value):
+        """ Normalisation et validation du nom du magasin. """
+        return normalize_case(value) if value else value
+
+    def validate_city(self, value):
+        """ Vérifie que la ville a au moins 2 caractères """
+        if value and len(value) < 2:
+            raise serializers.ValidationError("Le nom de la ville doit contenir au moins 2 caractères.")
+        return value
 
 class IngredientPriceSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(required=False)
     date = serializers.DateField(input_formats=['%Y-%m-%d'])
+    store = StoreSerializer() # Sérialisation imbriquée des magasins
 
     class Meta:
         model = IngredientPrice
-        fields = ['id','brand', 'store_name', 'date', 'quantity', 'unit', 'price']
+        fields = ['id', 'ingredient', 'brand_name', 'store', 'date', 'quantity', 'unit', 'price', "is_promo", "promotion_end_date"]
 
     def validate_quantity(self, value):
+        """ Vérifie que la quantité est strictement positive"""
         if value <= 0:
             raise serializers.ValidationError("Quantity must be a positive number.")
         return value
 
-    def validate_price(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("Price must be a positive number.")
+    ### Déjjà gérer dans la méthode clean() du modèle
+    # def validate_price(self, value):
+    #     """ Vérifie que le prix est strictement positif. """
+    #     if value <= 0:
+    #         raise serializers.ValidationError("Price must be a positive number.")
+    #     return value
+
+    def validate_date(self, value):
+        """ Vérifie que la date n'est pas dans le futur. """
+        if value > now().date():
+            raise serializers.ValidationError("La date ne peut pas être dans le futur.")
         return value
 
+    def validate_store(self, value):
+        """ Vérifie que le magasin existe bien avant de l'associer """
+        if value and not Store.objects.filter(id=value.id).exists():
+            raise serializers.ValidationError("Le magasin sélectionné n'existe pas.")
+        return value
+
+    def validate(self, data):
+        """ Vérifie les contraintes métier (promotions, cohérence des données, etc.). """
+        if data.get("promotion_end_date") and not data.get("is_promo"):
+            raise serializers.ValidationError("Une date de fin de promotion nécessite que `is_promo=True`.")
+        return data
+
+    def update(self, instance, validated_data):
+        """ Désactive la mise à jour des prix, impose la création d'un nouvel enregistrement. """
+        raise serializers.ValidationError("Les prix des ingrédients ne peuvent pas être modifiés. Créez un nouvel enregistrement.")
+
+class IngredientPriceHistorySerializer(serializers.ModelSerializer):
+    """ Gère la validation et la sérialisation de l'historique des prix d'ingrédients. """
+
+    class Meta:
+        model = IngredientPriceHistory
+        fields = ["id", "ingredient_price", "date", "price", "is_promo"]  # Champs exposés via l'API
+        indexes = [Index(fields=["ingredient_price", "date"])]
+        unique_together = ("ingredient_price", "date", "price")
+
+    def validate(self, data):
+        """ Vérifie qu'un prix identique ne soit pas enregistré inutilement. """
+        ingredient_price = data.get("ingredient_price")
+        new_price = data.get("price")
+        date = data.get("date")
+
+        # Récupérer le dernier prix en base
+        last_price = IngredientPriceHistory.objects.filter(ingredient_price=ingredient_price).order_by("-date").first()
+
+        # Si le prix est identique au dernier enregistré, refuser la requête
+        if last_price and last_price.price == new_price:
+            raise serializers.ValidationError("Ce prix est déjà enregistré.")
+
+        # Vérifier qu'on ne crée pas un duplicata (même prix, même date, même ingrédient)
+        if IngredientPriceHistory.objects.filter(ingredient_price=ingredient_price, date=date, price=new_price).exists():
+            raise serializers.ValidationError("Cet enregistrement existe déjà.")
+
+        return data
+    
 class CategorySerializer(serializers.ModelSerializer):
     category_type = serializers.CharField(required=False)
 
@@ -93,7 +168,7 @@ class LabelSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Label with this Label name already exists.")
 
         return value
-
+    
 class IngredientSerializer(serializers.ModelSerializer):
     prices = IngredientPriceSerializer(many=True, read_only=True)
     categories = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), many=True, required=False) #PrimaryKeyRelatedField assure la vérification de l'existence de la category par DRF

@@ -319,6 +319,7 @@ class Store(models.Model):
 
     class Meta:
         unique_together = ("store_name", "city", "zip_code")  # Empêcher les doublons
+        indexes = [models.Index(fields=["store_name", "city", "zip_code"])]  # Ajout d'un index pour accélérer les requêtes sur (store_name, city, zip_code)
 
     def __str__(self):
         return f"{self.store_name} ({self.city or 'Ville non renseignée'})"
@@ -327,11 +328,10 @@ class Store(models.Model):
         """ Vérifie que le magasin a une localisation valide """
         if self.store_name and not (self.city or self.zip_code):
             raise ValidationError("Si un magasin est renseigné, vous devez indiquer une ville ou un code postal.")
-        # Normalisation du nom du magasin
-        self.store_name = normalize_case(self.store_name)
 
     def save(self, *args, **kwargs):
-        self.clean() 
+        self.clean()
+        self.store_name = normalize_case(self.store_name) # Normalisation du nom du magasin
         super().save(*args, **kwargs)
 
 class IngredientPrice(models.Model):
@@ -405,7 +405,7 @@ class IngredientPrice(models.Model):
 
         # Vérifier si le prix change et sauvegarder l'historique
         try:
-            last_price = IngredientPrice.objects.filter(**filters).latest("date")
+            last_price = IngredientPrice.objects.filter(**filters).only("price").latest("date")
             if last_price.price != self.price:
                 IngredientPriceHistory.objects.create(ingredient_price=last_price, date=last_price.date, price=last_price.price)
         except IngredientPrice.DoesNotExist:
@@ -417,6 +417,7 @@ class IngredientPriceHistory(models.Model):
     ingredient_price = models.ForeignKey(IngredientPrice, on_delete=models.CASCADE, related_name="history")
     date = models.DateField(default=now)
     price = models.FloatField(validators=[MinValueValidator(0)])
+    is_promo = models.BooleanField(default=False)
 
     def clean(self):
         """ Vérifie la cohérence des données avant sauvegarde. """
