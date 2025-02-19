@@ -1,8 +1,7 @@
+import pytest
 from pastry_app.models import Label
 from pastry_app.tests.utils import normalize_case
-import pytest
 from pastry_app.constants import LABEL_NAME_CHOICES
-
 
 # Définir model_name pour les tests de Label
 model_name = "labels"
@@ -26,7 +25,7 @@ def test_label_str_method(label):
 @pytest.mark.django_db
 def test_label_update(label):
     """ Vérifie que l'on peut modifier une Label"""
-    # Sélectionner un label différent de `setup_label`
+    # Sélectionner un label différent de `label`
     label_name = next((name for name in LABEL_NAME_CHOICES if name != label.label_name), None)
     if not label_name:
         pytest.skip("Pas assez de labels disponibles pour le test.")

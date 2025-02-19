@@ -3,7 +3,6 @@ from rest_framework import serializers
 from django.db import IntegrityError
 from django.db.models import Index
 from .models import Recipe, Pan, Ingredient, IngredientPrice, IngredientPriceHistory, Store, Category, Label, RecipeIngredient, RecipeStep, SubRecipe, RoundPan, SquarePan
-from pastry_app.serializers import StoreSerializer
 from .utils import get_pan_model, update_related_instances
 from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
 from pastry_app.tests.utils import normalize_case
@@ -26,8 +25,9 @@ class StoreSerializer(serializers.ModelSerializer):
         return value
 
     def validate_city(self, value):
-        """ Vérifie que la ville a au moins 2 caractères """
-        if value and len(value) < 2:
+        """ Normalisation + Vérifie que la ville a au moins 2 caractères """
+        value = normalize_case(value) if value else value
+        if len(value) < 2:
             raise serializers.ValidationError("Le nom de la ville doit contenir au moins 2 caractères.")
         return value
 

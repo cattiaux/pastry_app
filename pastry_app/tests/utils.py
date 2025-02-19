@@ -53,11 +53,15 @@ def validate_unique_constraint(model, field_name, expected_error, **valid_data):
     with pytest.raises(IntegrityError, match=expected_error):
         model.objects.create(**duplicate_data)
 
-def validate_unique_together(model, expected_error, **valid_data):
-    """ Vérifie qu'une contrainte `unique_together` empêche la duplication. """
-    model.objects.create(**valid_data) # Création de la première instance
-    with pytest.raises(IntegrityError, match=expected_error): # Vérification que la deuxième tentative échoue avec une `IntegrityError`
-        model.objects.create(**valid_data)
+def validate_unique_together(model, expected_error, create_initial=True, **valid_data):
+    """ Vérifie qu'une contrainte `unique_together` est respectée et empêche la duplication. """
+    if create_initial:
+        model.objects.create(**valid_data) # Création de la première instance
+    with pytest.raises(ValidationError) as excinfo:  # Capture l'exception complète
+        obj = model(**valid_data)
+        obj.full_clean()  # Déclenche la ValidationError avant le save
+        obj.save()
+    assert expected_error in str(excinfo.value)  # Convertir l'erreur en string pour comparaison
 
 def validate_protected_delete(model, related_model, related_field, expected_error, **valid_data):
     """ Vérifie qu'une suppression est bloquée si `on_delete=PROTECT`. """

@@ -313,7 +313,7 @@ class Ingredient(models.Model):
         super().save(*args, **kwargs)  # Une seule sauvegarde pour éviter `IntegrityError`
 
 class Store(models.Model):
-    store_name = models.CharField(max_length=200, default="Non renseigné")
+    store_name = models.CharField(max_length=200, null=False, blank=False) #default="Non renseigné")
     city = models.CharField(max_length=100, null=True, blank=True)
     zip_code = models.CharField(max_length=10, null=True, blank=True)
 
@@ -325,13 +325,29 @@ class Store(models.Model):
         return f"{self.store_name} ({self.city or 'Ville non renseignée'})"
 
     def clean(self):
-        """ Vérifie que le magasin a une localisation valide """
+        # Vérifie que le magasin a une localisation valide
         if self.store_name and not (self.city or self.zip_code):
             raise ValidationError("Si un magasin est renseigné, vous devez indiquer une ville ou un code postal.")
+        if not self.store_name :
+            raise ValidationError("field cannot be null")
+        # Vérifie que le nom du magasin et de la ville ont une longueur minimale
+        if len(self.store_name) < 2:
+            raise ValidationError("Le nom du magasin doit contenir au moins 2 caractères.")
+        if self.city and len(self.city) < 2:
+            raise ValidationError("Le nom de la ville doit contenir au moins 2 caractères.")
 
+        # Normalisation des noms avant validation
+        self.store_name = normalize_case(self.store_name)
+        self.city = normalize_case(self.city)
+
+        # Vérifie qu'on ne peut pas créer deux magasins identiques (unique_together)
+        if Store.objects.filter(store_name=self.store_name, city=self.city, zip_code=self.zip_code).exclude(id=self.id).exists():
+            raise ValidationError("Ce magasin existe déjà.")
+        
     def save(self, *args, **kwargs):
+        # self.store_name = normalize_case(self.store_name) # Normalisation du nom du magasin
+        # self.city = normalize_case(self.city) # Normalisation du nom de la ville
         self.clean()
-        self.store_name = normalize_case(self.store_name) # Normalisation du nom du magasin
         super().save(*args, **kwargs)
 
 class IngredientPrice(models.Model):

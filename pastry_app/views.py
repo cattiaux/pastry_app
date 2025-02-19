@@ -9,17 +9,17 @@ from django.db.utils import IntegrityError
 from django.db.models import ProtectedError
 from pastry_app.tests.utils import normalize_case
 
-# class PanDeleteView(generics.DestroyAPIView):
-#     queryset = Pan.objects.all()
-#     serializer_class = PanSerializer
+class PanDeleteView(generics.DestroyAPIView):
+    queryset = Pan.objects.all()
+    serializer_class = PanSerializer
 
-# class IngredientDeleteView(generics.DestroyAPIView):
-#     queryset = Ingredient.objects.all()
-#     serializer_class = IngredientSerializer
+class IngredientDeleteView(generics.DestroyAPIView):
+    queryset = Ingredient.objects.all()
+    serializer_class = IngredientSerializer
 
-# class RecipeDeleteView(generics.DestroyAPIView):
-#     queryset = Recipe.objects.all()
-#     serializer_class = RecipeSerializer
+class RecipeDeleteView(generics.DestroyAPIView):
+    queryset = Recipe.objects.all()
+    serializer_class = RecipeSerializer
 
 class StoreViewSet(viewsets.ModelViewSet):
     """ API CRUD pour gérer les magasins. """
