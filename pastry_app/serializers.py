@@ -56,9 +56,9 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
         return value
 
     def validate_store(self, value):
-        """ Vérifie que le magasin existe bien avant de l'associer """
+        """ Vérifie que le magasin existe bien avant de l'associer à un prix"""
         if value and not Store.objects.filter(id=value.id).exists():
-            raise serializers.ValidationError("Le magasin sélectionné n'existe pas.")
+            raise serializers.ValidationError("Le magasin sélectionné n'existe pas en base. Veuillez le créer avant d'ajouter un prix.")
         return value
 
     def validate(self, data):
