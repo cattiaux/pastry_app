@@ -20,7 +20,10 @@ class StoreSerializer(serializers.ModelSerializer):
 
     def validate_store_name(self, value):
         """ Normalisation et validation du nom du magasin. """
-        return normalize_case(value) if value else value
+        value = normalize_case(value) if value else value
+        if len(value) < 2:
+            raise serializers.ValidationError("Le nom du magasin doit contenir au moins 2 caractères.")
+        return value
 
     def validate_city(self, value):
         """ Vérifie que la ville a au moins 2 caractères """
