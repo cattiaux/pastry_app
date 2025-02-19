@@ -62,7 +62,7 @@ def validate_unique_together(model, expected_error, **valid_data):
 def validate_protected_delete(model, related_model, related_field, expected_error, **valid_data):
     """ Vérifie qu'une suppression est bloquée si `on_delete=PROTECT`. """
     obj = model.objects.create(**valid_data)
-    related_obj = related_model.objects.create(**{related_field: obj})
+    related_obj = related_model.objects.create(**{related_field: obj}) # Création d'un objet lié pour bloquer la suppression de `obj`
     with pytest.raises(IntegrityError, match=expected_error):
         obj.delete()
 
