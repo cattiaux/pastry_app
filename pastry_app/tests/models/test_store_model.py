@@ -1,6 +1,7 @@
 import pytest
 from django.core.exceptions import ValidationError
 from pastry_app.models import Store
+from pastry_app.tests.utils import *
 
 @pytest.mark.django_db
 def test_create_store():
@@ -10,19 +11,17 @@ def test_create_store():
     assert store.city == "Paris"
     assert store.zip_code == "75001"
 
+@pytest.mark.parametrize("field_name", ["store_name"])
 @pytest.mark.django_db
-def test_store_name_cannot_be_empty():
-    """ Vérifie qu'un magasin ne peut pas avoir un `store_name` vide """
-    with pytest.raises(ValidationError, match="Le nom du magasin est obligatoire"):
-        store = Store(store_name="", city="Paris")
-        store.full_clean()  # Nécessaire pour déclencher `clean()`
+def test_required_fields_store(field_name):
+    """ Vérifie que les champs obligatoires ne peuvent pas être vides """
+    validate_required_field(Store, field_name, "Ce champ est obligatoire.", city="Paris")
 
+@pytest.mark.parametrize("field_name", ["store_name"])
 @pytest.mark.django_db
-def test_store_name_must_be_min_2_chars():
-    """ Vérifie qu'un magasin doit avoir un nom d'au moins 2 caractères """
-    with pytest.raises(ValidationError, match="Le nom du magasin doit contenir au moins 2 caractères."):
-        store = Store(store_name="A", city="Paris")
-        store.full_clean()
+def test_min_length_fields_store(field_name):
+    """ Vérifie que les champs ont une longueur minimale de 2 caractères """
+    validate_min_length(Store, field_name, 2, "Ce champ doit contenir au moins 2 caractères.", city="Paris")
 
 @pytest.mark.django_db
 def test_store_requires_city_or_zip_code():
@@ -31,11 +30,8 @@ def test_store_requires_city_or_zip_code():
         store = Store(store_name="Auchan")  # Aucun `city` ni `zip_code`
         store.full_clean()
 
+@pytest.mark.parametrize("fields", [("store_name", "city", "zip_code")])
 @pytest.mark.django_db
-def test_store_unique_together_constraint():
-    """ Vérifie qu'on ne peut pas créer deux magasins identiques (`store_name`, `city`, `zip_code`) """
-    Store.objects.create(store_name="Monoprix", city="Lyon", zip_code="69001")
-    
-    with pytest.raises(ValidationError, match="Ce magasin existe déjà."):
-        duplicate_store = Store(store_name="Monoprix", city="Lyon", zip_code="69001")
-        duplicate_store.full_clean()  # Déclenche la validation unique_together 
+def test_unique_constraint_store(fields):
+    """ Vérifie qu'on ne peut pas créer deux magasins identiques (unique_together) """
+    validate_unique_together(Store, "Ce magasin existe déjà.", **{fields[0]: "Monoprix", fields[1]: "Lyon", fields[2]: "69001"})
