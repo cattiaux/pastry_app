@@ -3,9 +3,6 @@ from django.core.exceptions import ValidationError
 from pastry_app.models import Store
 from pastry_app.tests.utils import *
 
-# Définir model_name pour les tests de Store
-model_name = "stores"
-
 @pytest.fixture
 def store():
     """ Crée un magasin par défaut pour les tests. """
