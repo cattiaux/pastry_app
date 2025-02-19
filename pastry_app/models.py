@@ -345,8 +345,6 @@ class Store(models.Model):
             raise ValidationError("Ce magasin existe déjà.")
         
     def save(self, *args, **kwargs):
-        # self.store_name = normalize_case(self.store_name) # Normalisation du nom du magasin
-        # self.city = normalize_case(self.city) # Normalisation du nom de la ville
         self.clean()
         super().save(*args, **kwargs)
 
