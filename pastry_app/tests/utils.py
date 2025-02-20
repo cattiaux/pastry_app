@@ -1,6 +1,7 @@
-import pytest
+import pytest, json
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from rest_framework import status
 
 # Fonctions centrales 
 def validate_constraint(model, field_name, value, expected_error, **valid_data):
@@ -40,9 +41,32 @@ def validate_required_field(model, field_name, expected_error, **valid_data):
     for invalid_value in [None, ""]:
         validate_constraint(model, field_name, invalid_value, expected_error, **valid_data)
 
+def validate_required_field_api(api_client, base_url, model_name, field_name, **valid_data):
+    """ Vérifie qu'un champ est obligatoire au niveau de l’API en testant `None` et `""`. """
+    url = base_url(model_name)
+    error_message = f"Ce champ {field_name} est obligatoire."
+
+    for invalid_value in [None, ""]:  # Teste `None` et `""`
+        data = {**valid_data, field_name: invalid_value}
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert field_name in response.json()
+        assert error_message in response.json()[field_name][0]
+
 def validate_min_length(model, field_name, min_length, expected_error, **valid_data):
     """ Vérifie que le champ respecte une longueur minimale. """
     validate_constraint(model, field_name, "a" * (min_length - 1), expected_error, **valid_data)
+
+def validate_min_length_api(api_client, base_url, model_name, field_name, min_length, **valid_data):
+    """ Vérifie qu'un champ respecte une longueur minimale via l’API. """
+    url = base_url(model_name)
+    error_message = f"Ce champ doit contenir au moins {min_length} caractères."
+
+    response = api_client.post(url, {**valid_data, field_name: "a" * (min_length - 1)})  # Trop court
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert field_name in response.json()
+    assert error_message in response.json()[field_name][0]
 
 def validate_unique_constraint(model, field_name, expected_error, **valid_data):
     """ Vérifie qu’un champ unique ne peut pas être dupliqué (unique=True). """
@@ -53,6 +77,30 @@ def validate_unique_constraint(model, field_name, expected_error, **valid_data):
     with pytest.raises(IntegrityError, match=expected_error):
         model.objects.create(**duplicate_data)
 
+def validate_unique_constraint_api(api_client, base_url, model_name, field_name, **valid_data):
+    """
+    Vérifie qu’un champ unique ne peut pas être dupliqué via l'API.
+
+    - `field_name` → Le champ qui doit être unique.
+    - `valid_data` → Autres champs obligatoires pour éviter une erreur sur des contraintes de validation.
+    """
+    url = base_url(model_name)
+
+    # Assurez-vous que le champ testé est bien dans les données envoyées
+    assert field_name in valid_data, f"Le champ '{field_name}' doit être inclus dans `valid_data`"
+
+    # Création du premier objet (OK)
+    response1 = api_client.post(url, data=json.dumps(valid_data), content_type="application/json")
+    assert response1.status_code == status.HTTP_201_CREATED  # Doit réussir
+
+    # Tentative de création du doublon (DOIT ÉCHOUER)
+    response2 = api_client.post(url, data=json.dumps(valid_data), content_type="application/json")
+    assert response2.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
+
+    # Vérification du message d’erreur (gestion dynamique)
+    assert field_name in response2.json()
+    assert any("unique" in error.lower() for error in response2.json()[field_name])  # Vérifie l'erreur d'unicitéq
+
 def validate_unique_together(model, expected_error, create_initial=True, **valid_data):
     """ Vérifie qu'une contrainte `unique_together` est respectée et empêche la duplication. """
     if create_initial:
@@ -62,6 +110,41 @@ def validate_unique_together(model, expected_error, create_initial=True, **valid
         obj.full_clean()  # Déclenche la ValidationError avant le save
         obj.save()
     assert expected_error in str(excinfo.value)  # Convertir l'erreur en string pour comparaison
+
+def validate_unique_together_api(api_client, base_url, model_name, instance, fields):
+    """ Vérifie qu'une contrainte `unique_together` est respectée en API et empêche la duplication. """
+    url = base_url(model_name)
+    data = {field: getattr(instance, field) for field in fields}  # Extraire dynamiquement les valeurs
+    error_message = "Les valeurs fournies doivent être uniques ensemble."
+
+    # Premier enregistrement (OK)
+    response1 = api_client.post(url, data=json.dumps(data), content_type="application/json")
+    assert response1.status_code == status.HTTP_201_CREATED  # Création réussie
+
+    # Deuxième enregistrement (doit échouer)
+    response2 = api_client.post(url, data=json.dumps(data), content_type="application/json")
+    assert response2.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
+    assert error_message in response2.json().get("non_field_errors", [])  # Vérifier l'erreur attendue
+
+def validate_update_to_duplicate_api(api_client, base_url, model_name, unique_fields, valid_data1, valid_data2):
+    """ Vérifie qu'on ne peut PAS modifier un objet pour lui donner des valeurs déjà existantes sur un autre objet. """
+    url = base_url(model_name)
+
+    # Création de deux objets distincts
+    response1 = api_client.post(url, valid_data1, format="json")
+    response2 = api_client.post(url, valid_data2, format="json")
+
+    assert response1.status_code == status.HTTP_201_CREATED
+    assert response2.status_code == status.HTTP_201_CREATED
+
+    obj_id = response2.json()["id"]  # ID du second objet
+
+    # Tenter de mettre à jour `obj2` avec les valeurs de `obj1`
+    response3 = api_client.patch(f"{url}{obj_id}/", valid_data1, format="json")
+
+    assert response3.status_code == status.HTTP_400_BAD_REQUEST  # Vérifier que la mise à jour est rejetée
+    for field in unique_fields:
+        assert field in response3.json()  # Vérifier que l’erreur concerne bien les champs uniques
 
 def validate_protected_delete(model, related_model, related_field, expected_error, **valid_data):
     """ Vérifie qu'une suppression est bloquée si `on_delete=PROTECT`. """
@@ -74,6 +157,16 @@ def normalize_case(value):
     """ Applique la même normalisation (lowercase) que dans les modèles. """
     return " ".join(value.lower().strip().split()) if value else value
 
+def validate_field_normalization(model, field_name, input_value, **valid_data):
+    """ Vérifie qu’un champ est bien normalisé lors de la création. """
+    valid_data[field_name] = input_value  # Injecter la valeur brute
+    instance = model.objects.create(**valid_data)
+    assert getattr(instance, field_name) == normalize_case(input_value)
 
-
-
+def validate_field_normalization_api(api_client, base_url, model_name, field_name, raw_value, **valid_data):
+    """ Vérifie qu’un champ est bien normalisé après création via l’API. """
+    url = base_url(model_name)
+    valid_data[field_name] = raw_value  # Injecter la valeur brute
+    response = api_client.post(url, valid_data, format="json")
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()[field_name] == normalize_case(raw_value)

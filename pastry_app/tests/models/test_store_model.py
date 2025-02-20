@@ -55,8 +55,20 @@ def test_unique_constraint_store(fields, store):
     validate_unique_together(Store, "Ce magasin existe déjà.", create_initial=False, **valid_data)
 
 @pytest.mark.django_db
-def test_store_requires_city_or_zip_code():
-    """ Vérifie qu'un magasin doit avoir au moins une `city` ou `zip_code` """
+@pytest.mark.parametrize("city, zip_code", [(None, None), ("", "")])
+def test_store_requires_city_or_zip_code(city, zip_code):
+    """ Vérifie qu'un store ne peut pas être créé sans au moins une `city` ou `zip_code` (modèle). """
     with pytest.raises(ValidationError, match="Si un magasin est renseigné, vous devez indiquer une ville ou un code postal."):
-        store = Store(store_name="Auchan")  # Aucun `city` ni `zip_code`
-        store.full_clean()
+        store = Store(store_name="Auchan", city=city, zip_code=zip_code)
+        store.full_clean()  # Déclenche la validation
+
+@pytest.mark.parametrize("field_name, raw_value", [
+    ("store_name", "  MONOPRIX  "),
+    ("city", "  LYON  "),
+])
+@pytest.mark.django_db
+def test_store_fields_are_normalized(field_name, raw_value):
+    """ Vérifie que les champs sont bien normalisés avant stockage en base. """
+    valid_data = {"store_name": "Monoprix", "city": "Lyon", "zip_code": "69001"}  # Valeurs valides par défaut
+    valid_data.pop(field_name)  # Supprimer dynamiquement le champ en cours de test
+    validate_field_normalization(Store, field_name, raw_value, **valid_data)
