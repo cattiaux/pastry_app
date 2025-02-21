@@ -1,7 +1,5 @@
-import pytest, json
-from pastry_app.models import Store
+import pytest
 from rest_framework import status
-from django.core.exceptions import ValidationError
 from pastry_app.tests.base_api_test import api_client, base_url
 from pastry_app.tests.utils import *
 
@@ -43,7 +41,7 @@ def test_min_length_fields_store_api(api_client, base_url, field_name):
 @pytest.mark.django_db
 def test_normalized_fields_store_api(api_client, base_url, field_name, raw_value):
     """ Vérifie que l’API renvoie bien une valeur normalisée. """
-    valid_data = {"store_name": "Monoprix", "city": "Lyon", "zip_code": "69001"}  # Valeurs valides par défaut
+    valid_data = {"store_name": "Monoprix ", "city": "Lyon", "zip_code": "69001"}  # Valeurs valides par défaut
     valid_data.pop(field_name)  # Supprimer dynamiquement le champ en cours de test
     validate_field_normalization_api(api_client, base_url, model_name, field_name, raw_value, **valid_data)
 
