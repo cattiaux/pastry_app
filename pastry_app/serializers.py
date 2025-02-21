@@ -7,6 +7,7 @@ from .utils import get_pan_model, update_related_instances
 from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
 from pastry_app.tests.utils import normalize_case
 from django.utils.timezone import now
+import pdb
 
 class StoreSerializer(serializers.ModelSerializer):
     """ Sérialise les magasins où sont vendus les ingrédients. """
@@ -31,16 +32,20 @@ class StoreSerializer(serializers.ModelSerializer):
 
     def validate_city(self, value):
         """ Normalisation + Vérifie que la ville a au moins 2 caractères """
-        print("Validation de city:", value)
-        value = normalize_case(value) if value else value
+        if not value:  # Gérer None et les valeurs vides
+            return value  # Laisser DRF gérer l'erreur si nécessaire
+
+        value = normalize_case(value)  # Maintenant, on est sûr que value n'est pas None
         if len(value) < 2:
             raise serializers.ValidationError("Le nom de la ville doit contenir au moins 2 caractères.")
         return value
 
     def validate(self, data):
         """ Vérifie qu'au moins une ville (`city`) ou un code postal (`zip_code`) est renseigné. """
-        print("toto toto")
-        if not data.get("city") and not data.get("zip_code"):
+        data["city"] = data.get("city", "") or ""  # Convertit None en ""
+        data["zip_code"] = data.get("zip_code", "") or ""
+
+        if not data["city"] and not data["zip_code"]:
             raise serializers.ValidationError("Si un magasin est renseigné, vous devez indiquer une ville ou un code postal.", code="missing_location")
         return data
 

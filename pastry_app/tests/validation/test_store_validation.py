@@ -64,10 +64,9 @@ def test_update_store_to_duplicate_api(api_client, base_url, fields):
 def test_store_requires_city_or_zip_code_api(api_client, base_url):
     """ Vérifie qu'un store ne peut pas être créé sans au moins une `city` ou `zip_code` en API. """
     url = base_url(model_name)
-    store_data = {"store_name": "Auchan"}  # Manque city et zip_code
+    store_data = {"store_name": "Auchan", "city": None, "zip_code": None}  # Manque city et zip_code
 
     response = api_client.post(url, store_data, format="json")
-    print("Réponse API :", response.json())
     assert response.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
     assert "Si un magasin est renseigné, vous devez indiquer une ville ou un code postal." in response.json().get("non_field_errors", [])
 

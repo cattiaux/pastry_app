@@ -29,8 +29,10 @@ class StoreViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """ Vérifie que le magasin n'existe pas avant de le créer. """
         store_name = normalize_case(request.data.get("store_name", ""))
-        city = request.data.get("city", "").strip()
-        zip_code = request.data.get("zip_code", "").strip()
+        city = request.data.get("city")
+        city = city.strip() if city else ""  # Si 'city' est None alors on transforme None en ""
+        zip_code = request.data.get("zip_code")
+        zip_code = zip_code.strip() if zip_code else ""  # Si 'zip_code' est None alors on transforme None en ""
 
         if Store.objects.filter(store_name=store_name, city=city, zip_code=zip_code).exists():
             return Response({"error": "Ce magasin existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
