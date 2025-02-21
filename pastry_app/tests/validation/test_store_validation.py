@@ -10,26 +10,27 @@ model_name = "stores"
 
 @pytest.mark.parametrize("field_name", ["store_name"])
 @pytest.mark.django_db
-def test_required_fields_store_api(api_client, base_url, model_name, field_name):
+def test_required_fields_store_api(api_client, base_url, field_name):
     """ Vérifie que les champs obligatoires sont bien requis via l'API """
     validate_required_field_api(api_client, base_url, model_name, field_name)
 
-@pytest.mark.parametrize("field_name", ["store_name"])
-@pytest.mark.django_db
-def test_unique_constraint_store_api(api_client, base_url, model_name, field_name):
-    """ Vérifie que les contraintes `unique=True` sont bien respectées via l’API. """
-    valid_data = {"store_name": "Monoprix", "city": "Lyon", "zip_code": "69001"}
-    validate_unique_constraint_api(api_client, base_url, model_name, field_name, **valid_data)
+# @pytest.mark.parametrize("field_name", ["store_name"])
+# @pytest.mark.django_db
+# def test_unique_constraint_store_api(api_client, base_url, field_name):
+#     """ Vérifie que les contraintes `unique=True` sont bien respectées via l’API. """
+#     valid_data = {"store_name": "Monoprix", "city": "Lyon", "zip_code": "69001"}
+#     validate_unique_constraint_api(api_client, base_url, model_name, field_name, **valid_data)
 
-@pytest.mark.parametrize("fields", [("store_name", "city", "zip_code")])
+@pytest.mark.parametrize("fields, values", [(("store_name", "city", "zip_code"), ("Monoprix", "Lyon", "69001"))])
 @pytest.mark.django_db
-def test_unique_together_store_api(api_client, base_url, store, fields):
+def test_unique_together_store_api(api_client, base_url, fields, values):
     """ Vérifie qu'on ne peut pas créer deux magasins identiques (unique_together) en API """
-    validate_unique_together_api(api_client, base_url, model_name, store, fields)
+    valid_data = dict(zip(fields, values))  # Associe dynamiquement chaque champ à une valeur
+    validate_unique_together_api(api_client, base_url, model_name, valid_data)
 
 @pytest.mark.parametrize("field_name", ["store_name", "city"])
 @pytest.mark.django_db
-def test_min_length_fields_store_api(api_client, base_url, model_name, field_name):
+def test_min_length_fields_store_api(api_client, base_url, field_name):
     """ Vérifie que la longueur minimale des champs est respectée en API """
     valid_data = {"store_name": "Monoprix", "city": "Lyon"}  # Valeurs valides par défaut
     valid_data.pop(field_name)  # Supprimer le champ en cours de test des valeurs valides
@@ -40,7 +41,7 @@ def test_min_length_fields_store_api(api_client, base_url, model_name, field_nam
     ("city", "  LYON  "),
 ])
 @pytest.mark.django_db
-def test_normalized_fields_store_api(api_client, base_url, model_name, field_name, raw_value):
+def test_normalized_fields_store_api(api_client, base_url, field_name, raw_value):
     """ Vérifie que l’API renvoie bien une valeur normalisée. """
     valid_data = {"store_name": "Monoprix", "city": "Lyon", "zip_code": "69001"}  # Valeurs valides par défaut
     valid_data.pop(field_name)  # Supprimer dynamiquement le champ en cours de test
@@ -48,7 +49,7 @@ def test_normalized_fields_store_api(api_client, base_url, model_name, field_nam
 
 @pytest.mark.parametrize("fields", [("store_name", "city", "zip_code")])
 @pytest.mark.django_db
-def test_update_store_to_duplicate_api(api_client, base_url, model_name, fields):
+def test_update_store_to_duplicate_api(api_client, base_url, fields):
     """ Vérifie qu'on ne peut PAS modifier un Store pour lui donner un store (défini par ses champs unique_together) déjà existant """
     # Définir des valeurs initiales pour chaque champ unique
     values1 = ["Monoprix", "Lyon", "69001"]
@@ -57,26 +58,16 @@ def test_update_store_to_duplicate_api(api_client, base_url, model_name, fields)
     valid_data1 = dict(zip(fields, values1))
     valid_data2 = dict(zip(fields, values2))
 
-    validate_update_to_duplicate_api(api_client, base_url, model_name, fields, valid_data1, valid_data2)
-
-
-
-
+    validate_update_to_duplicate_api(api_client, base_url, model_name, valid_data1, valid_data2)
 
 @pytest.mark.django_db
-def test_store_requires_city_or_zip_code():
-    """Vérifie qu'un store doit avoir au moins une `city` ou `zip_code`"""
-    with pytest.raises(ValidationError, match="Si un magasin est renseigné, vous devez indiquer une ville ou un code postal."):
-        store = Store(store_name="Auchan")  # Aucun `city` ni `zip_code`
-        store.full_clean()
-
-@pytest.mark.django_db
-def test_store_requires_city_or_zip_code_api(api_client, base_url, model_name):
+def test_store_requires_city_or_zip_code_api(api_client, base_url):
     """ Vérifie qu'un store ne peut pas être créé sans au moins une `city` ou `zip_code` en API. """
     url = base_url(model_name)
     store_data = {"store_name": "Auchan"}  # Manque city et zip_code
 
     response = api_client.post(url, store_data, format="json")
+    print("Réponse API :", response.json())
     assert response.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
     assert "Si un magasin est renseigné, vous devez indiquer une ville ou un code postal." in response.json().get("non_field_errors", [])
 

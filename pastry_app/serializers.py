@@ -10,8 +10,13 @@ from django.utils.timezone import now
 
 class StoreSerializer(serializers.ModelSerializer):
     """ Sérialise les magasins où sont vendus les ingrédients. """
-    city = serializers.CharField(required=False, allow_blank=True)
-    zip_code = serializers.CharField(required=False, allow_blank=True)
+    store_name = serializers.CharField(
+        required=True,  # Champ obligatoire
+        allow_blank=False,  # Interdit ""
+        error_messages={"blank": "This field cannot be blank.", "required": "This field is required.", "null": "This field may not be null."}
+    )
+    city = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    zip_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)    
 
     class Meta:
         model = Store
@@ -26,10 +31,18 @@ class StoreSerializer(serializers.ModelSerializer):
 
     def validate_city(self, value):
         """ Normalisation + Vérifie que la ville a au moins 2 caractères """
+        print("Validation de city:", value)
         value = normalize_case(value) if value else value
         if len(value) < 2:
             raise serializers.ValidationError("Le nom de la ville doit contenir au moins 2 caractères.")
         return value
+
+    def validate(self, data):
+        """ Vérifie qu'au moins une ville (`city`) ou un code postal (`zip_code`) est renseigné. """
+        print("toto toto")
+        if not data.get("city") and not data.get("zip_code"):
+            raise serializers.ValidationError("Si un magasin est renseigné, vous devez indiquer une ville ou un code postal.", code="missing_location")
+        return data
 
 class IngredientPriceSerializer(serializers.ModelSerializer):
     date = serializers.DateField(input_formats=['%Y-%m-%d'])
