@@ -89,6 +89,7 @@ def test_update_store_field(api_client, base_url, setup_store, field_name, new_v
     updated_data = {field_name: new_value}
 
     response = api_client.patch(url, updated_data, format="json")
+    print("Réponse API :", response.json()) 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()[field_name] == normalize_case(new_value)
 

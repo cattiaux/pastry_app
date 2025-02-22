@@ -42,6 +42,10 @@ class StoreSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """ Vérifie qu'au moins une ville (`city`) ou un code postal (`zip_code`) est renseigné. """
+        # Si c'est un PATCH (mise à jour partielle), ne pas valider les champs absents
+        if self.partial:
+            return data
+    
         data["city"] = data.get("city", "") or ""  # Convertit None en ""
         data["zip_code"] = data.get("zip_code", "") or ""
 
