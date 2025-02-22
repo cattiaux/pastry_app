@@ -227,7 +227,13 @@ class IngredientSerializer(serializers.ModelSerializer):
             if label.id not in existing_labels_ids:
                 raise serializers.ValidationError(f"Le label '{label.label_name}' n'existe pas. Veuillez le créer d'abord.")
         return value
-    
+
+    def validate(self, data):
+        """ Permet de ne pas valider les champs absents dans le cas d'un PATCH. """
+        if self.partial:
+            return data
+        return data
+
     def to_representation(self, instance):
         """ Assure que l'affichage dans l'API est bien normalisé """
         representation = super().to_representation(instance)
