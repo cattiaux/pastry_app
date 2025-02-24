@@ -61,13 +61,27 @@ def test_get_store(api_client, base_url, setup_store):
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["store_name"] == setup_store.store_name
 
+@pytest.mark.parametrize("additional_stores", [
+    [{"store_name": "Monoprix", "city": "Lyon", "zip_code": "69001"},
+     {"store_name": "Carrefour", "zip_code": "75001"}, # Sans `city`
+     {"store_name": "Intermarché", "city": "Toulouse"}]  # Sans `zip_code`
+])
 @pytest.mark.django_db
-def test_get_store_list(api_client, base_url, setup_store):
+def test_get_store_list(api_client, base_url, setup_store, additional_stores):
     """Vérifie qu'on peut récupérer la liste des magasins via `GET /stores/`."""
     url = base_url(model_name)
+    # Création des magasins additionnels
+    for store_data in additional_stores:
+        Store.objects.create(**store_data)
+
     response = api_client.get(url)
     assert response.status_code == status.HTTP_200_OK
-    assert any(s["store_name"] == setup_store.store_name for s in response.json())
+    data = response.json()
+
+    # Vérification que chaque magasin attendu est bien retourné
+    all_stores = additional_stores + [{"store_name": setup_store.store_name, "city": setup_store.city, "zip_code": setup_store.zip_code}]
+    for store_data in all_stores:
+        assert any(s["store_name"] == normalize_case(store_data["store_name"]) for s in data)
 
 @pytest.mark.django_db
 def test_get_nonexistent_store(api_client, base_url):

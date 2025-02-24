@@ -117,3 +117,12 @@ PAN_MODELS = {db_type: globals()[model_type + 'Pan'] for db_type, model_type in 
 
 def get_pan_model(pan_type):
     return PAN_MODELS.get(pan_type.upper())
+
+MODEL_NAME_MAPPING = {
+    "store": "stores",
+    "ingredient": "ingredients",
+    "category": "categories",
+    "label": "labels",
+    "ingredient_price": "ingredient_prices",
+    # Ajoute d'autres modèles ici au besoin
+}

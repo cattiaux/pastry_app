@@ -2,6 +2,7 @@ import pytest
 from rest_framework import status
 from pastry_app.tests.base_api_test import api_client, base_url
 from pastry_app.tests.utils import *
+from pastry_app.serializers import IngredientSerializer, IngredientPriceSerializer, StoreSerializer
 
 # Définir model_name pour les tests de Store
 model_name = "stores"
@@ -58,6 +59,19 @@ def test_update_store_to_duplicate_api(api_client, base_url, fields):
 
     validate_update_to_duplicate_api(api_client, base_url, model_name, valid_data1, valid_data2)
 
+@pytest.mark.parametrize("related_models", [
+    [
+        ("stores", StoreSerializer, {}, {"store_name": "Auchan", "city": "Paris", "zip_code": None}),
+        ("ingredients", IngredientSerializer, {}, {"ingredient_name": "blabla"}),
+        ("ingredient_prices", IngredientPriceSerializer, {"store": "stores", "ingredient": "ingredients"}, {"price": 2.5, "date": "2024-02-20", "quantity": 1, "unit": "kg"}),
+    ]
+])
+@pytest.mark.django_db
+def test_delete_store_used_in_prices(api_client, base_url, related_models):
+    """ Vérifie qu'un Store utilisé dans des prix d'ingrédients ne peut pas être supprimé. """
+    expected_error = "Ce magasin est associé à des prix d'ingrédients et ne peut pas être supprimé."
+    validate_protected_delete_api(api_client, base_url, model_name, related_models, expected_error)
+
 @pytest.mark.django_db
 def test_store_requires_city_or_zip_code_api(api_client, base_url):
     """ Vérifie qu'un store ne peut pas être créé sans au moins une `city` ou `zip_code` en API. """
@@ -68,3 +82,14 @@ def test_store_requires_city_or_zip_code_api(api_client, base_url):
     assert response.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
     assert "Si un magasin est renseigné, vous devez indiquer une ville ou un code postal." in response.json().get("non_field_errors", [])
 
+@pytest.mark.parametrize("field_name, mode", [
+    ("city", "empty"),
+    ("zip_code", "empty"),
+    ("city", "none"),
+    ("zip_code", "none"),
+])
+@pytest.mark.django_db
+def test_optional_fields_can_be_empty_or_none(api_client, base_url, field_name, mode):
+    """ Vérifie que `city` et `zip_code` peuvent être `""` ou `None`, selon le mode. """
+    valid_data = {"store_name": "Auchan", "city": "Marseille", "zip_code": "13001"}  # Données valides
+    validate_optional_field_value_api(api_client, base_url, model_name, field_name, mode, **valid_data)

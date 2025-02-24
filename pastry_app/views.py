@@ -56,11 +56,20 @@ class IngredientPriceViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """ Vérifie que le prix n'existe pas déjà avant création. """
-        ingredient_id = request.data.get("ingredient")
+        ingredient_slug = request.data.get("ingredient")
         store_id = request.data.get("store")
         date = request.data.get("date")
         price = request.data.get("price")
 
+        # Convertir le slug en id
+        ingredient_id = None
+        if ingredient_slug:
+            try:
+                ingredient_id = Ingredient.objects.get(ingredient_name=ingredient_slug).id 
+            except Ingredient.DoesNotExist: 
+                return Response({"error": "Cet ingrédient n'existe pas."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Vérification d'un prix existant
         if IngredientPrice.objects.filter(ingredient_id=ingredient_id, store_id=store_id, date=date, price=price).exists():
             return Response({"error": "Un prix identique est déjà enregistré pour cet ingrédient à cette date."},
                             status=status.HTTP_400_BAD_REQUEST)
@@ -111,6 +120,7 @@ class IngredientViewSet(viewsets.ModelViewSet):
         """ Normaliser le nom de l'ingrédient et empêcher les doublons """
         data = request.data.copy()  # On crée une copie modifiable de request.data
         ingredient_name = normalize_case(data.get("ingredient_name", ""))
+
         # Vérifier si l'ingrédient existe déjà AVANT toute validation
         if Ingredient.objects.filter(ingredient_name__iexact=ingredient_name).exists():
             return Response({"ingredient_name": "Cet ingrédient existe déjà."}, status=status.HTTP_400_BAD_REQUEST)

@@ -174,3 +174,71 @@ Préparation pour la Production
             ◦ Double protection :
                 ◦ Vérification au niveau API (destroy() dans IngredientViewSet).
                 ◦ Vérification en base (PROTECT sur RecipeIngredient.ingredient).
+
+
+
+
+
+Synthèse des Contraintes pour le Modèle Store
+
+
+Création	
+Vérifie la création d’un magasin	✅	test_store_model.py / test_store.py
+Vérifie la normalisation du store_name	✅	test_store_model.py / test_store_validation.py
+Vérifie qu’on ne peut pas créer un magasin en doublon	✅	test_store_model.py / test_store_validation.py / test_store.py
+Vérifie qu’un store doit avoir soit city, soit zip_code	✅	test_store_model.py / test_store_validation.py
+Lecture	
+Récupération d’un magasin existant	✅	test_store.py
+Vérifie qu’un GET sur un store inexistant retourne une erreur 404	✅	test_store.py
+Mise à jour	
+Vérifie la modification d’un champ unique (store_name, city, zip_code)	✅	test_store.py
+Vérifie qu’on ne peut pas modifier un store pour en faire un doublon	✅	test_store_validation.py / test_store.py
+Suppression	
+Vérifie qu’on peut supprimer un magasin existant	✅	test_store_model.py / test_store.py
+Vérifie qu’une tentative de suppression d’un magasin inexistant retourne une erreur 404	✅	test_store.py
+
+
+        CONTRAINTES	                                                                 TEST CORRESPONDANT
+Création d’un store valide	                                                -> test_create_store
+Un store doit contenir store_name et soit 'city', soit 'zip_code'        	-> test_store_requires_city_or_zip_code
+Un 'store_name' doit être unique avec 'city' et 'zip_code'	                -> test_unique_together_store_api
+Un 'store_name' ne peut pas être vide	                                    -> test_required_fields_store_api
+Un 'store_name' et 'city' sont normalisés                                   -> test_normalized_fields_store_api
+
+
+Contraintes Métier:
+1. Nom du Magasin (store_name)
+    ◦ Obligatoire
+    ◦ Doit contenir au moins 2 caractères
+    ◦ Normalisé en minuscule sans espaces superflus
+    ◦ Doit être unique en combinaison avec city et zip_code
+2. Ville (city) et Code Postal (zip_code)
+    ◦ Peuvent être vides mais au moins l'un des deux doit exister
+    ◦ Normalisation en minuscule sans espaces superflus
+3. Unicité
+    ◦ Un magasin avec store_name, city, zip_code identiques ne peut pas exister deux fois
+
+
+Contraintes Techniques:
+1. Type de Donnée
+    ◦ store_name : CharField(max_length=200, unique_together)
+    ◦ city : CharField(max_length=100, nullable)
+    ◦ zip_code : CharField(max_length=10, nullable)
+2. Indexation	
+    ◦ Index sur (store_name, city, zip_code) pour améliorer les requêtes
+
+Contraintes d’Intégrité :
+1. Références :
+    ◦ Store est liée au modèle IngredientPrice.
+2. Cohérence des Données :
+    ◦ Unicité d’un store : Vérifié en API et base (unique_together)
+    ◦ Suppression : Vérifié via les tests CRUD
+    ◦ Normalisation des noms : Vérifié via test_store_fields_are_normalized
+
+Préparation à la Production : 
+1. Validation stricte
+    ◦ unique_together protège contre les doublons
+    ◦ API empêche la création de magasins invalides
+2. Sécurisation des Données
+    ◦ Vérification des entrées avant insertion en base
+    ◦ Suppression sécurisée sans effet de bord

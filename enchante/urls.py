@@ -15,13 +15,14 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.urls import path, include
-from pastry_app.views import RecipeViewSet, IngredientViewSet, IngredientDeleteView, RecipeDeleteView, PanViewSet, PanDeleteView, CategoryViewSet, LabelViewSet, StoreViewSet
+from pastry_app.views import RecipeViewSet, IngredientViewSet, IngredientDeleteView, RecipeDeleteView, PanViewSet, PanDeleteView, CategoryViewSet, LabelViewSet, StoreViewSet, IngredientPriceViewSet
 from rest_framework.routers import DefaultRouter
 from django.contrib import admin
 
 router = DefaultRouter()
 router.register(r'recipes', RecipeViewSet)
 router.register(r'ingredients', IngredientViewSet)
+router.register(r'ingredient_prices', IngredientPriceViewSet)
 router.register(r'pans', PanViewSet, basename='pans')
 router.register(r'categories', CategoryViewSet) 
 router.register(r'labels', LabelViewSet) 

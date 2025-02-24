@@ -1,7 +1,9 @@
-import pytest, json
+import pytest, json, importlib
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from rest_framework import status
+from django.apps import apps
+from rest_framework import status, serializers
+# from pastry_app.serializers import IngredientSerializer, IngredientPriceSerializer, StoreSerializer
 
 # Fonctions centrales 
 def validate_constraint(model, field_name, value, expected_error, **valid_data):
@@ -49,7 +51,7 @@ def validate_required_field_api(api_client, base_url, model_name, field_name, **
     for invalid_value in [None, ""]:  # Teste `None` et `""`
         data = {**valid_data, field_name: invalid_value}
         response = api_client.post(url, data, format="json")
-        
+
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert field_name in response.json()
         # Vérifier si l'erreur retournée correspond à l'une des erreurs attendues
@@ -153,8 +155,10 @@ def validate_protected_delete(model, related_model, related_field, expected_erro
         obj.delete()
 
 def normalize_case(value):
-    """ Applique la même normalisation (lowercase) que dans les modèles. """
-    return " ".join(value.lower().strip().split()) if value else value
+    """ Normalise une chaîne en supprimant les espaces superflus et en la mettant en minuscule. """
+    if isinstance(value, str):  # Vérifie que c'est bien une chaîne
+        return " ".join(value.strip().lower().split())  
+    return value  # Retourne la valeur telle quelle si ce n'est pas une chaîne
 
 def validate_field_normalization(model, field_name, input_value, **valid_data):
     """ Vérifie qu’un champ est bien normalisé lors de la création. """
@@ -169,3 +173,105 @@ def validate_field_normalization_api(api_client, base_url, model_name, field_nam
     response = api_client.post(url, valid_data, format="json")
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()[field_name] == normalize_case(raw_value)
+
+def validate_optional_field_value_api(api_client, base_url, model_name, field_name, mode="both", **valid_data):
+    """
+    Vérifie qu'un champ optionnel peut être vide (`""`) ou `None`, en fonction du `mode`.
+    
+    - `mode="empty"` → Teste uniquement `""`
+    - `mode="none"` → Teste uniquement `None`
+    - `mode="both"` → Teste `""` et `None`
+    """
+    url = base_url(model_name)
+
+    test_values = []
+    if mode in ["both", "empty"]:
+        test_values.append("")
+    if mode in ["both", "none"]:
+        test_values.append(None)
+
+    for value in test_values:
+        valid_data[field_name] = value
+        response = api_client.post(url, valid_data, format="json")
+        
+        assert response.status_code == status.HTTP_201_CREATED  # Doit réussir
+        assert response.json()[field_name] == (value if value is not None else "")  # Vérification
+
+def get_serializer_for_model(model_name):
+    """ Récupère dynamiquement le serializer correspondant au modèle donné, sans import direct. """
+    serializers_module = importlib.import_module("pastry_app.serializers")  # Charger le module des serializers
+    serializer_map = {"ingredients": "IngredientSerializer", "ingredient_prices": "IngredientPriceSerializer", "stores": "StoreSerializer"}
+
+    serializer_class_name = serializer_map.get(model_name)
+    if serializer_class_name:
+        return getattr(serializers_module, serializer_class_name, None)
+
+    return None  # Retourne None si le serializer n'existe pas
+
+def get_field_type(serializer, field_name):
+    """ Détermine le type attendu pour un champ relationnel dans un serializer. """
+    field = serializer.fields.get(field_name)
+    if isinstance(field, serializers.PrimaryKeyRelatedField):
+        return "id", None
+    elif isinstance(field, serializers.SlugRelatedField):
+        return "slug", field.slug_field # On retourne aussi le slug_field défini
+    elif isinstance(field, serializers.ModelSerializer) or isinstance(field, serializers.ListSerializer):
+        return "json", None
+    return "unknown"
+
+def create_related_models_api(api_client, base_url, related_models):
+    """ 
+    Crée dynamiquement des objets liés.
+    
+    - `related_models` → Liste de tuples contenant :
+        (nom du modèle lié (pluriel), serializer, dict des relations, données associées).
+    """
+    created_instances = {}  # Stocke les objets créés
+
+    for related_model_name, serializer_class, relation_mapping, related_data in related_models:
+        serializer = serializer_class()  # Serializer associé au modèle
+
+        # Associer dynamiquement les champs relationnels en fonction de leur type
+        for field, related_model in relation_mapping.items():
+            if related_model in created_instances:  # Vérifier si l'instance liée existe déjà
+                expected_type, slug_field = get_field_type(serializer, field)
+
+                if expected_type == "id":
+                    related_data[field] = created_instances[related_model]["id"]
+                elif expected_type == "slug":
+                    related_data[field] = created_instances[related_model][slug_field]
+                elif expected_type == "json":
+                    related_data[field] = created_instances[related_model]
+                else:
+                    raise ValueError(f"Type inconnu '{expected_type}' pour {field} dans {related_model_name}")
+
+        # Création via API
+        related_url = base_url(related_model_name)
+        response = api_client.post(related_url, related_data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED, f"Erreur lors de la création de {related_model_name}: {response.json()}"
+
+        # Stocker l'objet créé
+        created_instances[related_model_name] = response.json()
+
+    return created_instances
+
+def validate_protected_delete_api(api_client, base_url, main_model_name, related_models, expected_error):
+    """
+    Vérifie qu'un objet ne peut pas être supprimé via l'API s'il est référencé dans un ou plusieurs modèles.
+
+    - `main_model_name` → Nom du modèle principal (pluriel).
+    - `related_models` → Liste de tuples contenant :
+        (nom du modèle lié (pluriel), serializer, dict des relations, données associées).
+    - `expected_error` → Message d'erreur attendu.
+    """
+    # Étape 1 : Création de l'objet principal et des objets liés
+    created_instances = create_related_models_api(api_client, base_url, related_models)
+
+    # Étape 2 : Récupération de l'objet principal
+    main_obj_id = created_instances[main_model_name]["id"] # Récupération de l'ID du modèle principal
+    main_url = f"{base_url(main_model_name)}{main_obj_id}/"
+
+    # Étape 3 : Tentative de suppression de l'objet principal
+    response_delete = api_client.delete(main_url)
+    assert response_delete.status_code == status.HTTP_400_BAD_REQUEST, (f"La suppression de {main_model_name} aurait dû être interdite, mais a réussi !")
+    assert expected_error in response_delete.json().get("error", ""), (f"Le message d'erreur attendu ('{expected_error}') n'a pas été trouvé dans {response_delete.json()}.")

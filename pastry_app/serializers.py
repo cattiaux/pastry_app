@@ -7,7 +7,6 @@ from .utils import get_pan_model, update_related_instances
 from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
 from pastry_app.tests.utils import normalize_case
 from django.utils.timezone import now
-import pdb
 
 class StoreSerializer(serializers.ModelSerializer):
     """ Sérialise les magasins où sont vendus les ingrédients. """
@@ -55,7 +54,8 @@ class StoreSerializer(serializers.ModelSerializer):
 
 class IngredientPriceSerializer(serializers.ModelSerializer):
     date = serializers.DateField(input_formats=['%Y-%m-%d'])
-    store = StoreSerializer() # Sérialisation imbriquée des magasins
+    ingredient = serializers.SlugRelatedField(queryset=Ingredient.objects.all(), slug_field="ingredient_name")
+    store = serializers.PrimaryKeyRelatedField(queryset=Store.objects.all())
 
     class Meta:
         model = IngredientPrice
