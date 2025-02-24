@@ -361,9 +361,6 @@ class IngredientPrice(models.Model):
     is_promo = models.BooleanField(default=False)  # Indique si c'est un prix promo
     promotion_end_date = models.DateField(null=True, blank=True)  # Date de fin de promo, Facultatif
 
-    # class Meta:
-    #     unique_together = ("ingredient", "brand", "store", "date")
-
     def __str__(self):
         """ Affichage clair du prix de l’ingrédient """
         promo_text = " (Promo)" if self.is_promo else ""
