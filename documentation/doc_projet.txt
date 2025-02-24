@@ -88,11 +88,6 @@ tests/
 │── crud/  → Tests CRUD via API (`test_category.py`, `test_ingredient.py`, etc.)
 │── base_api_test.py  → Classe `BaseAPITest` pour factoriser les tests API
 
-Tests réalisés :
 
-Type de test     | Fichier concerné	                                            | Ce qui est testé
-Tests modèles    |	test_category_model.py, test_ingredient_model.py            |  Création, suppression, __str__(), unicité…
-Tests validation |	test_category_validation.py, test_ingredient_validation.py  |  full_clean(), contraintes (blank=False, unique=True)
-Tests API (CRUD) |	test_category.py, test_ingredient.py                        |  Création, modification, suppression via l’API
 
 """
