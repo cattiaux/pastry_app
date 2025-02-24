@@ -118,7 +118,7 @@ PAN_MODELS = {db_type: globals()[model_type + 'Pan'] for db_type, model_type in 
 def get_pan_model(pan_type):
     return PAN_MODELS.get(pan_type.upper())
 
-MODEL_NAME_MAPPING = {
+MODEL_TO_URL_MAPPING = {
     "store": "stores",
     "ingredient": "ingredients",
     "category": "categories",
@@ -126,3 +126,7 @@ MODEL_NAME_MAPPING = {
     "ingredient_price": "ingredient_prices",
     # Ajoute d'autres modèles ici au besoin
 }
+
+def get_api_url_name(model_name):
+    """ Renvoie le nom utilisé dans l'URL d'API pour un modèle donné. """
+    return MODEL_TO_URL_MAPPING.get(model_name, f"{model_name}s")  # Fallback en ajoutant "s"

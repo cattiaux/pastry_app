@@ -67,7 +67,7 @@ def test_store_requires_city_or_zip_code(city, zip_code):
     ("city", "  LYON  "),
 ])
 @pytest.mark.django_db
-def test_store_fields_are_normalized(field_name, raw_value):
+def test_normalized_fields_store(field_name, raw_value):
     """ Vérifie que les champs sont bien normalisés avant stockage en base. """
     valid_data = {"store_name": "Monoprix", "city": "Lyon", "zip_code": "69001"}  # Valeurs valides par défaut
     valid_data.pop(field_name)  # Supprimer dynamiquement le champ en cours de test
