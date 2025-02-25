@@ -376,11 +376,19 @@ class IngredientPrice(models.Model):
             self.date = now().date()  # Assigner la date du jour par défaut
 
         # Vérifier que les prix et les quantités sont positifs
-        if self.price and self.price <= 0:
+        if self.price is not None and self.price <= 0:
             raise ValidationError("Un ingrédient doit avoir un prix strictement supérieur à 0€.")
-        if self.quantity and self.quantity <= 0:
+        if self.quantity is not None and self.quantity <= 0:
             raise ValidationError("Une quantité ne peut pas être négative ou nulle.")
+        
+        # Vérifie que le nom de la marque a une longueur minimale
+        if len(self.brand_name) < 2:
+            raise ValidationError("Le nom du magasin doit contenir au moins 2 caractères.")
 
+        # Normaliser la marque
+        if self.brand_name:
+            self.brand_name = normalize_case(self.brand_name)
+        
         # Vérifier que `unit` est bien dans `UNIT_CHOICES`
         valid_units = dict(UNIT_CHOICES).keys()  # Récupérer les clés valides
         if self.unit not in valid_units:
@@ -403,9 +411,6 @@ class IngredientPrice(models.Model):
 
     def save(self, *args, **kwargs):
         self.clean()
-        # Normaliser la marque
-        if self.brand_name:
-            self.brand_name = normalize_case(self.brand_name)
 
         filters = {"ingredient": self.ingredient}
         if self.store:  # Vérifier uniquement si un store est défini
