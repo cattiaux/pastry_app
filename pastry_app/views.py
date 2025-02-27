@@ -56,15 +56,15 @@ class IngredientPriceViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """ Vérifie que l'ingrédient existe avant de créer un prix. """
-        ingredient_slug = request.data.get("ingredient")
+        # print("Données reçues par DRF (request.data) :", request.data)
 
+        ingredient_slug = request.data.get("ingredient")
         # Convertir le slug en id
         if ingredient_slug:
             try:
                 Ingredient.objects.get(ingredient_name=ingredient_slug)  # Vérification seulement, pas besoin de stocker l'id
             except Ingredient.DoesNotExist:
                 return Response({"error": "Cet ingrédient n'existe pas."}, status=status.HTTP_400_BAD_REQUEST)
-
         return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):

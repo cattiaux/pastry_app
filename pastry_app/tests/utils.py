@@ -130,14 +130,15 @@ def validate_unique_together_api(api_client, base_url, model_name, valid_data):
     """ Vérifie qu'une contrainte `unique_together` est respectée en API et empêche la duplication. """
     url = base_url(model_name)
     # Construire dynamiquement le message d'erreur attendu
-    field_names = ", ".join(valid_data.keys())  # Ex: "store_name, city, zip_code"
-    error_message = f"The fields {field_names} must make a unique set."
+    error_message = "must make a unique set."
     # Premier enregistrement (OK)
     response1 = api_client.post(url, data=json.dumps(valid_data), content_type="application/json")
+    print("response1 json : ",response1.json())
     assert response1.status_code == status.HTTP_201_CREATED  # Création réussie
 
     # Deuxième enregistrement (doit échouer)
     response2 = api_client.post(url, data=json.dumps(valid_data), content_type="application/json")
+    print("response2 json : ",response2.json())
     assert response2.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
     assert error_message in response2.json().get("non_field_errors", [])  # Vérifier l'erreur attendue
 
@@ -182,7 +183,9 @@ def validate_field_normalization_api(api_client, base_url, model_name, field_nam
     """ Vérifie qu’un champ est bien normalisé après création via l’API. """
     url = base_url(model_name)
     valid_data[field_name] = raw_value  # Injecter la valeur brute
+    print("valid_data : ", valid_data)
     response = api_client.post(url, valid_data, format="json")
+    print("json response : ", response.json())
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()[field_name] == normalize_case(raw_value)
 

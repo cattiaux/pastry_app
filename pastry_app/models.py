@@ -1,6 +1,7 @@
 from math import pi
 from django.db import models
 from django.core.validators import MinValueValidator
+from django.utils import timezone
 from django.utils.timezone import now
 from .constants import UNIT_CHOICES, CATEGORY_TYPE_MAP, LABEL_TYPE_MAP
 from django.core.exceptions import ValidationError
@@ -350,13 +351,12 @@ class Store(models.Model):
 
 class IngredientPrice(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name="prices")
-    brand_name = models.TextField(max_length=200, null=True, blank=True)
+    brand_name = models.TextField(max_length=200, null=True, blank=True, default=None)
     store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name="prices", null=True, blank=True)
-
     quantity = models.FloatField(validators=[MinValueValidator(0)])       # Quantité
     unit = models.TextField(max_length=50, choices=UNIT_CHOICES)          # Unité de mesure
     price = models.FloatField(validators=[MinValueValidator(0)])          # Prix normal
-    date = models.DateField(null=True, blank=True, default="2025-01-01")  # Date d'enregistrement du prix
+    date = models.DateField(null=True, blank=True, default=timezone.now)    # Date d'enregistrement du prix
 
     is_promo = models.BooleanField(default=False)  # Indique si c'est un prix promo
     promotion_end_date = models.DateField(null=True, blank=True)  # Date de fin de promo, Facultatif
@@ -369,6 +369,7 @@ class IngredientPrice(models.Model):
 
     def clean(self):
         """ Validation des contraintes métier avant sauvegarde """
+        print("on est ici dans clean() du models !!!!!!!!!!")
         # Vérifier que les champs obligatoires sont remplis
         if self.price is None or self.quantity is None or self.unit is None:
             raise ValidationError("Le prix, la quantité et l'unité de mesure sont obligatoires.")

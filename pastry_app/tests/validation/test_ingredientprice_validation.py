@@ -77,10 +77,12 @@ def test_normalized_fields_ingredientprice_api(api_client, base_url, field_name,
     valid_data = {"ingredient": ingredient.ingredient_name, "store": store.id, "price": 2.5, "quantity": 1, "unit": "kg"}  # Valeurs valides
     validate_field_normalization_api(api_client, base_url, model_name, field_name, raw_value, **valid_data)
 
-@pytest.mark.parametrize(("fields", "values"), [(("ingredient", "store", "quantity", "price", "unit"), (1, 1, 1, 2.5, "kg"))])
+@pytest.mark.parametrize(("fields"), [("ingredient", "store", "quantity", "price", "unit")])
 @pytest.mark.django_db
-def test_unique_together_ingredientprice_api(api_client, base_url, fields, values):
+def test_unique_together_ingredientprice_api(api_client, base_url, fields, ingredient_price):
     """ Vérifie qu'on ne peut pas créer deux `IngredientPrice` identiques via l’API (unique_together). """
+    # Utilisation des fixtures pour obtenir les valeurs dynamiques
+    values = (ingredient_price.ingredient.ingredient_name, ingredient_price.store.id, 10, 100, "kg")
     valid_data = dict(zip(fields, values))  # Associe dynamiquement chaque champ à une valeur
     validate_unique_together_api(api_client, base_url, model_name, valid_data)
 

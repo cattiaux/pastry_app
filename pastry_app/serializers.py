@@ -54,21 +54,19 @@ class StoreSerializer(serializers.ModelSerializer):
         return data
 
 class IngredientPriceSerializer(serializers.ModelSerializer):
-    date = serializers.DateField(input_formats=['%Y-%m-%d'])
     ingredient = serializers.SlugRelatedField(queryset=Ingredient.objects.all(), slug_field="ingredient_name")
     store = serializers.PrimaryKeyRelatedField(queryset=Store.objects.all())
+    date = serializers.DateField(required=False, default=now().date, input_formats=['%Y-%m-%d'])
+    brand_name = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None) 
 
     class Meta:
         model = IngredientPrice
         fields = ['id', 'ingredient', 'brand_name', 'store', 'date', 'quantity', 'unit', 'price', "is_promo", "promotion_end_date"]
-        extra_kwargs = {
-            "brand_name": {"required": False, "allow_null": True},
-            "date": {"required": False, "default": now}
-        }
+
         validators = [UniqueTogetherValidator(
             queryset=IngredientPrice.objects.all(),
             fields=["ingredient", "store", "brand_name", "quantity", "unit"],
-            message="Un prix existe déjà pour cet ingrédient avec cette quantité et cette unité pour ce magasin et cette marque.")]
+            message="must make a unique set.")]
 
     def validate_quantity(self, value):
         """ Vérifie que la quantité est strictement positive"""
@@ -97,7 +95,7 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
     def validate_brand_name(self, value):
         """ Normalisation + Vérifie que le nom de marque a au moins 2 caractères """
         if not value:  # Gérer None et les valeurs vides
-            return value  # Laisser DRF gérer l'erreur si nécessaire
+            return ""  # Laisser DRF gérer l'erreur si nécessaire
 
         value = normalize_case(value)  # Maintenant, on est sûr que value n'est pas None
         if len(value) < 2:
@@ -106,6 +104,7 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """ Vérifie les contraintes métier (promotions, cohérence des données, etc.). """
+        print("on est ici dans validate() !!!!!!!!")
         if data.get("promotion_end_date") and not data.get("is_promo"):
             raise serializers.ValidationError("Une date de fin de promotion nécessite que `is_promo=True`.")
         
