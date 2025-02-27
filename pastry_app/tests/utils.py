@@ -13,6 +13,31 @@ def validate_constraint(model, field_name, value, expected_error, **valid_data):
         obj = model(**valid_data)
         obj.full_clean() # Déclenche clean() pour vérifier la contrainte
 
+def validate_constraint_api(api_client, base_url, model_name, field_name, expected_errors, **valid_data):
+    """
+    Teste qu'une contrainte sur un champ (`field_name`) est bien appliquée via l'API.
+
+    - `api_client` : Client de test DRF.
+    - `base_url` : Fonction qui retourne l'URL de l'API.
+    - `model_name` : Nom du modèle utilisé dans l'API.
+    - `field_name` : Champ à tester.
+    - `expected_errors` peut être un `str` (un seul message) ou une `list` (plusieurs erreurs possibles).
+    - `valid_data` : Données valides par défaut.
+    """
+    url = base_url(model_name)  # Récupérer l'URL de création de l'objet
+    response = api_client.post(url, valid_data, format="json")  # Envoyer la requête POST
+
+    # Vérifier que l'API renvoie bien une erreur 400
+    assert response.status_code == status.HTTP_400_BAD_REQUEST, f"Attendu 400, obtenu {response.status_code} : {response.json()}"
+    # Vérifier que l'erreur est bien retournée sur le bon champ
+    assert field_name in response.json(), f"L'erreur pour `{field_name}` n'a pas été trouvée dans la réponse : {response.json()}"
+    # Vérifier si au moins UNE des erreurs attendues est présente
+    actual_error = response.json()[field_name][0]
+    if isinstance(expected_errors, list):  # Plusieurs erreurs possibles
+        assert any(error in actual_error for error in expected_errors), f"Aucune des erreurs attendues `{expected_errors}` ne correspond à `{actual_error}`"
+    else:  # Une seule erreur attendue
+        assert expected_errors in actual_error, f"Erreur attendue `{expected_errors}`, mais obtenue `{actual_error}`"
+
 def validate_model_str(model, expected_str, **valid_data):
     """ Vérifie que la méthode `__str__()` du modèle retourne la bonne valeur. """
     obj = model.objects.create(**valid_data)
@@ -38,38 +63,25 @@ def validate_delete_object(model, **valid_data):
     assert not model.objects.filter(id=obj.id).exists(), "L'objet n'a pas été supprimé."
 
 # Vérifications générales sur les champs
-def validate_required_field(model, field_name, expected_error, **valid_data):
-    """ Vérifie qu'un champ obligatoire ne peut pas être vide ou nul. """
-    for invalid_value in [None, ""]:
-        validate_constraint(model, field_name, invalid_value, expected_error, **valid_data)
+# def validate_required_field(model, field_name, expected_error, **valid_data):
+#     """ Vérifie qu'un champ obligatoire ne peut pas être vide ou nul. """
+#     for invalid_value in [None, ""]:
+#         validate_constraint(model, field_name, invalid_value, expected_error, **valid_data)
 
-def validate_required_field_api(api_client, base_url, model_name, field_name, **valid_data):
-    """ Vérifie qu'un champ est obligatoire au niveau de l’API en testant `None` et `""`. """
-    url = base_url(model_name)
-    expected_errors = ["This field is required.", "This field may not be null.", "This field cannot be blank."]
+# def validate_required_field_api(api_client, base_url, model_name, field_name, **valid_data):
+#     """ Vérifie qu'un champ est obligatoire au niveau de l’API en testant `None` et `""`. """
+#     expected_errors = ["This field is required.", "This field may not be null.", "This field cannot be blank."]
+#     for invalid_value in [None, ""]:  # Teste `None` et `""`
+#         validate_constraint_api(api_client, base_url, model_name, field_name, expected_errors, **valid_data, **{field_name: invalid_value})
 
-    for invalid_value in [None, ""]:  # Teste `None` et `""`
-        data = {**valid_data, field_name: invalid_value}
-        response = api_client.post(url, data, format="json")
+# def validate_min_length(model, field_name, min_length, expected_error, **valid_data):
+#     """ Vérifie que le champ respecte une longueur minimale. """
+#     validate_constraint(model, field_name, "a" * (min_length - 1), expected_error, **valid_data)
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert field_name in response.json()
-        # Vérifier si l'erreur retournée correspond à l'une des erreurs attendues
-        assert any(error in response.json()[field_name][0] for error in expected_errors)
-
-def validate_min_length(model, field_name, min_length, expected_error, **valid_data):
-    """ Vérifie que le champ respecte une longueur minimale. """
-    validate_constraint(model, field_name, "a" * (min_length - 1), expected_error, **valid_data)
-
-def validate_min_length_api(api_client, base_url, model_name, field_name, min_length, **valid_data):
-    """ Vérifie qu'un champ respecte une longueur minimale via l’API. """
-    url = base_url(model_name)
-    error_message = f"doit contenir au moins {min_length} caractères."
-
-    response = api_client.post(url, {**valid_data, field_name: "a" * (min_length - 1)})  # Trop court
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert field_name in response.json()
-    assert error_message in response.json()[field_name][0]
+# def validate_min_length_api(api_client, base_url, model_name, field_name, min_length, **valid_data):
+#     """ Vérifie qu'un champ respecte une longueur minimale via l’API. """
+#     error_message = f"doit contenir au moins {min_length} caractères."
+#     validate_constraint_api(api_client, base_url, model_name, field_name, error_message, **valid_data, **{field_name: "a" * (min_length - 1)})
 
 def validate_unique_constraint(model, field_name, expected_error, **valid_data):
     """ Vérifie qu’un champ unique ne peut pas être dupliqué (unique=True). """

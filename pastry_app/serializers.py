@@ -1,5 +1,6 @@
 # serializers.py
 from rest_framework import serializers
+from rest_framework.validators import UniqueTogetherValidator
 from django.db import IntegrityError
 from django.db.models import Index
 from .models import Recipe, Pan, Ingredient, IngredientPrice, IngredientPriceHistory, Store, Category, Label, RecipeIngredient, RecipeStep, SubRecipe, RoundPan, SquarePan
@@ -60,6 +61,10 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
     class Meta:
         model = IngredientPrice
         fields = ['id', 'ingredient', 'brand_name', 'store', 'date', 'quantity', 'unit', 'price', "is_promo", "promotion_end_date"]
+        validators = [UniqueTogetherValidator(
+            queryset=IngredientPrice.objects.all(),
+            fields=["ingredient", "store", "brand_name", "quantity", "unit"],
+            message="Un prix existe déjà pour cet ingrédient avec cette quantité et cette unité pour ce magasin et cette marque.")]
 
     def validate_quantity(self, value):
         """ Vérifie que la quantité est strictement positive"""
@@ -67,12 +72,11 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Quantity must be a positive number.")
         return value
 
-    ### Déjjà gérer dans la méthode clean() du modèle
-    # def validate_price(self, value):
-    #     """ Vérifie que le prix est strictement positif. """
-    #     if value <= 0:
-    #         raise serializers.ValidationError("Price must be a positive number.")
-    #     return value
+    def validate_price(self, value):
+        """ Vérifie que le prix est strictement positif. """
+        if value <= 0:
+            raise serializers.ValidationError("Price must be a positive number.")
+        return value
 
     def validate_date(self, value):
         """ Vérifie que la date n'est pas dans le futur. """
@@ -84,6 +88,16 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
         """ Vérifie que le magasin existe bien avant de l'associer à un prix"""
         if value and not Store.objects.filter(id=value.id).exists():
             raise serializers.ValidationError("Le magasin sélectionné n'existe pas en base. Veuillez le créer avant d'ajouter un prix.")
+        return value
+    
+    def validate_brand(self, value):
+        """ Normalisation + Vérifie que le nom de marque a au moins 2 caractères """
+        if not value:  # Gérer None et les valeurs vides
+            return value  # Laisser DRF gérer l'erreur si nécessaire
+
+        value = normalize_case(value)  # Maintenant, on est sûr que value n'est pas None
+        if len(value) < 2:
+            raise serializers.ValidationError("Le nom de la marque doit contenir au moins 2 caractères.")
         return value
 
     def validate(self, data):

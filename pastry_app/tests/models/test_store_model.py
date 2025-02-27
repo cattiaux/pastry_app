@@ -35,7 +35,8 @@ def test_store_deletion(store):
 @pytest.mark.django_db
 def test_required_fields_store(field_name):
     """ Vérifie que les champs obligatoires ne peuvent pas être vides """
-    validate_required_field(Store, field_name, "field cannot be null", city="Paris")
+    for invalid_value in [None, ""]:
+        validate_constraint(Store, field_name, invalid_value, "field cannot be null", city="Paris")
 
 @pytest.mark.parametrize("field_name, valid_data", [
         ("store_name", {"zip_code": "59100"}),  # Vérifie store_name en ajoutant un code postal valide
@@ -44,7 +45,8 @@ def test_required_fields_store(field_name):
 @pytest.mark.django_db
 def test_min_length_fields_store(field_name, valid_data):
     """ Vérifie que les champs ont une longueur minimale de 2 caractères """
-    validate_min_length(Store, field_name, 2, "doit contenir au moins 2 caractères.", **valid_data)
+    min_length = 2
+    validate_constraint(Store, field_name, "a" * (min_length - 1), "doit contenir au moins 2 caractères.", **valid_data)
 
 @pytest.mark.parametrize("fields", [("store_name", "city", "zip_code")])
 @pytest.mark.django_db

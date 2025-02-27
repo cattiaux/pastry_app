@@ -55,24 +55,15 @@ class IngredientPriceViewSet(viewsets.ModelViewSet):
     serializer_class = IngredientPriceSerializer
 
     def create(self, request, *args, **kwargs):
-        """ Vérifie que le prix n'existe pas déjà avant création. """
+        """ Vérifie que l'ingrédient existe avant de créer un prix. """
         ingredient_slug = request.data.get("ingredient")
-        store_id = request.data.get("store")
-        date = request.data.get("date")
-        price = request.data.get("price")
 
         # Convertir le slug en id
-        ingredient_id = None
         if ingredient_slug:
             try:
-                ingredient_id = Ingredient.objects.get(ingredient_name=ingredient_slug).id 
-            except Ingredient.DoesNotExist: 
+                Ingredient.objects.get(ingredient_name=ingredient_slug)  # Vérification seulement, pas besoin de stocker l'id
+            except Ingredient.DoesNotExist:
                 return Response({"error": "Cet ingrédient n'existe pas."}, status=status.HTTP_400_BAD_REQUEST)
-            
-        # Vérification d'un prix existant
-        if IngredientPrice.objects.filter(ingredient_id=ingredient_id, store_id=store_id, date=date, price=price).exists():
-            return Response({"error": "Un prix identique est déjà enregistré pour cet ingrédient à cette date."},
-                            status=status.HTTP_400_BAD_REQUEST)
 
         return super().create(request, *args, **kwargs)
 

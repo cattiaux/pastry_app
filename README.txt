@@ -86,3 +86,13 @@ Solution : Ajouter une contrainte unique en base de données
         constraints = [models.UniqueConstraint(fields=["store_name", "city", "zip_code"], name="unique_store_per_location")]
         indexes = [models.Index(fields=["store_name", "city", "zip_code"])]
     - Étape 2 : Générer la migration avec makemigrations et migrate
+
+### Différence entre unique_together et UniqueConstraint
+-> Remplacer dans le code unique_together par UniqueConstraint car c’est la méthode moderne et plus puissante.
+
+- unique_together = ("field1", "field2")
+    Avantages : Facile à écrire, rétrocompatible	
+    Inconvénients : Vieille syntaxe, risque d’être dépréciée
+- UniqueConstraint(fields=["field1", "field2"], name="constraint_name")	
+    Avantages : Plus flexible (on peut ajouter des filtres condition, deferrable...), recommandé par Django	
+    Inconvénient : Un peu plus verbeux

@@ -1,5 +1,6 @@
 import pytest
 from django.core.exceptions import ValidationError
+from django.utils.timezone import now
 from pastry_app.models import IngredientPrice, Ingredient, Store, IngredientPriceHistory
 from pastry_app.tests.utils import *
 
@@ -57,7 +58,9 @@ def test_normalized_fields_ingredientprice(field_name, raw_value, ingredient, st
 def test_required_fields_ingredientprice(field_name, ingredient, store):
     """Vérifie que les champs obligatoires ne peuvent pas être vides ou nuls."""
     expected_error = "Le prix, la quantité et l'unité de mesure sont obligatoires."
-    validate_required_field(IngredientPrice, field_name, expected_error, ingredient=ingredient, store=store, unit="kg")
+    # validate_required_field(IngredientPrice, field_name, expected_error, ingredient=ingredient, store=store, unit="kg")
+    for invalid_value in [None, ""]:
+        validate_constraint(IngredientPrice, field_name, invalid_value, expected_error, ingredient=ingredient, store=store, unit="kg")
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("field_name, valid_other_field, expected_error", [
@@ -72,7 +75,9 @@ def test_positive_values_ingredientprice(field_name, expected_error, ingredient,
 @pytest.mark.parametrize("field_name", ["brand_name"])
 def test_min_length_ingredientprice(field_name, ingredient, store):
     """Vérifie que `brand_name` doit contenir au moins 2 caractères."""
-    validate_min_length(IngredientPrice, field_name, 2, "doit contenir au moins 2 caractères.", ingredient=ingredient, store=store, price=2.5, quantity=1, unit="kg")
+    min_length = 2
+    validate_constraint(IngredientPrice, field_name, "a" * (min_length - 1), "doit contenir au moins 2 caractères.", 
+                        ingredient=ingredient, store=store, price=2.5, quantity=1, unit="kg")
 
 @pytest.mark.django_db
 def test_unit_must_be_valid(ingredient, store):
@@ -127,3 +132,24 @@ def test_ingredientprice_str(is_promo, has_store, brand_name, quantity, price, u
 
     validate_model_str(IngredientPrice, expected_str, ingredient=ingredient, brand_name=brand_name, store=magasin, 
                        quantity=quantity, unit=unit, price=price, is_promo=is_promo)
+
+@pytest.mark.parametrize("field_name, invalid_value, is_promo_value, expected_error", [
+    ("promotion_end_date", now().date(), False, "Si une date de fin de promo est renseignée, `is_promo` doit être activé."),
+    ("promotion_end_date", now().date().replace(day=1), True, "La date de fin de promo ne peut pas être dans le passé.")
+])
+@pytest.mark.django_db
+def test_promotion_end_date_constraints(field_name, invalid_value, is_promo_value, expected_error, ingredient_price):
+    """ Vérifie les contraintes sur `promotion_end_date` en utilisant `validate_constraint`. """
+    validate_constraint(
+        model=IngredientPrice,
+        field_name=field_name,
+        value=invalid_value,
+        expected_error=expected_error,
+        ingredient=ingredient_price.ingredient,
+        store=ingredient_price.store,
+        brand_name=ingredient_price.brand_name,
+        quantity=ingredient_price.quantity,
+        unit=ingredient_price.unit,
+        price=ingredient_price.price,
+        is_promo=is_promo_value  # La fixture a `is_promo=False` par défaut
+    )

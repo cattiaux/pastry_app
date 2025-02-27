@@ -350,7 +350,7 @@ class Store(models.Model):
 
 class IngredientPrice(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name="prices")
-    brand_name = models.TextField(max_length=200, default="Non renseigné", blank=True)
+    brand_name = models.TextField(max_length=200, null=True, blank=True)
     store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name="prices", null=True, blank=True)
 
     quantity = models.FloatField(validators=[MinValueValidator(0)]) # Quantité
@@ -382,7 +382,7 @@ class IngredientPrice(models.Model):
             raise ValidationError("Une quantité ne peut pas être négative ou nulle.")
         
         # Vérifie que le nom de la marque a une longueur minimale
-        if len(self.brand_name) < 2:
+        if self.brand_name and len(self.brand_name) < 2:
             raise ValidationError("Le nom du magasin doit contenir au moins 2 caractères.")
 
         # Normaliser la marque
@@ -410,47 +410,67 @@ class IngredientPrice(models.Model):
                 raise ValidationError(f"Le prix promo ({self.price}€) doit être inférieur au dernier prix normal ({last_price.price}€).")
 
     def save(self, *args, **kwargs):
-        self.clean()
+        """ Archive l'ancien prix dans `IngredientPriceHistory` avant modification. """
+        self.clean()  # Valide l’objet avant sauvegarde
 
-        filters = {"ingredient": self.ingredient}
-        if self.store:  # Vérifier uniquement si un store est défini
-            filters["store"] = self.store
-        if self.brand_name:  # Vérifier uniquement si une marque est définie
-            filters["brand_name"] = self.brand_name
+        if self.pk:
+            old_instance = IngredientPrice.objects.get(pk=self.pk)
 
-        # Vérifier si un prix identique existe déjà
-        if IngredientPrice.objects.filter(**filters, date=self.date, price=self.price).exists():
-            raise ValidationError("Ce prix est déjà enregistré pour cet ingrédient, magasin et date.")
+            # Vérifier si on modifie bien le même tuple (ingredient, store, brand_name, quantity, unit)
+            if (
+                old_instance.ingredient == self.ingredient and
+                old_instance.store == self.store and
+                old_instance.brand_name == self.brand_name and
+                old_instance.quantity == self.quantity and
+                old_instance.unit == self.unit
+            ):
+                # Vérifier si le prix ou l'état promo a changé (mais PAS promotion_end_date seule)
+                if old_instance.price != self.price or old_instance.is_promo != self.is_promo:
+                    # Archiver l'ancien prix avec les anciennes valeurs
+                    IngredientPriceHistory.objects.create(
+                        ingredient_price=self,
+                        ingredient=self.ingredient,
+                        store=self.store,
+                        brand_name=self.brand_name,
+                        quantity=self.quantity,
+                        unit=self.unit,
+                        price=old_instance.price,  # Prix précédent
+                        is_promo=old_instance.is_promo,
+                        promotion_end_date=old_instance.promotion_end_date,  # On garde l'ancienne date de fin promo
+                        date=old_instance.date  # Date de l'ancien prix
+                    )
 
-        # Vérifier si le prix change et sauvegarder l'historique
-        try:
-            last_price = IngredientPrice.objects.filter(**filters).only("price").latest("date")
-            if last_price.price != self.price:
-                IngredientPriceHistory.objects.create(ingredient_price=last_price, date=last_price.date, price=last_price.price)
-        except IngredientPrice.DoesNotExist:
-            pass  # Aucun prix précédent trouvé, pas d'historique à créer
+                    # Met à jour la date du prix actif pour marquer la nouvelle modification
+                    self.date = now().date()
 
         super().save(*args, **kwargs)
 
 class IngredientPriceHistory(models.Model):
     ingredient_price = models.ForeignKey(IngredientPrice, on_delete=models.CASCADE, related_name="history")
-    date = models.DateField(default=now)
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)  # Ajout de la FK Ingredient
+    store = models.ForeignKey(Store, on_delete=models.CASCADE, null=True, blank=True)  # Ajout du magasin
+    brand_name = models.CharField(max_length=255, blank=True, null=True)  # Ajout de la marque
+    quantity = models.FloatField()  # Ajout de la quantité
+    unit = models.CharField(max_length=10, choices=UNIT_CHOICES)  # Ajout de l'unité
     price = models.FloatField(validators=[MinValueValidator(0)])
     is_promo = models.BooleanField(default=False)
+    promotion_end_date = models.DateField(null=True, blank=True)  # Ajout de la date de fin de promo
+    date = models.DateField(default=now)  # Date d'archivage
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["ingredient_price", "date"], name="unique_ingredientpricehistory")]
 
     def clean(self):
         """ Vérifie la cohérence des données avant sauvegarde. """
         # Le prix doit être supérieur à 0
         if self.price <= 0:
             raise ValidationError("Le prix doit être supérieur à 0.")
-
         # Empêcher l'enregistrement de prix futurs
         if self.date > now().date():
             raise ValidationError("La date ne peut pas être dans le futur.")
-
         # Vérifier qu'un enregistrement identique n'existe pas déjà
-        if IngredientPriceHistory.objects.filter(ingredient_price=self.ingredient_price, date=self.date, price=self.price).exists():
-            raise ValidationError("Cet enregistrement de prix existe déjà.")
+        # if IngredientPriceHistory.objects.filter(ingredient_price=self.ingredient_price, date=self.date, price=self.price).exists():
+        #     raise ValidationError("Cet enregistrement de prix existe déjà.")
 
     def save(self, *args, **kwargs):
         """ Empêche les doublons et n'enregistre que si le prix change. """
