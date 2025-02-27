@@ -1,11 +1,12 @@
 import pytest
 from rest_framework import status
 from django.utils.timezone import now
+from django.forms.models import model_to_dict
 from pastry_app.tests.base_api_test import api_client, base_url
 from pastry_app.tests.utils import *
 from pastry_app.serializers import IngredientPriceSerializer
-from pastry_app.models import Ingredient, Store
-
+from pastry_app.models import Ingredient, Store, IngredientPrice
+from pastry_app.constants import UNIT_CHOICES
 # Définition du nom du modèle pour l'API
 model_name = "ingredient_prices"
 
@@ -18,6 +19,11 @@ def ingredient(db):
 def store():
     """Crée un magasin pour les tests."""
     return Store.objects.create(store_name="Auchan", city="Paris", zip_code="75000")
+
+@pytest.fixture
+def ingredient_price(ingredient, store):
+    """Crée un prix valide pour un ingrédient."""
+    return IngredientPrice.objects.create(ingredient=ingredient, brand_name="Bio Village", store=store, quantity=1, unit="kg", price=2.5)
 
 @pytest.mark.parametrize("field_name", ["price", "quantity", "unit"])
 @pytest.mark.django_db
@@ -40,26 +46,35 @@ def test_invalid_number_fields_ingredientprice_api(api_client, base_url, field_n
 
 @pytest.mark.parametrize("field_name", ["unit"]) # ChoiceField
 @pytest.mark.django_db
-def test_invalid_choice_fields_ingredientprice_api(api_client, base_url, field_name):
-    """ Vérifie que les champs `ChoiceField` et `ForeignKey` refusent une valeur invalide. """
+def test_invalid_choice_fields_ingredientprice_api(api_client, base_url, field_name, ingredient_price):
+    """ Vérifie que les champs `ChoiceField` et `ForeignKey` refusent une valeur invalide et accepte une valeur valide. """
     expected_error = "is not a valid choice."
     for invalid_value in ["", "invalid_choice"]:  # Teste une valeur vide et une valeur incorrecte
         validate_constraint_api(api_client, base_url, "ingredient_prices", field_name, expected_error, **{field_name: invalid_value})
 
+    # Vérifie qu'une valeur valide est acceptée
+    valid_unit = UNIT_CHOICES[0][0]  # Prend la première valeur valide
+    # Données valides basées sur la fixture `ingredient_price`
+    valid_data = {"ingredient": ingredient_price.ingredient.ingredient_name, "store": ingredient_price.store.id, "date": ingredient_price.date, 
+        "quantity": ingredient_price.quantity, "price": ingredient_price.price, "brand_name":ingredient_price.brand_name}
+    response = api_client.post(base_url("ingredient_prices"), {**valid_data, field_name: valid_unit}, format="json")
+
+    assert response.status_code == 201, f"L'API aurait dû accepter `{valid_unit}`, mais a retourné {response.status_code}."
+
 @pytest.mark.parametrize("field_name", ["brand_name"])
 @pytest.mark.django_db
-def test_min_length_fields_ingredientprice_api(api_client, base_url, field_name):
+def test_min_length_fields_ingredientprice_api(api_client, base_url, field_name, ingredient, store):
     """ Vérifie que `brand_name` doit avoir une longueur minimale de 2 caractères via l’API. """
-    valid_data = {"ingredient": 1, "store": 1, "price": 2.5, "quantity": 1, "unit": "kg"}  # Valeurs valides
+    valid_data = {"ingredient": ingredient.ingredient_name, "store": store.id, "price": 2.5, "quantity": 1, "unit": "kg"}  # Valeurs valides
     min_length = 2
     error_message = f"doit contenir au moins {min_length} caractères."
     validate_constraint_api(api_client, base_url, model_name, field_name, error_message, **valid_data, **{field_name: "a" * (min_length - 1)})
 
 @pytest.mark.parametrize("field_name, raw_value", [("brand_name", "  BIO VILLAGE  "),])
 @pytest.mark.django_db
-def test_normalized_fields_ingredientprice_api(api_client, base_url, field_name, raw_value):
+def test_normalized_fields_ingredientprice_api(api_client, base_url, field_name, raw_value, ingredient, store):
     """ Vérifie que `brand_name` et est bien normalisé après création via l’API. """
-    valid_data = {"ingredient": 1, "store": 1, "price": 2.5, "quantity": 1, "unit": "kg"}  # Valeurs valides
+    valid_data = {"ingredient": ingredient.ingredient_name, "store": store.id, "price": 2.5, "quantity": 1, "unit": "kg"}  # Valeurs valides
     validate_field_normalization_api(api_client, base_url, model_name, field_name, raw_value, **valid_data)
 
 @pytest.mark.parametrize(("fields", "values"), [(("ingredient", "store", "quantity", "price", "unit"), (1, 1, 1, 2.5, "kg"))])

@@ -61,6 +61,10 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
     class Meta:
         model = IngredientPrice
         fields = ['id', 'ingredient', 'brand_name', 'store', 'date', 'quantity', 'unit', 'price', "is_promo", "promotion_end_date"]
+        extra_kwargs = {
+            "brand_name": {"required": False, "allow_null": True},
+            "date": {"required": False, "default": now}
+        }
         validators = [UniqueTogetherValidator(
             queryset=IngredientPrice.objects.all(),
             fields=["ingredient", "store", "brand_name", "quantity", "unit"],
@@ -80,7 +84,7 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
 
     def validate_date(self, value):
         """ Vérifie que la date n'est pas dans le futur. """
-        if value > now().date():
+        if value and value > now().date():
             raise serializers.ValidationError("La date ne peut pas être dans le futur.")
         return value
 
@@ -90,7 +94,7 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Le magasin sélectionné n'existe pas en base. Veuillez le créer avant d'ajouter un prix.")
         return value
     
-    def validate_brand(self, value):
+    def validate_brand_name(self, value):
         """ Normalisation + Vérifie que le nom de marque a au moins 2 caractères """
         if not value:  # Gérer None et les valeurs vides
             return value  # Laisser DRF gérer l'erreur si nécessaire
@@ -104,6 +108,10 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
         """ Vérifie les contraintes métier (promotions, cohérence des données, etc.). """
         if data.get("promotion_end_date") and not data.get("is_promo"):
             raise serializers.ValidationError("Une date de fin de promotion nécessite que `is_promo=True`.")
+        
+        # Permettre à `date` d'être optionnel.
+        if "date" not in data:
+            data["date"] = now().date()  # Assigner automatiquement la date du jour
         return data
 
     def update(self, instance, validated_data):

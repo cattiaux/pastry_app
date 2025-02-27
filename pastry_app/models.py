@@ -353,10 +353,10 @@ class IngredientPrice(models.Model):
     brand_name = models.TextField(max_length=200, null=True, blank=True)
     store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name="prices", null=True, blank=True)
 
-    quantity = models.FloatField(validators=[MinValueValidator(0)]) # Quantité
-    unit = models.TextField(max_length=50, choices=UNIT_CHOICES)    # Unité de mesure
-    price = models.FloatField(validators=[MinValueValidator(0)])    # Prix normal
-    date = models.DateField(null=True, blank=True, default=now)     # Date d'enregistrement du prix
+    quantity = models.FloatField(validators=[MinValueValidator(0)])       # Quantité
+    unit = models.TextField(max_length=50, choices=UNIT_CHOICES)          # Unité de mesure
+    price = models.FloatField(validators=[MinValueValidator(0)])          # Prix normal
+    date = models.DateField(null=True, blank=True, default="2025-01-01")  # Date d'enregistrement du prix
 
     is_promo = models.BooleanField(default=False)  # Indique si c'est un prix promo
     promotion_end_date = models.DateField(null=True, blank=True)  # Date de fin de promo, Facultatif
