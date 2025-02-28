@@ -26,11 +26,9 @@ def validate_constraint_api(api_client, base_url, model_name, field_name, expect
     """
     url = base_url(model_name)  # Récupérer l'URL de création de l'objet
     response = api_client.post(url, valid_data, format="json")  # Envoyer la requête POST
-
-    # Vérifier que l'API renvoie bien une erreur 400
-    assert response.status_code == status.HTTP_400_BAD_REQUEST, f"Attendu 400, obtenu {response.status_code} : {response.json()}"
-    # Vérifier que l'erreur est bien retournée sur le bon champ
-    assert field_name in response.json(), f"L'erreur pour `{field_name}` n'a pas été trouvée dans la réponse : {response.json()}"
+    assert response.status_code == status.HTTP_400_BAD_REQUEST, f"Attendu 400, obtenu {response.status_code} : {response.json()}" # Vérifier que l'API renvoie bien une erreur 400
+    assert field_name in response.json(), f"L'erreur pour `{field_name}` n'a pas été trouvée dans la réponse : {response.json()}" # Vérifier que l'erreur est bien retournée sur le bon champ
+    
     # Vérifier si au moins UNE des erreurs attendues est présente
     actual_error = response.json()[field_name][0]
     if isinstance(expected_errors, list):  # Plusieurs erreurs possibles
@@ -62,26 +60,9 @@ def validate_delete_object(model, **valid_data):
     obj.delete()
     assert not model.objects.filter(id=obj.id).exists(), "L'objet n'a pas été supprimé."
 
-# Vérifications générales sur les champs
-# def validate_required_field(model, field_name, expected_error, **valid_data):
-#     """ Vérifie qu'un champ obligatoire ne peut pas être vide ou nul. """
-#     for invalid_value in [None, ""]:
-#         validate_constraint(model, field_name, invalid_value, expected_error, **valid_data)
 
-# def validate_required_field_api(api_client, base_url, model_name, field_name, **valid_data):
-#     """ Vérifie qu'un champ est obligatoire au niveau de l’API en testant `None` et `""`. """
-#     expected_errors = ["This field is required.", "This field may not be null.", "This field cannot be blank."]
-#     for invalid_value in [None, ""]:  # Teste `None` et `""`
-#         validate_constraint_api(api_client, base_url, model_name, field_name, expected_errors, **valid_data, **{field_name: invalid_value})
 
-# def validate_min_length(model, field_name, min_length, expected_error, **valid_data):
-#     """ Vérifie que le champ respecte une longueur minimale. """
-#     validate_constraint(model, field_name, "a" * (min_length - 1), expected_error, **valid_data)
 
-# def validate_min_length_api(api_client, base_url, model_name, field_name, min_length, **valid_data):
-#     """ Vérifie qu'un champ respecte une longueur minimale via l’API. """
-#     error_message = f"doit contenir au moins {min_length} caractères."
-#     validate_constraint_api(api_client, base_url, model_name, field_name, error_message, **valid_data, **{field_name: "a" * (min_length - 1)})
 
 def validate_unique_constraint(model, field_name, expected_error, **valid_data):
     """ Vérifie qu’un champ unique ne peut pas être dupliqué (unique=True). """
@@ -133,12 +114,10 @@ def validate_unique_together_api(api_client, base_url, model_name, valid_data):
     error_message = "must make a unique set."
     # Premier enregistrement (OK)
     response1 = api_client.post(url, data=json.dumps(valid_data), content_type="application/json")
-    print("response1 json : ",response1.json())
     assert response1.status_code == status.HTTP_201_CREATED  # Création réussie
 
     # Deuxième enregistrement (doit échouer)
     response2 = api_client.post(url, data=json.dumps(valid_data), content_type="application/json")
-    print("response2 json : ",response2.json())
     assert response2.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
     assert error_message in response2.json().get("non_field_errors", [])  # Vérifier l'erreur attendue
 
@@ -149,6 +128,8 @@ def validate_update_to_duplicate_api(api_client, base_url, model_name, valid_dat
     # Création de deux objets distincts
     response1 = api_client.post(url, valid_data1, format="json")
     response2 = api_client.post(url, valid_data2, format="json")
+    print("response1 : ", response1.json())
+    print("response2 : ", response2.json())
     assert response1.status_code == status.HTTP_201_CREATED
     assert response2.status_code == status.HTTP_201_CREATED
 
@@ -156,6 +137,8 @@ def validate_update_to_duplicate_api(api_client, base_url, model_name, valid_dat
 
     # Tenter de mettre à jour `obj2` avec les valeurs de `obj1`
     response3 = api_client.patch(f"{url}{obj_id}/", valid_data1, format="json")
+    print("response3 : ", response3.json())
+    print("response3 : ", response3)
     assert response3.status_code == status.HTTP_400_BAD_REQUEST  # Vérifier que la mise à jour est rejetée
     assert "non_field_errors" in response3.json()  # Vérifier l’erreur sous `non_field_errors`
     assert "must make a unique set" in response3.json()["non_field_errors"][0]

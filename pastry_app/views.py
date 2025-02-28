@@ -55,32 +55,66 @@ class IngredientPriceViewSet(viewsets.ModelViewSet):
     serializer_class = IngredientPriceSerializer
 
     def create(self, request, *args, **kwargs):
-        """ Vérifie que l'ingrédient existe avant de créer un prix. """
-        # print("Données reçues par DRF (request.data) :", request.data)
-
+        """ Vérifie l'existence de l'ingrédient, gère l'historique et crée un prix d'ingrédient. """
         ingredient_slug = request.data.get("ingredient")
-        # Convertir le slug en id
+
+        # Vérifier si l'ingrédient existe et récupérer son objet
         if ingredient_slug:
             try:
-                Ingredient.objects.get(ingredient_name=ingredient_slug)  # Vérification seulement, pas besoin de stocker l'id
+                ingredient = Ingredient.objects.get(ingredient_name=ingredient_slug)
+                request.data["ingredient"] = ingredient.ingredient_name  # Assurer un slug et non un ID
             except Ingredient.DoesNotExist:
-                return Response({"error": "Cet ingrédient n'existe pas."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"ingredient": ["Cet ingrédient n'existe pas."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Laisser DRF gérer la validation avec le serializer
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)  # Déclenche les erreurs standards DRF
+
+        # Extraire les données validées après la validation
+        validated_data = serializer.validated_data
+        print("validated_data : ", validated_data)
+        store = validated_data.get("store")
+        brand_name = validated_data.get("brand_name", "")
+        quantity = validated_data.get("quantity")
+        unit = validated_data.get("unit")
+        new_price = validated_data.get("price")
+        new_is_promo = validated_data.get("is_promo", False)
+        new_promo_end_date = validated_data.get("promotion_end_date")
+
+        # Vérifier si un `IngredientPrice` existe déjà pour cet ingrédientPrice (combinaison unique)
+        existing_price = IngredientPrice.objects.filter(ingredient=ingredient, store=store, brand_name=brand_name, 
+                                                        quantity=quantity, unit=unit).first()
+
+        if existing_price:  # L’objet existait déjà → Vérifier s’il faut l’archiver
+            # Si le prix ou is_promo change, l'archivage est géré par `save()`
+            if existing_price.price != new_price or existing_price.is_promo != new_is_promo:
+                # Archiver l'ancien prix
+                IngredientPriceHistory.objects.create(ingredient=existing_price.ingredient, store=existing_price.store, 
+                                                      brand_name=existing_price.brand_name, quantity=existing_price.quantity, unit=existing_price.unit, date=existing_price.date, 
+                                                      price=existing_price.price, is_promo=existing_price.is_promo, promotion_end_date=existing_price.promotion_end_date)
+               
+                # Supprimer l'ancien prix pour éviter `UniqueConstraint`
+                existing_price.delete()  
+
+                # Créer un nouveau IngredientPrice
+                request.data["ingredient"] = ingredient.ingredient_name
+                return super().create(request, *args, **kwargs)
+
+            # Si seule la `promotion_end_date` change, on met à jour directement
+            elif existing_price.promotion_end_date != new_promo_end_date:
+                existing_price.promotion_end_date = new_promo_end_date
+                existing_price.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            
+            else:
+                return Response({"non_field_errors": ["Un prix identique existe déjà."]}, status=status.HTTP_400_BAD_REQUEST)
+            
         return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
         """ Désactive la mise à jour des prix pour conserver l'historique. """
         return Response({"error": "La mise à jour des prix est interdite. Créez un nouvel enregistrement."},
                         status=status.HTTP_405_METHOD_NOT_ALLOWED)
-
-    def destroy(self, request, *args, **kwargs):
-        """ Empêche la suppression d'un prix s'il a un historique. """
-        price = self.get_object()
-        if price.history.exists():
-            return Response(
-                {"error": "Ce prix possède un historique et ne peut pas être supprimé."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        return super().destroy(request, *args, **kwargs)
 
 class IngredientPriceHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     """ API en lecture seule pour l'historique des prix d'ingrédients. """
@@ -89,16 +123,21 @@ class IngredientPriceHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ["ingredient_price__ingredient__ingredient_name"]
 
-    def create(self, request, *args, **kwargs):
-        """ Interdiction de créer des entrées manuelles dans l'historique. """
-        return Response({"error": "L'historique des prix est généré automatiquement et ne peut pas être modifié manuellement."},
+    # def create(self, request, *args, **kwargs):
+    #     """ Interdiction de créer des entrées manuelles dans l'historique. """
+    #     return Response({"error": "L'historique des prix est généré automatiquement et ne peut pas être modifié manuellement."},
+    #                     status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def update(self, request, *args, **kwargs):
+        """ Désactive la mise à jour des prix pour conserver l'historique. """
+        return Response({"error": "La mise à jour des historiques de prix est interdite."},
                         status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def destroy(self, request, *args, **kwargs):
         """ Interdiction de supprimer une entrée historique. """
         return Response({"error": "Les entrées de l'historique des prix ne peuvent pas être supprimées."},
                         status=status.HTTP_405_METHOD_NOT_ALLOWED)
-
+    
 class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Recipe.objects.all()
     serializer_class = RecipeSerializer

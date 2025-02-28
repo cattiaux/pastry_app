@@ -6,6 +6,7 @@ from django.utils.timezone import now
 from .constants import UNIT_CHOICES, CATEGORY_TYPE_MAP, LABEL_TYPE_MAP
 from django.core.exceptions import ValidationError
 from pastry_app.tests.utils import normalize_case
+from django.db.models import UniqueConstraint
 
 class BaseModel(models.Model):
     class Meta:
@@ -361,6 +362,11 @@ class IngredientPrice(models.Model):
     is_promo = models.BooleanField(default=False)  # Indique si c'est un prix promo
     promotion_end_date = models.DateField(null=True, blank=True)  # Date de fin de promo, Facultatif
 
+    class Meta:
+        constraints = [UniqueConstraint(
+                fields=["ingredient", "store", "brand_name", "quantity", "unit"],
+                name="unique_ingredient_price")]
+
     def __str__(self):
         """ Affichage clair du prix de l’ingrédient """
         promo_text = " (Promo)" if self.is_promo else ""
@@ -369,7 +375,6 @@ class IngredientPrice(models.Model):
 
     def clean(self):
         """ Validation des contraintes métier avant sauvegarde """
-        print("on est ici dans clean() du models !!!!!!!!!!")
         # Vérifier que les champs obligatoires sont remplis
         if self.price is None or self.quantity is None or self.unit is None:
             raise ValidationError("Le prix, la quantité et l'unité de mesure sont obligatoires.")
@@ -425,29 +430,25 @@ class IngredientPrice(models.Model):
                 old_instance.quantity == self.quantity and
                 old_instance.unit == self.unit
             ):
+
                 # Vérifier si le prix ou l'état promo a changé (mais PAS promotion_end_date seule)
                 if old_instance.price != self.price or old_instance.is_promo != self.is_promo:
-                    # Archiver l'ancien prix avec les anciennes valeurs
-                    IngredientPriceHistory.objects.create(
-                        ingredient_price=self,
-                        ingredient=self.ingredient,
-                        store=self.store,
-                        brand_name=self.brand_name,
-                        quantity=self.quantity,
-                        unit=self.unit,
-                        price=old_instance.price,  # Prix précédent
-                        is_promo=old_instance.is_promo,
-                        promotion_end_date=old_instance.promotion_end_date,  # On garde l'ancienne date de fin promo
-                        date=old_instance.date  # Date de l'ancien prix
-                    )
+                    # Vérifier qu'on n'archive pas déjà cet enregistrement pour éviter les doublons
+                    if not IngredientPriceHistory.objects.filter(ingredient=old_instance.ingredient, store=old_instance.store, brand_name=old_instance.brand_name, 
+                                                                 quantity=old_instance.quantity, unit=old_instance.unit, price=old_instance.price, is_promo=old_instance.is_promo, 
+                                                                 promotion_end_date=old_instance.promotion_end_date, date=old_instance.date
+                                                                 ).exists():
+                        # Archiver l'ancien prix avec les anciennes valeurs
+                        IngredientPriceHistory.objects.create(ingredient_price=self, ingredient=self.ingredient, store=self.store, brand_name=self.brand_name, 
+                                                              quantity=self.quantity, unit=self.unit, price=old_instance.price, is_promo=old_instance.is_promo, 
+                                                              promotion_end_date=old_instance.promotion_end_date, date=old_instance.date)
 
-                    # Met à jour la date du prix actif pour marquer la nouvelle modification
-                    self.date = now().date()
+        # Met à jour la date du prix actif pour marquer la nouvelle modification
+        self.date = now().date()
 
         super().save(*args, **kwargs)
 
 class IngredientPriceHistory(models.Model):
-    ingredient_price = models.ForeignKey(IngredientPrice, on_delete=models.CASCADE, related_name="history")
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)  # Ajout de la FK Ingredient
     store = models.ForeignKey(Store, on_delete=models.CASCADE, null=True, blank=True)  # Ajout du magasin
     brand_name = models.CharField(max_length=255, blank=True, null=True)  # Ajout de la marque
@@ -458,8 +459,8 @@ class IngredientPriceHistory(models.Model):
     promotion_end_date = models.DateField(null=True, blank=True)  # Ajout de la date de fin de promo
     date = models.DateField(default=now)  # Date d'archivage
 
-    class Meta:
-        constraints = [models.UniqueConstraint(fields=["ingredient_price", "date"], name="unique_ingredientpricehistory")]
+    # class Meta:
+        # constraints = [models.UniqueConstraint(fields=["ingredient_price", "date"], name="unique_ingredientpricehistory")]
 
     def clean(self):
         """ Vérifie la cohérence des données avant sauvegarde. """
@@ -475,10 +476,13 @@ class IngredientPriceHistory(models.Model):
 
     def save(self, *args, **kwargs):
         """ Empêche les doublons et n'enregistre que si le prix change. """
-        self.clean()  #Appliquer les validations avant l'enregistrement
+        print("on rentre dans le save de ingredientPriceHistory")
+        self.clean()  # Appliquer les validations avant l'enregistrement
 
         # Récupérer le dernier prix enregistré
-        last_price = IngredientPriceHistory.objects.filter(ingredient_price=self.ingredient_price).order_by("-date").first()
+        last_price = IngredientPriceHistory.objects.filter(ingredient=self.ingredient, store=self.store, brand_name=self.brand_name, 
+                                                           quantity=self.quantity, unit=self.unit
+                                                           ).order_by("-date").first()
 
         # Si le prix n’a pas changé, ne pas enregistrer inutilement
         if last_price and last_price.price == self.price:

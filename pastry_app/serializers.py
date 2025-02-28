@@ -55,21 +55,21 @@ class StoreSerializer(serializers.ModelSerializer):
 
 class IngredientPriceSerializer(serializers.ModelSerializer):
     ingredient = serializers.SlugRelatedField(queryset=Ingredient.objects.all(), slug_field="ingredient_name")
-    store = serializers.PrimaryKeyRelatedField(queryset=Store.objects.all())
+    store = serializers.PrimaryKeyRelatedField(required=False, queryset=Store.objects.all(), default=None)
     date = serializers.DateField(required=False, default=now().date, input_formats=['%Y-%m-%d'])
     brand_name = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None) 
 
     class Meta:
         model = IngredientPrice
         fields = ['id', 'ingredient', 'brand_name', 'store', 'date', 'quantity', 'unit', 'price', "is_promo", "promotion_end_date"]
-
-        validators = [UniqueTogetherValidator(
-            queryset=IngredientPrice.objects.all(),
-            fields=["ingredient", "store", "brand_name", "quantity", "unit"],
-            message="must make a unique set.")]
-
+    
     def validate_quantity(self, value):
-        """ Vérifie que la quantité est strictement positive"""
+        """ S'assure que `quantity` est un float valide et vérifie que la quantité est strictement positive"""
+        try:
+            value = float(value)
+        except ValueError:
+            raise serializers.ValidationError("Quantity must be a positive number.")
+
         if value <= 0:
             raise serializers.ValidationError("Quantity must be a positive number.")
         return value
@@ -94,9 +94,9 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
     
     def validate_brand_name(self, value):
         """ Normalisation + Vérifie que le nom de marque a au moins 2 caractères """
-        if not value:  # Gérer None et les valeurs vides
-            return ""  # Laisser DRF gérer l'erreur si nécessaire
-
+        if not value: 
+            return ""  
+        
         value = normalize_case(value)  # Maintenant, on est sûr que value n'est pas None
         if len(value) < 2:
             raise serializers.ValidationError("Le nom de la marque doit contenir au moins 2 caractères.")
@@ -104,13 +104,37 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """ Vérifie les contraintes métier (promotions, cohérence des données, etc.). """
-        print("on est ici dans validate() !!!!!!!!")
         if data.get("promotion_end_date") and not data.get("is_promo"):
             raise serializers.ValidationError("Une date de fin de promotion nécessite que `is_promo=True`.")
         
         # Permettre à `date` d'être optionnel.
         if "date" not in data:
             data["date"] = now().date()  # Assigner automatiquement la date du jour
+
+        ### Validation personnalisée pour gérer l'unicité sans bloquer DRF.
+        # Récupérer les champs qui définissent l’unicité
+        ingredient = data.get("ingredient")
+        store = data.get("store")
+        brand_name = data.get("brand_name", "").strip().lower()
+        quantity = data.get("quantity")
+        unit = data.get("unit")
+        price = data.get("price")
+        is_promo = data.get("is_promo", False)
+        promo_end_date = data.get("promotion_end_date")
+
+        # Vérifier si un `IngredientPrice` existe déjà pour cette combinaison
+        existing_price = IngredientPrice.objects.filter(
+            ingredient=ingredient, store=store, brand_name=brand_name, quantity=quantity, unit=unit
+        ).first()
+
+        if existing_price:
+            if price != existing_price.price or is_promo != existing_price.is_promo:  # Cas où le prix ou `is_promo` change → Archivage + Nouveau prix
+                pass  # Ne pas lever d'erreur, car ce sera géré dans `create()` de la `view`
+            elif promo_end_date != existing_price.promotion_end_date:  # Cas où seule `promotion_end_date` change → Mise à jour directe
+                pass  # Pas d'erreur, la vue mettra à jour directement `promotion_end_date`
+            else:  # Cas où l'on essaie de créer un duplicata strict
+                raise serializers.ValidationError("must make a unique set.")
+        
         return data
 
     def update(self, instance, validated_data):
