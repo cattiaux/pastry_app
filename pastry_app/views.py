@@ -121,22 +121,22 @@ class IngredientPriceHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = IngredientPriceHistory.objects.all()
     serializer_class = IngredientPriceHistorySerializer
     filter_backends = [SearchFilter]
-    search_fields = ["ingredient_price__ingredient__ingredient_name"]
+    search_fields = ["ingredient__ingredient_name"]
 
     # def create(self, request, *args, **kwargs):
     #     """ Interdiction de créer des entrées manuelles dans l'historique. """
     #     return Response({"error": "L'historique des prix est généré automatiquement et ne peut pas être modifié manuellement."},
     #                     status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
-    def update(self, request, *args, **kwargs):
-        """ Désactive la mise à jour des prix pour conserver l'historique. """
-        return Response({"error": "La mise à jour des historiques de prix est interdite."},
-                        status=status.HTTP_405_METHOD_NOT_ALLOWED)
+    # def update(self, request, *args, **kwargs):
+    #     """ Désactive la mise à jour des prix pour conserver l'historique. """
+    #     return Response({"error": "La mise à jour des historiques de prix est interdite."},
+    #                     status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
-    def destroy(self, request, *args, **kwargs):
-        """ Interdiction de supprimer une entrée historique. """
-        return Response({"error": "Les entrées de l'historique des prix ne peuvent pas être supprimées."},
-                        status=status.HTTP_405_METHOD_NOT_ALLOWED)
+    # def destroy(self, request, *args, **kwargs):
+    #     """ Interdiction de supprimer une entrée historique. """
+    #     return Response({"error": "Les entrées de l'historique des prix ne peuvent pas être supprimées."},
+    #                     status=status.HTTP_405_METHOD_NOT_ALLOWED)
     
 class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Recipe.objects.all()

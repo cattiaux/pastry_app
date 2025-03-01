@@ -115,7 +115,7 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
         # Récupérer les champs qui définissent l’unicité
         ingredient = data.get("ingredient")
         store = data.get("store")
-        brand_name = data.get("brand_name", "").strip().lower()
+        brand_name = data.get("brand_name", "")
         quantity = data.get("quantity")
         unit = data.get("unit")
         price = data.get("price")

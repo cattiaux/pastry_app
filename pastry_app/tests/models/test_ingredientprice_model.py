@@ -21,7 +21,7 @@ def ingredient_price(ingredient, store):
         ingredient=ingredient,
         brand_name="Bio Village",
         store=store,
-        quantity=1,
+        quantity=1.0,
         unit="kg",
         price=2.5
     )
@@ -118,19 +118,20 @@ def test_promo_price_must_be_lower_than_normal_price_db(ingredient_price):
         promo_price = IngredientPrice(ingredient=normal_ingredientprice.ingredient, store=normal_ingredientprice.store, 
                                       quantity=1, unit="kg", price=normal_ingredientprice.price+0.5, is_promo=True) # Prix promo invalide (plus cher)
         promo_price.full_clean()
-
+    
 @pytest.mark.django_db
 @pytest.mark.parametrize("is_promo, has_store, brand_name, quantity, price, unit", [
-    (False, True, "Bio VillaGe ", 1, 2.5, "kg"),
-    (True, True, "Bio VillaGe ", 1, 2.5, "kg"),
-    (False, False, "Bio VillaGe ", 1, 2.5, "kg"),
-    (True, False, "Bio VillaGe ", 1, 2.5, "kg"),
+    (False, True, "Bio VillaGe ", 1.0, 2.5, "kg"),
+    (True, True, "Bio VillaGe ", 1.0, 2.5, "kg"),
+    (False, False, "Bio VillaGe ", 1.0, 2.5, "kg"),
+    (True, False, "Bio VillaGe ", 1.0, 2.5, "kg"),
 ])
 def test_ingredientprice_str(is_promo, has_store, brand_name, quantity, price, unit, ingredient, store):
     """Vérifie que `__str__()` affiche bien les informations correctement formatées."""
     promo_text = " (Promo)" if is_promo else ""
-    store_name = store.store_name.lower() if has_store else "Non renseigné"
+    store_name = str(store) if has_store else "Non renseigné"
     magasin = store if has_store else None
+
     expected_str = f"{ingredient.ingredient_name.lower()} - {normalize_case(brand_name)} @ {store_name} ({quantity}{unit.lower()} pour {price}€{promo_text})"
 
     validate_model_str(IngredientPrice, expected_str, ingredient=ingredient, brand_name=brand_name, store=magasin, 

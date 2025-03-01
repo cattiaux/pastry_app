@@ -33,9 +33,13 @@ def validate_constraint_api(api_client, base_url, model_name, field_name, expect
     else:  # Une seule erreur attendue
         assert expected_errors in actual_error, f"Erreur attendue `{expected_errors}`, mais obtenue `{actual_error}`"
 
-def validate_model_str(model, expected_str, **valid_data):
+def validate_model_str(model, expected_str, create_initial=True, **valid_data):
     """ Vérifie que la méthode `__str__()` du modèle retourne la bonne valeur. """
-    obj = model.objects.create(**valid_data)
+    if create_initial : 
+        obj = model(**valid_data)
+    else:
+        obj = model.objects.create(**valid_data)
+    obj.full_clean()
     assert str(obj) == expected_str, f"__str__() attendu : {expected_str}, obtenu : {str(obj)}"
 
 def create_and_verify_model_instance(model, **valid_data):

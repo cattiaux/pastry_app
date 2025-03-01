@@ -1,12 +1,33 @@
 from django.contrib import admin
-from .models import Recipe, RecipeStep, RoundPan, SquarePan, SubRecipe, Pan, Ingredient, IngredientPrice, RecipeIngredient, Category, Label
+from .models import Recipe, RecipeStep, RoundPan, SquarePan, SubRecipe, Pan, Ingredient, IngredientPrice, IngredientPriceHistory, RecipeIngredient, Category, Label
 
+# @admin.register(IngredientPrice)
 class IngredientPriceAdmin(admin.ModelAdmin):
-    list_display = ('ingredient', 'id')
+    list_display = ("id", "ingredient", "brand_name", "store", "quantity", "unit", "price", "is_promo", "promotion_end_date", "date")
+    list_filter = ("store", "brand_name", "is_promo")
+    search_fields = ("ingredient__ingredient_name", "brand_name", "store__store_name")
 
 class IngredientPriceInline(admin.StackedInline):
     model = IngredientPrice
     extra = 1  # number of extra forms to display
+
+# @admin.register(IngredientPriceHistory)
+# class IngredientPriceHistoryAdmin(admin.ModelAdmin):
+#     list_display = ("id", "ingredient", "brand_name", "store", "quantity", "unit", "price", "is_promo", "promotion_end_date", "date")
+#     list_filter = ("store", "brand_name", "is_promo")
+#     search_fields = ("ingredient__ingredient_name", "brand_name", "store__store_name")
+    
+#     def has_add_permission(self, request):
+#         """ Empêche l'ajout manuel d'entrées historiques sauf pour les super-utilisateurs. """
+#         return request.user.is_superuser
+
+#     def has_change_permission(self, request, obj=None):
+#         """ Empêche la modification d'entrées historiques sauf pour les super-utilisateurs. """
+#         return request.user.is_superuser
+
+#     def has_delete_permission(self, request, obj=None):
+#         """ Empêche la suppression d'entrées historiques sauf pour les super-utilisateurs. """
+#         return request.user.is_superuser
 
 class IngredientAdmin(admin.ModelAdmin):
     inlines = [IngredientPriceInline]
@@ -91,6 +112,7 @@ admin.site.register(RecipeStep, RecipeStepAdmin)
 admin.site.register(SubRecipe, SubRecipeAdmin)
 admin.site.register(Ingredient, IngredientAdmin)
 admin.site.register(IngredientPrice, IngredientPriceAdmin)
+# admin.site.register(IngredientPriceHistory, IngredientPriceHistoryAdmin)
 admin.site.register(RecipeIngredient, RecipeIngredientAdmin)
 admin.site.register(Pan, PanAdmin)
 admin.site.register(RoundPan, RoundPanAdmin)

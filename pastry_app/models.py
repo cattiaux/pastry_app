@@ -370,7 +370,7 @@ class IngredientPrice(models.Model):
     def __str__(self):
         """ Affichage clair du prix de l’ingrédient """
         promo_text = " (Promo)" if self.is_promo else ""
-        store_name = self.store.store_name if self.store else "Non renseigné"
+        store_name = str(self.store) if self.store else "Non renseigné"
         return f"{self.ingredient.ingredient_name} - {self.brand_name} @ {store_name} ({self.quantity}{self.unit} pour {self.price}€{promo_text})"
 
     def clean(self):
@@ -380,6 +380,13 @@ class IngredientPrice(models.Model):
             raise ValidationError("Le prix, la quantité et l'unité de mesure sont obligatoires.")
         if self.date is None:
             self.date = now().date()  # Assigner la date du jour par défaut
+
+        # Convertir quantity en float
+        if self.quantity is not None:
+            try:
+                self.quantity = float(self.quantity)
+            except (ValueError, TypeError):
+                raise ValidationError("La quantité doit être un nombre valide.")
 
         # Vérifier que les prix et les quantités sont positifs
         if self.price is not None and self.price <= 0:
@@ -462,6 +469,12 @@ class IngredientPriceHistory(models.Model):
     # class Meta:
         # constraints = [models.UniqueConstraint(fields=["ingredient_price", "date"], name="unique_ingredientpricehistory")]
 
+    def __str__(self):
+        """ Affichage clair du prix de l’ingrédient """
+        promo_text = " (Promo)" if self.is_promo else ""
+        store_name = str(self.store) if self.store else "Non renseigné"
+        return f"{self.ingredient.ingredient_name} - {self.brand_name} @ {store_name} ({self.quantity}{self.unit} pour {self.price}€{promo_text})"
+
     def clean(self):
         """ Vérifie la cohérence des données avant sauvegarde. """
         # Le prix doit être supérieur à 0
@@ -476,7 +489,6 @@ class IngredientPriceHistory(models.Model):
 
     def save(self, *args, **kwargs):
         """ Empêche les doublons et n'enregistre que si le prix change. """
-        print("on rentre dans le save de ingredientPriceHistory")
         self.clean()  # Appliquer les validations avant l'enregistrement
 
         # Récupérer le dernier prix enregistré
