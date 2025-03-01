@@ -37,25 +37,25 @@ def setup_ingredient_price(db, ingredient, store):
     """Crée un prix d'ingrédient valide en base pour les tests."""
     return IngredientPrice.objects.create(ingredient=ingredient, brand_name="Bio Village", store=store, quantity=1, unit="kg", price=2.5)
 
-def get_valid_ingredientprice_data(ingredient_price):
+def get_valid_data_ingredientprice(setup_ingredient_price):
     """ Génère un dictionnaire contenant toutes les données valides d'un `IngredientPrice`. """
     return {
-        "ingredient": ingredient_price.ingredient.ingredient_name,
-        "store": ingredient_price.store.id,
-        "brand_name": ingredient_price.brand_name,
-        "price": ingredient_price.price,
-        "quantity": ingredient_price.quantity,
-        "unit": ingredient_price.unit,
-        "date": ingredient_price.date
+        "ingredient": setup_ingredient_price.ingredient.ingredient_name,
+        "store": setup_ingredient_price.store.id,
+        "brand_name": setup_ingredient_price.brand_name,
+        "price": setup_ingredient_price.price,
+        "quantity": setup_ingredient_price.quantity,
+        "unit": setup_ingredient_price.unit,
+        "date": setup_ingredient_price.date
     }
 
 
 # Création
 @pytest.mark.django_db
-def test_create_ingredient_price(api_client, base_url, setup_ingredient_price):
+def test_create_ingredientprice(api_client, base_url, setup_ingredient_price):
     """Vérifie qu'on peut créer un `IngredientPrice` avec des données valides."""
     url = base_url(model_name)
-    valid_data = get_valid_ingredientprice_data(setup_ingredient_price)
+    valid_data = get_valid_data_ingredientprice(setup_ingredient_price)
     valid_data["brand_name"] = "toto" # changer le nom de la marque pour éviter une erreur 'must make a unique set' avec la fixture
 
     response = api_client.post(url, valid_data, format="json")
@@ -63,10 +63,10 @@ def test_create_ingredient_price(api_client, base_url, setup_ingredient_price):
     assert response.json()["price"] == valid_data["price"]
 
 @pytest.mark.django_db
-def test_create_duplicate_ingredient_price(api_client, base_url, setup_ingredient_price):
+def test_create_duplicate_ingredientprice(api_client, base_url, setup_ingredient_price):
     """Vérifie qu'on ne peut pas créer deux `IngredientPrice` identiques."""
     url = base_url(model_name)
-    duplicate_data = get_valid_ingredientprice_data(setup_ingredient_price)
+    duplicate_data = get_valid_data_ingredientprice(setup_ingredient_price)
     duplicate_data["price"] = setup_ingredient_price.price  # Même prix
 
     response = api_client.post(url, duplicate_data, format="json")
@@ -75,7 +75,7 @@ def test_create_duplicate_ingredient_price(api_client, base_url, setup_ingredien
 
 # Lecture
 @pytest.mark.django_db
-def test_get_ingredient_price(api_client, base_url, setup_ingredient_price):
+def test_get_ingredientprice(api_client, base_url, setup_ingredient_price):
     """Vérifie qu'on peut récupérer un `IngredientPrice` existant via `GET /ingredient_prices/{id}/`."""
     url = f"{base_url(model_name)}{setup_ingredient_price.id}/"
     response = api_client.get(url)
@@ -83,7 +83,7 @@ def test_get_ingredient_price(api_client, base_url, setup_ingredient_price):
     assert response.json()["price"] == setup_ingredient_price.price
 
 @pytest.mark.django_db
-def test_get_ingredient_price_list(api_client, base_url, setup_ingredient_price):
+def test_get_ingredientprice_list(api_client, base_url, setup_ingredient_price):
     """Vérifie qu'on peut récupérer la liste des `IngredientPrice` existants via `GET /ingredient_prices/`."""
     url = base_url(model_name)
     response = api_client.get(url)
@@ -99,7 +99,7 @@ def test_get_nonexistent_ingredient_price(api_client, base_url):
 
 # Mise à jour
 @pytest.mark.django_db
-def test_update_ingredient_price(api_client, base_url, setup_ingredient_price):
+def test_update_ingredientprice(api_client, base_url, setup_ingredient_price):
     """Vérifie qu'on ne peut pas mettre à jour un `IngredientPrice`."""
     url = f"{base_url(model_name)}{setup_ingredient_price.id}/"
     updated_data = {"price": 3.0}
@@ -109,14 +109,14 @@ def test_update_ingredient_price(api_client, base_url, setup_ingredient_price):
 
 # Suppression
 @pytest.mark.django_db
-def test_delete_ingredient_price(api_client, base_url, setup_ingredient_price):
+def test_delete_ingredientprice(api_client, base_url, setup_ingredient_price):
     """Vérifie qu'on peut supprimer un `IngredientPrice` existant via `DELETE /ingredient_prices/{id}/`."""
     url = f"{base_url(model_name)}{setup_ingredient_price.id}/"
     response = api_client.delete(url)
     assert response.status_code == status.HTTP_204_NO_CONTENT
 
 @pytest.mark.django_db
-def test_delete_nonexistent_ingredient_price(api_client, base_url):
+def test_delete_nonexistent_ingredientprice(api_client, base_url):
     """Vérifie qu'une tentative de suppression d'un `IngredientPrice` inexistant retourne `404`."""
     url = f"{base_url(model_name)}999999/"
     response = api_client.delete(url)

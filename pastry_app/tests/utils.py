@@ -1,11 +1,8 @@
 import pytest, json, importlib
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from django.apps import apps
 from rest_framework import status, serializers
-# from pastry_app.serializers import IngredientSerializer, IngredientPriceSerializer, StoreSerializer
 
-# Fonctions centrales 
 def validate_constraint(model, field_name, value, expected_error, **valid_data):
     """ Applique une validation sur un champ en testant si une erreur spécifique est levée. """
     valid_data[field_name] = value
