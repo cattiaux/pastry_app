@@ -439,7 +439,7 @@ class IngredientPrice(models.Model):
                                                                  promotion_end_date=old_instance.promotion_end_date, date=old_instance.date
                                                                  ).exists():
                         # Archiver l'ancien prix avec les anciennes valeurs
-                        IngredientPriceHistory.objects.create(ingredient_price=self, ingredient=self.ingredient, store=self.store, brand_name=self.brand_name, 
+                        IngredientPriceHistory.objects.create(ingredient=self.ingredient, store=self.store, brand_name=self.brand_name, 
                                                               quantity=self.quantity, unit=self.unit, price=old_instance.price, is_promo=old_instance.is_promo, 
                                                               promotion_end_date=old_instance.promotion_end_date, date=old_instance.date)
 

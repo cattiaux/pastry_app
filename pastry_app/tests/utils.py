@@ -97,15 +97,19 @@ def validate_unique_constraint_api(api_client, base_url, model_name, field_name,
     assert field_name in response2.json()
     assert any("unique" in error.lower() for error in response2.json()[field_name])  # Vérifie l'erreur d'unicitéq
 
-def validate_unique_together(model, expected_error, create_initial=True, **valid_data):
+def validate_unique_together(model, expected_error, **valid_data):
     """ Vérifie qu'une contrainte `unique_together` est respectée et empêche la duplication. """
-    if create_initial:
-        model.objects.create(**valid_data) # Création de la première instance
-    with pytest.raises(ValidationError) as excinfo:  # Capture l'exception complète
+    # Vérifier si un objet existe déjà en base
+    existing_object = model.objects.filter(**valid_data).exists()
+    if not existing_object: # Si aucun objet n'existe et qu'on doit en créer un premier, on le fait
+        model.objects.create(**valid_data)  
+
+    # Tenter de créer un deuxième objet identique et s'assurer que l'erreur est levée
+    with pytest.raises(ValidationError) as excinfo:
         obj = model(**valid_data)
         obj.full_clean()  # Déclenche la ValidationError avant le save
         obj.save()
-    assert expected_error in str(excinfo.value)  # Convertir l'erreur en string pour comparaison
+    assert expected_error in str(excinfo.value), f"Erreur attendue '{expected_error}' non trouvée dans '{excinfo.value}'" # Vérifier que l'erreur attendue est bien levée
 
 def validate_unique_together_api(api_client, base_url, model_name, valid_data):
     """ Vérifie qu'une contrainte `unique_together` est respectée en API et empêche la duplication. """

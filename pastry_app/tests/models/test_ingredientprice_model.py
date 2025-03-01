@@ -95,7 +95,10 @@ def test_price_history_is_created_on_price_change_db(ingredient_price):
     ingredient_price.save()
 
     # Vérifier que l'ancien prix est sauvegardé dans l'historique
-    history_entry = IngredientPriceHistory.objects.filter(ingredient_price=ingredient_price).order_by("-date").first()
+    history_entry = IngredientPriceHistory.objects.filter(ingredient=ingredient_price.ingredient, store=ingredient_price.store, 
+                                                          brand_name=ingredient_price.brand_name, quantity=ingredient_price.quantity, 
+                                                          unit=ingredient_price.unit, price=old_price
+                                                          ).order_by("-date").first()
     assert history_entry is not None
     assert history_entry.price == old_price
 
@@ -135,34 +138,19 @@ def test_ingredientprice_str(is_promo, has_store, brand_name, quantity, price, u
 
 @pytest.mark.parametrize("field_name, invalid_value, is_promo_value, expected_error", [
     ("promotion_end_date", now().date(), False, "Si une date de fin de promo est renseignée, `is_promo` doit être activé."),
-    ("promotion_end_date", now().date().replace(day=1), True, "La date de fin de promo ne peut pas être dans le passé.")
+    ("promotion_end_date", now().date().replace(year=now().year-1), True, "La date de fin de promo ne peut pas être dans le passé.")
 ])
 @pytest.mark.django_db
 def test_promotion_end_date_constraints_db(field_name, invalid_value, is_promo_value, expected_error, ingredient_price):
     """ Vérifie les contraintes sur `promotion_end_date` en utilisant `validate_constraint`. """
-    validate_constraint(
-        model=IngredientPrice,
-        field_name=field_name,
-        value=invalid_value,
-        expected_error=expected_error,
-        ingredient=ingredient_price.ingredient,
-        store=ingredient_price.store,
-        brand_name=ingredient_price.brand_name,
-        quantity=ingredient_price.quantity,
-        unit=ingredient_price.unit,
-        price=ingredient_price.price,
-        is_promo=is_promo_value  # La fixture a `is_promo=False` par défaut
-    )
+    validate_constraint(IngredientPrice, field_name=field_name, value=invalid_value, expected_error=expected_error, 
+                        ingredient=ingredient_price.ingredient, store=ingredient_price.store, brand_name=ingredient_price.brand_name, 
+                        quantity=ingredient_price.quantity, unit=ingredient_price.unit, price=ingredient_price.price, is_promo=is_promo_value)
 
 @pytest.mark.django_db
 def test_unique_ingredientprice_db(ingredient_price):
     """ Vérifie que deux `IngredientPrice` identiques ne peuvent pas exister en base. """
     expected_error = "Ingredient price with this Ingredient, Store, Brand name, Quantity and Unit already exists."
-    validate_unique_together(IngredientPrice, expected_error,
-        ingredient=ingredient_price.ingredient,
-        store=ingredient_price.store,
-        brand_name=ingredient_price.brand_name,
-        quantity=ingredient_price.quantity,
-        unit=ingredient_price.unit,
-        price=ingredient_price.price
-    )
+    validate_unique_together(IngredientPrice, expected_error, ingredient=ingredient_price.ingredient, store=ingredient_price.store, 
+                             brand_name=ingredient_price.brand_name, quantity=ingredient_price.quantity, unit=ingredient_price.unit, 
+                             price=ingredient_price.price)
