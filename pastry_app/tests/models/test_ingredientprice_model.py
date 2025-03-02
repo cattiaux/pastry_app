@@ -48,17 +48,17 @@ def test_ingredientprice_deletion_db(ingredient_price):
     assert not IngredientPrice.objects.filter(id=price_id).exists()
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("field_name, raw_value", [("brand_name", "  BIO VILLAGE  "),])
+@pytest.mark.parametrize("field_name, raw_value", [("brand_name", "  BIO VILLAGE  "), ("unit", " Kg")])
 def test_normalized_fields_ingredientprice_db(field_name, raw_value, ingredient, store):
-    """Vérifie que `brand_name` est bien normalisé avant stockage en base."""
-    validate_field_normalization(IngredientPrice, field_name, raw_value, ingredient=ingredient, store=store, quantity=1, unit="kg", price=2.5)
+    """Vérifie que `brand_name` et `unit` sont bien normalisés avant stockage en base."""
+    validate_field_normalization(IngredientPrice, field_name, raw_value, ingredient=ingredient, store=store, quantity=1, 
+                                 unit="kg" if field_name != "unit" else raw_value, price=2.5)
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("field_name", ["price", "quantity","unit"])
 def test_required_fields_ingredientprice_db(field_name, ingredient, store):
     """Vérifie que les champs obligatoires ne peuvent pas être vides ou nuls."""
     expected_error = "Le prix, la quantité et l'unité de mesure sont obligatoires."
-    # validate_required_field(IngredientPrice, field_name, expected_error, ingredient=ingredient, store=store, unit="kg")
     for invalid_value in [None, ""]:
         validate_constraint(IngredientPrice, field_name, invalid_value, expected_error, ingredient=ingredient, store=store, unit="kg")
 
@@ -70,6 +70,20 @@ def test_required_fields_ingredientprice_db(field_name, ingredient, store):
 def test_positive_values_ingredientprice_db(field_name, expected_error, ingredient, store, valid_other_field):
     """Vérifie que `price` et `quantity` doivent être strictement positifs en fournissant une valeur valide pour l'autre champ."""
     validate_constraint(IngredientPrice, field_name, 0, expected_error, ingredient=ingredient, store=store, unit="kg", **valid_other_field)
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("field_name, value, valid_other_field", [
+    ("price", 3, {"quantity": 1}),  # Teste un entier valide pour price
+    ("quantity", 2, {"price": 2.5}),  # Teste un entier valide pour quantity
+])
+def test_integer_values_accepted_ingredientprice_db(field_name, value, ingredient, store, valid_other_field):
+    """ Vérifie que `price` et `quantity` acceptent des valeurs entières. """
+    valid_data = {"ingredient": ingredient, "store": store, "unit": "kg", **valid_other_field}
+    valid_data[field_name] = value  # Ajoute la valeur à tester
+    obj = IngredientPrice(**valid_data)
+    obj.full_clean()  # Vérifie que cela passe sans erreur
+    obj.save()  # Enregistre pour être sûr que la BDD accepte aussi
+    assert getattr(obj, field_name) == float(value)  # Vérifie la conversion en float
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("field_name", ["brand_name"])
