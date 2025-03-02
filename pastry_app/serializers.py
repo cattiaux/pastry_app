@@ -146,28 +146,8 @@ class IngredientPriceHistorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = IngredientPriceHistory
-        fields = ["id", "ingredient_price", "date", "price", "is_promo"]  # Champs exposés via l'API
-        indexes = [Index(fields=["ingredient_price", "date"])]
-        unique_together = ("ingredient_price", "date", "price")
-
-    def validate(self, data):
-        """ Vérifie qu'un prix identique ne soit pas enregistré inutilement. """
-        ingredient_price = data.get("ingredient_price")
-        new_price = data.get("price")
-        date = data.get("date")
-
-        # Récupérer le dernier prix en base
-        last_price = IngredientPriceHistory.objects.filter(ingredient_price=ingredient_price).order_by("-date").first()
-
-        # Si le prix est identique au dernier enregistré, refuser la requête
-        if last_price and last_price.price == new_price:
-            raise serializers.ValidationError("Ce prix est déjà enregistré.")
-
-        # Vérifier qu'on ne crée pas un duplicata (même prix, même date, même ingrédient)
-        if IngredientPriceHistory.objects.filter(ingredient_price=ingredient_price, date=date, price=new_price).exists():
-            raise serializers.ValidationError("Cet enregistrement existe déjà.")
-
-        return data
+        fields = ['id', 'ingredient', 'brand_name', 'store', 'date', 'quantity', 'unit', 'price', "is_promo", "promotion_end_date"]
+        read_only_fields = fields  # Empêche toute modification via l'API
     
 class CategorySerializer(serializers.ModelSerializer):
     category_type = serializers.CharField(required=False)

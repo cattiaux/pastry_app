@@ -129,10 +129,9 @@ def test_promo_price_must_be_lower_than_normal_price_db(ingredient_price):
 def test_ingredientprice_str(is_promo, has_store, brand_name, quantity, price, unit, ingredient, store):
     """Vérifie que `__str__()` affiche bien les informations correctement formatées."""
     promo_text = " (Promo)" if is_promo else ""
-    store_name = str(store) if has_store else "Non renseigné"
+    store_str = str(store) if has_store else "Non renseigné"
     magasin = store if has_store else None
-
-    expected_str = f"{ingredient.ingredient_name.lower()} - {normalize_case(brand_name)} @ {store_name} ({quantity}{unit.lower()} pour {price}€{promo_text})"
+    expected_str = f"{ingredient.ingredient_name} - {normalize_case(brand_name)} @ {store_str} ({quantity}{unit} pour {price}€{promo_text})"
 
     validate_model_str(IngredientPrice, expected_str, ingredient=ingredient, brand_name=brand_name, store=magasin, 
                        quantity=quantity, unit=unit, price=price, is_promo=is_promo)

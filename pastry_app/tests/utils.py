@@ -36,9 +36,11 @@ def validate_constraint_api(api_client, base_url, model_name, field_name, expect
 def validate_model_str(model, expected_str, create_initial=True, **valid_data):
     """ Vérifie que la méthode `__str__()` du modèle retourne la bonne valeur. """
     if create_initial : 
+        print(valid_data)
         obj = model(**valid_data)
     else:
         obj = model.objects.create(**valid_data)
+    print("instance : ", obj)
     obj.full_clean()
     assert str(obj) == expected_str, f"__str__() attendu : {expected_str}, obtenu : {str(obj)}"
 
