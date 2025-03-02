@@ -112,7 +112,7 @@ def test_unit_must_be_valid_db(ingredient_price_history):
         price.full_clean()
 
 @pytest.mark.parametrize("field_name, invalid_value, is_promo_value, expected_error", [
-    ("promotion_end_date", now().date(), False, "Si une date de fin de promo est renseignée, `is_promo` doit être activé."),
+    ("promotion_end_date", now().date(), False, "Une date de fin de promo nécessite que `is_promo=True`."),
     ("promotion_end_date", now().date().replace(year=now().year-1), True, "La date de fin de promo ne peut pas être dans le passé.")
 ])
 @pytest.mark.django_db
@@ -131,3 +131,12 @@ def test_required_fields_ingredientpricehistory_db(field_name, ingredient_price_
     for invalid_value in [None, ""]:
         validate_constraint(IngredientPriceHistory, field_name, invalid_value, expected_error, ingredient=ingredient_price_history.ingredient, 
                             store=ingredient_price_history.store, unit="kg")
+        
+@pytest.mark.django_db
+@pytest.mark.parametrize("is_promo, promotion_end_date", [(False, "2025-06-01")]) # Cas interdit : date de fin sans promo active
+def test_promotion_requires_consistency_db(is_promo, promotion_end_date, ingredient_price_history):
+    """ Vérifie que `is_promo` et `promotion_end_date` doivent être cohérents (modèle). """
+    with pytest.raises(ValidationError, match="Une date de fin de promo nécessite que `is_promo=True`."):
+        price = IngredientPriceHistory(ingredient=ingredient_price_history.ingredient, store=ingredient_price_history.store, price=2.5, 
+                                quantity=250, unit="g", is_promo=is_promo, promotion_end_date=promotion_end_date)
+        price.full_clean()  # Déclenche la validation

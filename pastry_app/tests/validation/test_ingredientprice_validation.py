@@ -140,3 +140,14 @@ def test_price_update_creates_new_ingredientprice(api_client, base_url, ingredie
                                                      quantity=ingredient_price.quantity, unit=ingredient_price.unit, price=ingredient_price.price, is_promo=ingredient_price.is_promo
                                                      ).exists()
     assert archived, "L'ancien prix n'a pas été archivé dans IngredientPriceHistory !" # Vérifier que l'ancien prix est archivé
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("is_promo, promotion_end_date", [(False, "2025-06-01")])  # Date de fin sans promo active
+def test_promotion_requires_consistency_api(api_client, base_url, is_promo, promotion_end_date, ingredient, store):
+    """ Vérifie que `is_promo` et `promotion_end_date` doivent être cohérents (API). """
+    url = base_url("ingredient_prices")
+    data = {"ingredient": ingredient.ingredient_name, "store": store.id, "price": 2.5, "quantity": 1, 
+            "unit": "kg", "is_promo": is_promo, "promotion_end_date": promotion_end_date}
+    response = api_client.post(url, data, format="json")
+    assert response.status_code == 400  # Vérifier que l'API bloque bien la requête
+    assert "Une date de fin de promotion nécessite que `is_promo=True`." in response.json().get("non_field_errors", [])

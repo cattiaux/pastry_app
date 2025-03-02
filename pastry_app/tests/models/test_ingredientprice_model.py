@@ -151,7 +151,7 @@ def test_ingredientprice_str(is_promo, has_store, brand_name, quantity, price, u
                        quantity=quantity, unit=unit, price=price, is_promo=is_promo)
 
 @pytest.mark.parametrize("field_name, invalid_value, is_promo_value, expected_error", [
-    ("promotion_end_date", now().date(), False, "Si une date de fin de promo est renseignée, `is_promo` doit être activé."),
+    ("promotion_end_date", now().date(), False, "Une date de fin de promo nécessite que `is_promo=True`."),
     ("promotion_end_date", now().date().replace(year=now().year-1), True, "La date de fin de promo ne peut pas être dans le passé.")
 ])
 @pytest.mark.django_db
@@ -168,3 +168,12 @@ def test_unique_ingredientprice_db(ingredient_price):
     validate_unique_together(IngredientPrice, expected_error, ingredient=ingredient_price.ingredient, store=ingredient_price.store, 
                              brand_name=ingredient_price.brand_name, quantity=ingredient_price.quantity, unit=ingredient_price.unit, 
                              price=ingredient_price.price)
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("is_promo, promotion_end_date", [(False, "2025-06-01")]) # Cas interdit : date de fin sans promo active
+def test_promotion_requires_consistency_db(is_promo, promotion_end_date, ingredient_price):
+    """ Vérifie que `is_promo` et `promotion_end_date` doivent être cohérents (modèle). """
+    with pytest.raises(ValidationError, match="Une date de fin de promo nécessite que `is_promo=True`."):
+        price = IngredientPrice(ingredient=ingredient_price.ingredient, store=ingredient_price.store, price=2.5, 
+                                quantity=250, unit="g", is_promo=is_promo, promotion_end_date=promotion_end_date)
+        price.full_clean()  # Déclenche la validation

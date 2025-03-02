@@ -422,7 +422,7 @@ class IngredientPrice(models.Model):
 
         # Vérifier la cohérence des promotions
         if self.promotion_end_date and not self.is_promo:
-            raise ValidationError("Si une date de fin de promo est renseignée, `is_promo` doit être activé.")
+            raise ValidationError("Une date de fin de promo nécessite que `is_promo=True`.")
         if self.promotion_end_date and self.promotion_end_date < now().date():
             raise ValidationError("La date de fin de promo ne peut pas être dans le passé.")
 
@@ -539,7 +539,7 @@ class IngredientPriceHistory(models.Model):
 
         # Vérifier la cohérence des promotions
         if self.promotion_end_date and not self.is_promo:
-            raise ValidationError("Si une date de fin de promo est renseignée, `is_promo` doit être activé.")
+            raise ValidationError("Une date de fin de promo nécessite que `is_promo=True`.")
         if self.promotion_end_date and self.promotion_end_date < now().date():
             raise ValidationError("La date de fin de promo ne peut pas être dans le passé.")
 
