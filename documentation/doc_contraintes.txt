@@ -146,6 +146,7 @@ Contraintes Métier :
 3. Gestion des Suppressions
     ◦ Un ingrédient ne peut pas être supprimé s'il est utilisé dans une recette.
     ◦ Les catégories et labels peuvent être retirés d’un ingrédient uniquement s’ils existent encore ailleurs.
+    ◦ Un Ingredient supprimé supprime tous ses prix en cours (IngredientPrice), mais conserve l’historique (IngredientPriceHistory) avec ingredient_name.
 
 Contraintes Techniques :
 1. Type de Données
@@ -273,7 +274,7 @@ Vérifie qu’on ne peut pas modifier un IngredientPrice	                       
 Vérifie que la mise à jour d’un prix crée un nouvel IngredientPrice et archive l’ancien	        -> test_price_update_creates_new_ingredientprice
 Vérifie qu’un IngredientPrice peut être supprimé	                                            -> test_delete_ingredientprice_api
 Vérifie qu’on ne peut pas supprimer un IngredientPrice utilisé dans IngredientPriceHistory	    -> test_delete_ingredientprice_api_forbidden
-
+Vérifie que la suppression d’un Ingredient supprime bien ses prix actuels                       -> test_ingredient_deletion_removes_prices
 
 Contraintes Métier:
 1. Obligations des Champs
@@ -290,7 +291,7 @@ Contraintes Métier:
     ◦ Pas d’update d’un IngredientPrice (nouvel enregistrement à chaque changement).
     ◦ Seule la modification de promotion_end_date est autorisée.
 5. Suppression Sécurisée
-    ◦ Un IngredientPrice peut être supprimé, sauf s’il est utilisé dans IngredientPriceHistory.
+    ◦ Un IngredientPrice supprimé est automatiquement archivé dans IngredientPriceHistory.
 
 Contraintes Techniques:
 1. Type de Données
@@ -299,13 +300,12 @@ Contraintes Techniques:
 2. Indexation
     ◦ Index sur (ingredient, store, brand_name, quantity, unit) pour optimiser les requêtes.
     ◦ Index sur date pour les recherches temporelles.
-3. Intégrité
-    ◦ Suppression protégée : si un IngredientPrice est référencé en IngredientPriceHistory, sa suppression est interdite.
+3. Gestion des suppressions
+    on_delete=models.CASCADE sur l'ingrédient → Supprime les prix actifs avec l’ingrédient.
 
 Préparation à la Production : 
 1. Ajout de Contrainte d’Unicité
     ◦ Actuellement gérée en API (UniqueTogetherValidator) et en base (UniqueConstraint).
-    ◦ Testée via test_unique_constraint_ingredientprice_db.
 2. Sécurisation des Données
     ◦ Vérification en API (serializer.validate()) et en base (full_clean() avant save()).
     ◦ Normalisation des valeurs (brand_name, unit).
@@ -321,9 +321,13 @@ Vérifie que la création d’un IngredientPriceHistory est interdite via l’AP
 Vérifie qu’un IngredientPriceHistory est bien créé lorsqu’un prix change	    -> test_price_update_creates_new_ingredientprice
 Vérifie que la mise à jour d’un historique de prix est interdite via l’API	    -> test_update_ingredientpricehistory_api_forbidden
 Vérifie que la suppression d’un historique de prix est interdite via l’API	    -> test_delete_ingredientpricehistory_api_forbidden
-
+Vérifie que l’historique est bien conservé après suppression d’un ingrédient    -> test_ingredient_deletion_keeps_history
+Vérifie que la suppression d’un prix l’archive dans l'historique.               -> test_ingredientprice_deletion_creates_history
 
 Contraintes Métier:
+0. Création
+    ◦ L’archivage d’un prix est automatique lorsqu’un prix existant est modifié.
+    ◦ Un IngredientPriceHistory est généré automatiquement, il ne peut pas être créé ou modifié manuellement.
 1. Obligations des Champs
     ◦ ingredient, store, price, quantity, unit et date sont obligatoires.
     ◦ is_promo et promotion_end_date doivent être cohérents (promotion_end_date requiert is_promo=True).
@@ -335,11 +339,15 @@ Contraintes Métier:
 4. Lecture et Protection
     ◦ IngredientPriceHistory est en lecture seule via l’API (ReadOnlyModelViewSet).
     ◦ Aucune modification ni suppression autorisée via l’API.
+5. Historique
+    ◦ L’historique d’un ingrédient supprimé ne référence plus l’ingrédient en ForeignKey, mais conserve son nom (ingredient_name).
 
 Contraintes Techniques:
 1. Type de Données
     ◦ price et quantity sont stockés en DecimalField, comme dans IngredientPrice.
     ◦ date est un DateField obligatoire.
+    ◦ on_delete=models.SET_NULL sur l'ingrédient → Conserve l’historique sans référence directe.
+    ◦ L’ingredient_name de IngredientPriceHistory est mis à jour lors de l’archivage.
 2. Indexation
     ◦ Index sur (ingredient, date) pour améliorer les performances.
 3. Intégrité
