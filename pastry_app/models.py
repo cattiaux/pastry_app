@@ -380,6 +380,22 @@ class IngredientPrice(models.Model):
         if self.unit:  # Vérifier que `unit` n'est pas vide
             self.unit = normalize_case(self.unit)  # Appliquer la normalisation
 
+    def delete(self, *args, **kwargs):
+        """ Archive le prix dans IngredientPriceHistory avant suppression. """
+        IngredientPriceHistory.objects.create(
+            ingredient=self.ingredient,
+            ingredient_name=self.ingredient.ingredient_name if self.ingredient else None,  # Sauvegarde le nom
+            store=self.store,
+            brand_name=self.brand_name,
+            quantity=self.quantity,
+            unit=self.unit,
+            price=self.price,
+            is_promo=self.is_promo,
+            promotion_end_date=self.promotion_end_date,
+            date=self.date
+        )
+        super().delete(*args, **kwargs)  # Supprime l’entrée après archivage
+
     def clean(self):
         """ Validation des contraintes métier avant sauvegarde """
         # Vérifier que les champs obligatoires sont remplis
@@ -469,7 +485,8 @@ class IngredientPrice(models.Model):
         super().save(*args, **kwargs)
 
 class IngredientPriceHistory(models.Model):
-    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)  # Ajout de la FK Ingredient
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.SET_NULL, null=True, blank=True)  # Laisse l’historique même si l’ingrédient est supprimé)
+    ingredient_name = models.CharField(max_length=255, null=True, blank=True, default="")  # Ajout du nom pour référence
     store = models.ForeignKey(Store, on_delete=models.CASCADE, null=True, blank=True)  # Ajout du magasin
     brand_name = models.TextField(max_length=200, blank=True, null=True, default=None)  # Ajout de la marque
     quantity = models.FloatField(validators=[MinValueValidator(0)])  # Ajout de la quantité
@@ -555,6 +572,10 @@ class IngredientPriceHistory(models.Model):
     def save(self, *args, **kwargs):
         """ Vérifie les contraintes métier et empêche l'enregistrement inutile de doublons. """
         self.clean()  # Appliquer les validations avant l'enregistrement
+
+        # Remplit automatiquement `ingredient_name` avec le slug de `ingredient`.
+        if self.ingredient:
+            self.ingredient_name = self.ingredient.ingredient_name  # Récupère le slug
 
         # Vérifier s'il existe déjà un historique avec le même prix pour ce produit
         last_price = IngredientPriceHistory.objects.filter(

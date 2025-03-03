@@ -140,3 +140,20 @@ def test_promotion_requires_consistency_db(is_promo, promotion_end_date, ingredi
         price = IngredientPriceHistory(ingredient=ingredient_price_history.ingredient, store=ingredient_price_history.store, price=2.5, 
                                 quantity=250, unit="g", is_promo=is_promo, promotion_end_date=promotion_end_date)
         price.full_clean()  # Déclenche la validation
+
+@pytest.mark.django_db
+def test_ingredient_name_defaults_to_empty(ingredient_price_history):
+    """ Vérifie que `ingredient_name` est automatiquement rempli avec le slug de l'ingrédient. """
+    assert ingredient_price_history.ingredient_name == ingredient_price_history.ingredient.ingredient_name, "Le champ `ingredient_name` n'a pas été correctement renseigné."
+
+@pytest.mark.django_db
+def test_ingredient_deletion_keeps_history(ingredient_price_history):
+    """ Vérifie que la suppression d’un `Ingredient` ne supprime pas son historique (`IngredientPriceHistory`). """
+    old_ingredient_name = ingredient_price_history.ingredient_name
+    ingredient_price_history.ingredient.delete() # Suppression de l'ingrédient
+
+    # Vérifier que l’historique est toujours présent
+    history_entry = IngredientPriceHistory.objects.filter(ingredient_name=old_ingredient_name).first()
+    assert history_entry is not None, "L’historique ne devrait pas être supprimé avec l’ingrédient."
+    assert history_entry.ingredient is None, "L’ingrédient doit être `NULL` après suppression."
+    assert history_entry.ingredient_name == old_ingredient_name, "Le nom de l’ingrédient doit être conservé."

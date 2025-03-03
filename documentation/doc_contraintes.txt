@@ -256,3 +256,100 @@ Préparation à la Production :
 4. Sécurisation des Données
     ◦ Vérification des entrées avant insertion en base
     ◦ Suppression sécurisée sans effet de bord
+
+
+
+Synthèse des Contraintes pour le Modèle IngredientPrice
+
+
+        CONTRAINTES	                                                                                 TEST CORRESPONDANT
+Création d’un IngredientPrice valide	                                                        -> test_create_ingredientprice_api
+Vérifie que ingredient, store, price, quantity, unit sont obligatoires	                        -> test_required_fields_ingredientprice_db, test_required_fields_ingredientprice_api
+Vérifie que unit est bien dans UNIT_CHOICES et normalisé	                                    -> test_invalid_choice_fields_ingredientprice_db, test_invalid_choice_fields_ingredientprice_api, test_normalized_fields_ingredientprice_db, test_normalized_fields_ingredientprice_api
+Vérifie que brand_name et unit sont bien normalisés	                                            -> test_normalized_fields_ingredientprice_db, test_normalized_fields_ingredientprice_api
+Vérifie que price et quantity doivent être strictement positifs	                                -> test_positive_values_ingredientprice_db, test_positive_values_ingredientprice_api
+Vérifie qu’un IngredientPrice est unique (même ingredient, store, brand_name, quantity, unit)	-> test_unique_constraint_ingredientprice_db, test_unique_together_ingredientprice_api
+Vérifie qu’on ne peut pas modifier un IngredientPrice	                                        -> test_update_ingredientprice_api_forbidden
+Vérifie que la mise à jour d’un prix crée un nouvel IngredientPrice et archive l’ancien	        -> test_price_update_creates_new_ingredientprice
+Vérifie qu’un IngredientPrice peut être supprimé	                                            -> test_delete_ingredientprice_api
+Vérifie qu’on ne peut pas supprimer un IngredientPrice utilisé dans IngredientPriceHistory	    -> test_delete_ingredientprice_api_forbidden
+
+
+Contraintes Métier:
+1. Obligations des Champs
+    ◦ ingredient, store, price, quantity et unit sont obligatoires.
+    ◦ brand_name est optionnel mais normalisé.
+    ◦ date est facultatif mais par défaut fixé à la date du jour.
+2. Validation des Valeurs
+    ◦ price et quantity doivent être strictement positifs.
+    ◦ unit doit appartenir à UNIT_CHOICES et est normalisé ("Kg" → "kg").
+3. Unicité
+    ◦ Un IngredientPrice est unique sur (ingredient, store, brand_name, quantity, unit).
+    ◦ Si le prix change pour un même ingrédient, l’ancien est archivé dans IngredientPriceHistory.
+4. Mise à Jour
+    ◦ Pas d’update d’un IngredientPrice (nouvel enregistrement à chaque changement).
+    ◦ Seule la modification de promotion_end_date est autorisée.
+5. Suppression Sécurisée
+    ◦ Un IngredientPrice peut être supprimé, sauf s’il est utilisé dans IngredientPriceHistory.
+
+Contraintes Techniques:
+1. Type de Données
+    ◦ price et quantity sont stockés en DecimalField, mais acceptent des int (convertis en float).
+    ◦ unit est un CharField avec des choix limités (UNIT_CHOICES).
+2. Indexation
+    ◦ Index sur (ingredient, store, brand_name, quantity, unit) pour optimiser les requêtes.
+    ◦ Index sur date pour les recherches temporelles.
+3. Intégrité
+    ◦ Suppression protégée : si un IngredientPrice est référencé en IngredientPriceHistory, sa suppression est interdite.
+
+Préparation à la Production : 
+1. Ajout de Contrainte d’Unicité
+    ◦ Actuellement gérée en API (UniqueTogetherValidator) et en base (UniqueConstraint).
+    ◦ Testée via test_unique_constraint_ingredientprice_db.
+2. Sécurisation des Données
+    ◦ Vérification en API (serializer.validate()) et en base (full_clean() avant save()).
+    ◦ Normalisation des valeurs (brand_name, unit).
+
+
+
+Synthèse des Contraintes pour le Modèle IngredientPriceHistory
+
+        CONTRAINTES	                                                                                 TEST CORRESPONDANT
+Récupération d’un historique spécifique	                                        -> test_get_ingredientpricehistory_detail_api
+Vérifie qu’on peut récupérer la liste des historiques	                        -> test_get_ingredientpricehistory_list_api
+Vérifie que la création d’un IngredientPriceHistory est interdite via l’API	    -> test_create_ingredientpricehistory_api_forbidden
+Vérifie qu’un IngredientPriceHistory est bien créé lorsqu’un prix change	    -> test_price_update_creates_new_ingredientprice
+Vérifie que la mise à jour d’un historique de prix est interdite via l’API	    -> test_update_ingredientpricehistory_api_forbidden
+Vérifie que la suppression d’un historique de prix est interdite via l’API	    -> test_delete_ingredientpricehistory_api_forbidden
+
+
+Contraintes Métier:
+1. Obligations des Champs
+    ◦ ingredient, store, price, quantity, unit et date sont obligatoires.
+    ◦ is_promo et promotion_end_date doivent être cohérents (promotion_end_date requiert is_promo=True).
+2. Validation des Valeurs
+    ◦ price et quantity doivent être strictement positifs.
+    ◦ unit est validé et normalisé ("Kg" → "kg").
+3. Unicité
+    ◦ Pas de contrainte stricte en base sur (date, price), mais les doublons inutiles sont empêchés via clean().
+4. Lecture et Protection
+    ◦ IngredientPriceHistory est en lecture seule via l’API (ReadOnlyModelViewSet).
+    ◦ Aucune modification ni suppression autorisée via l’API.
+
+Contraintes Techniques:
+1. Type de Données
+    ◦ price et quantity sont stockés en DecimalField, comme dans IngredientPrice.
+    ◦ date est un DateField obligatoire.
+2. Indexation
+    ◦ Index sur (ingredient, date) pour améliorer les performances.
+3. Intégrité
+    ◦ Lecture seule via l’API.
+    ◦ Suppression interdite en API, mais possible en base pour un superutilisateur uniquement.
+
+Préparation à la Production : 
+1. Protection
+    ◦ Lecture seule en API (ReadOnlyModelViewSet).
+    ◦ Suppression et mise à jour interdites en API.
+2. Vérifications
+    ◦ Cohérence des promotions (is_promo, promotion_end_date).
+    ◦ Pas d’enregistrement inutile de doublons en base.

@@ -177,3 +177,27 @@ def test_promotion_requires_consistency_db(is_promo, promotion_end_date, ingredi
         price = IngredientPrice(ingredient=ingredient_price.ingredient, store=ingredient_price.store, price=2.5, 
                                 quantity=250, unit="g", is_promo=is_promo, promotion_end_date=promotion_end_date)
         price.full_clean()  # Déclenche la validation
+
+@pytest.mark.django_db
+def test_ingredientprice_deletion_creates_history(ingredient_price):
+    """ Vérifie que la suppression d’un `IngredientPrice` l’archive dans `IngredientPriceHistory`. """
+    old_price = ingredient_price.price
+    old_date = ingredient_price.date
+    old_ingredient_name = ingredient_price.ingredient.ingredient_name
+    ingredient_price.delete()      # Suppression du prix
+
+    # Vérifier que l’archive a bien été créée
+    history_entry = IngredientPriceHistory.objects.filter(
+        ingredient_name=old_ingredient_name, price=old_price, date=old_date
+    ).first()
+    assert history_entry is not None, "L’ingredientPrice supprimé aurait dû être archivé."
+    assert history_entry.price == old_price, "Le prix archivé ne correspond pas."
+    assert history_entry.ingredient_name == old_ingredient_name, "Le nom de l’ingrédient archivé ne correspond pas."
+
+@pytest.mark.django_db
+def test_ingredient_deletion_removes_prices(ingredient):
+    """ Vérifie que la suppression d’un `Ingredient` supprime ses `IngredientPrice`. """
+    ingredient_id = ingredient.id  # Stocker l'ID avant suppression
+    ingredient.delete()  # Suppression de l'ingrédient
+    # Vérifier que plus aucun prix n'existe pour cet ingrédient
+    assert not IngredientPrice.objects.filter(ingredient_id=ingredient_id).exists(), "Les prix liés à cet ingrédient auraient dû être supprimés."

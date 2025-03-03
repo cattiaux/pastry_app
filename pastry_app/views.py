@@ -209,27 +209,6 @@ class CategoryViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-        # """
-        # OLD destroy method avec SQLITE
-        # Lors de la migration vers PostgreSQL, tester si `on_delete=PROTECT` fonctionne. 
-        # Si PostgreSQL bloque bien la suppression, on pourra retirer cette vérification.
-        # """
-
-        # instance = self.get_object()
-        # # Vérification si la catégorie est utilisée par un ingrédient, avant d'essayer de supprimer
-        # if instance.ingredients.exists():
-        #     return Response(
-        #         {"detail": f"La catégorie '{instance.category_name}' est utilisée par des ingrédients et ne peut pas être supprimée."},
-        #         status=status.HTTP_400_BAD_REQUEST
-        #     )
-        # # Vérification si la catégorie est utilisée par une recette, avant d'essayer de supprimer
-        # if instance.recipes.exists():
-        #     return Response(
-        #         {"detail": f"La catégorie '{instance.category_name}' est utilisée par des recettes et ne peut pas être supprimée."},
-        #         status=status.HTTP_400_BAD_REQUEST
-        #     )
-        # return super().destroy(request, *args, **kwargs)
         
 class LabelViewSet(viewsets.ModelViewSet):
     queryset = Label.objects.all().order_by('label_name')
