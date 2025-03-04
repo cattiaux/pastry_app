@@ -115,6 +115,7 @@ class Category(models.Model):
     category_name = models.CharField(max_length=200) #unique=True à activer en production
     category_type = models.CharField(max_length=10, choices=CATEGORY_CHOICES, default='both')
     created_at = models.DateTimeField(auto_now_add=True)
+    parent_category = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="subcategories")
 
     def __str__(self):
         return self.category_name
@@ -194,18 +195,22 @@ class RecipeLabel(models.Model):
     label = models.ForeignKey("Label", on_delete=models.PROTECT)  # Empêche la suppression d'une catégorie utilisée
 
 class Recipe(models.Model):
+    parent_recipe = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="versions")
     recipe_name = models.TextField(max_length=200)
-    chef = models.CharField(max_length=200, default="Anonyme")
-    ingredients = models.ManyToManyField('Ingredient', through='RecipeIngredient', related_name="recipes")
-    categories = models.ManyToManyField(Category, related_name="recipes") 
+    chef_name = models.CharField(max_length=200, default="Anonyme")
+    ingredients = models.ManyToManyField("Ingredient", through='RecipeIngredient', related_name="recipes")
+    categories = models.ManyToManyField(Category, through="RecipeCategory", related_name="recipes") 
     default_volume = models.FloatField(null=True, blank=True, validators=[MinValueValidator(0)])
     default_servings = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
     avg_density = models.FloatField(null=True, blank=True, validators=[MinValueValidator(0)])
     pan = models.ForeignKey(Pan, on_delete=models.SET_NULL, null=True, blank=True)
+    trick = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ('recipe_name', 'chef',)
-        ordering = ['recipe_name', 'chef']
+        unique_together = ('recipe_name', 'chef_name',)
+        ordering = ['recipe_name', 'chef_name']
 
     def __str__(self):
         return self.recipe_name
@@ -226,30 +231,66 @@ class Recipe(models.Model):
         """Vérifie les contraintes et met à jour `avg_density` avant la sauvegarde."""
         # self.clean()  # Vérifie que `default_servings` ou `pan` est rempli
         self.recipe_name = self.recipe_name.lower() if self.recipe_name else None
-        self.chef = self.chef.lower() if self.chef else None
+        self.chef_name = self.chef_name.lower() if self.chef_name else None
         if self.default_volume and self.default_volume > 0:
             self.avg_density = self.calculate_avg_density()
         super().save(*args, **kwargs)
 
 class RecipeStep(models.Model):
-    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
-    step_number = models.IntegerField()
-    instruction = models.TextField()
-    trick = models.TextField(null=True)
+    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name="steps")
+    step_number = models.IntegerField(validators=[MinValueValidator(1)])
+    instruction = models.TextField(max_length=250)
+    trick = models.TextField(max_length=100, null=True, blank=True)
 
     class Meta:
         ordering = ['recipe','step_number']
+        unique_together = ("recipe", "step_number")
+
+    def delete(self, *args, **kwargs):
+        """Empêche la suppression du dernier `RecipeStep` d'une recette et réorganise les étapes après suppression."""
+        total_steps = RecipeStep.objects.filter(recipe=self.recipe).count()
+        if total_steps == 1:
+            raise ValidationError("A recipe must have at least one step.")
+
+        super().delete(*args, **kwargs)  # Suppression si plus d'un steps)
+
+        # Réorganiser les `step_number` restants
+        steps = RecipeStep.objects.filter(recipe=self.recipe).order_by("step_number")
+        for index, step in enumerate(steps, start=1):
+            step.step_number = index
+            step.save()
+    
+    def clean(self):
+        super().clean()
+
+        # Vérifier que le numéro d'étape est strictement supérieur à 0
+        if self.step_number <= 0:
+            raise ValidationError("Une étape ne doit pas avoir un numéro inférieur à 1.")
+        
+        # Vérifie que l'instruction a une longueur minimale
+        if self.instruction and len(self.instruction) < 2:
+            raise ValidationError("L'instruction doit contenir au moins 2 caractères.")
+        
+        # Vérifier que le `step_number` est consécutif
+        existing_steps = RecipeStep.objects.filter(recipe=self.recipe).order_by("step_number")
+        if existing_steps.exists():
+            last_step_number = existing_steps.last().step_number
+            if self.step_number > last_step_number + 1:
+                raise ValidationError("Step numbers must be consecutive.")
 
     def save(self, *args, **kwargs):
+        self.clean() 
+
         if RecipeStep.objects.filter(recipe=self.recipe, step_number=self.step_number).exists():
             raise ValidationError(f'Step number {self.step_number} already exists in the recipe.')
         super().save(*args, **kwargs)
 
 class SubRecipe(models.Model):
-    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='recipe')
-    sub_recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='subrecipe_set')
+    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='main_recipes')
+    sub_recipe = models.ForeignKey(Recipe, on_delete=models.PROTECT, related_name='subrecipe_set')
     quantity = models.FloatField(default=0, validators=[MinValueValidator(0.1)])
-
+    unit = models.CharField(max_length=50, choices=UNIT_CHOICES)
+    
 class Ingredient(models.Model):
     """
     ⚠️ IMPORTANT ⚠️

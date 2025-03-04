@@ -185,31 +185,34 @@ class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
     filter_backends = [SearchFilter]
     search_fields = ['category_name']
-
+    
     def destroy(self, request, *args, **kwargs):
-        """Empêche la suppression d'une Category si elle est utilisée par un Ingredient ou par une Recipe."""
+        """Gère la suppression d'une Category avec une option pour supprimer ou non ses sous-catégories."""
         category = self.get_object()
+        subcategories = Category.objects.filter(parent_category=category)
+
+        # Vérifier si la catégorie est utilisée par une recette ou un ingrédient
+        if category.recipecategory_set.exists() or category.ingredientcategory_set.exists():
+            return Response(
+                {"error": "Cette catégorie est utilisée par un ingrédient ou une recette et ne peut pas être supprimée."},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        # Vérifier l'option delete_subcategories
+        delete_subcategories = request.query_params.get("delete_subcategories", "false").lower() == "true"
+
         try:
+            if subcategories.exists():
+                if delete_subcategories:
+                    subcategories.delete()  # Supprime toutes les sous-catégories
+                else:
+                    subcategories.update(parent_category=None)  # Délie les sous-catégories
+            
             category.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except IntegrityError:
-            return Response(
-                {"error": "Cette catégorie est utilisée par un ingrédient ou une recette et ne peut pas être supprimée."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"message": "Catégorie supprimée avec succès."}, status=status.HTTP_204_NO_CONTENT)
 
-    def destroy(self, request, *args, **kwargs):
-        """ Empêche la suppression d'une catégorie si elle est utilisée par un ingrédient ou une recette. """
-        category = self.get_object()
-        try:
-            self.perform_destroy(category)  # Utilisation de DRF
-        except ProtectedError:  
-            return Response(
-                {"error": "Cette catégorie est utilisée par un ingrédient ou une recette et ne peut pas être supprimée."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        return Response(status=status.HTTP_204_NO_CONTENT)
-        
+        except IntegrityError:
+            return Response({"error": "Erreur lors de la suppression de la catégorie."}, status=status.HTTP_400_BAD_REQUEST)
+
 class LabelViewSet(viewsets.ModelViewSet):
     queryset = Label.objects.all().order_by('label_name')
     serializer_class = LabelSerializer

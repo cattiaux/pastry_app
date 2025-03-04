@@ -179,6 +179,20 @@ def validate_field_normalization_api(api_client, base_url, model_name, field_nam
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()[field_name] == normalize_case(raw_value)
 
+def validate_optional_field_value_db(model, field_name, **valid_data):
+    """
+    Vérifie qu'un champ optionnel peut être `""` ou `None` en base de données.
+
+    - `model` → Le modèle Django à tester.
+    - `field_name` → Le champ à tester.
+    - `valid_data` → Autres champs obligatoires pour créer l'objet.
+    """
+    for value in ["", None]:  # Tester `""` et `None`
+        valid_data[field_name] = value
+        obj = model.objects.create(**valid_data)
+        obj.refresh_from_db()
+        assert getattr(obj, field_name) == (value if value is not None else ""), f"Erreur sur {field_name}: attendu `{value}`, obtenu `{getattr(obj, field_name)}`"
+
 def validate_optional_field_value_api(api_client, base_url, model_name, field_name, mode="both", **valid_data):
     """
     Vérifie qu'un champ optionnel peut être vide (`""`) ou `None`, en fonction du `mode`.

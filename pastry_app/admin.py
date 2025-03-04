@@ -1,5 +1,7 @@
 from django.contrib import admin
-from .models import Recipe, RecipeStep, RoundPan, SquarePan, SubRecipe, Pan, Ingredient, IngredientPrice, IngredientPriceHistory, RecipeIngredient, Category, Label
+from django.contrib import messages
+from django.shortcuts import redirect
+from .models import *
 
 # @admin.register(IngredientPrice)
 class IngredientPriceAdmin(admin.ModelAdmin):
@@ -99,8 +101,21 @@ class SquarePanAdmin(admin.ModelAdmin):
     list_display = ('pan_name', 'id')
 
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ('category_name', 'category_type')
+    list_display = ("category_name", "category_type", "parent_category")
     search_fields = ('category_name',)
+
+    def delete_model(self, request, obj):
+        subcategories = Category.objects.filter(parent_category=obj)
+
+        if subcategories.exists():
+            # Demande à l'utilisateur s'il veut supprimer aussi les sous-catégories
+            if "delete_subcategories" in request.POST:
+                subcategories.delete()  # Supprime toutes les sous-catégories
+            else:
+                subcategories.update(parent_category=None)  # Délie les sous-catégories
+
+        obj.delete()
+        messages.success(request, f"La catégorie '{obj.category_name}' a été supprimée.")
 
 class LabelAdmin(admin.ModelAdmin):
     list_display = ('label_name', 'label_type')
