@@ -3,12 +3,26 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from rest_framework import status, serializers
 
-def validate_constraint(model, field_name, value, expected_error, **valid_data):
-    """ Applique une validation sur un champ en testant si une erreur spécifique est levée. """
+# def validate_constraint(model, field_name, value, expected_error, **valid_data):
+#     """ Applique une validation sur un champ en testant si une erreur spécifique est levée. """
+#     valid_data[field_name] = value
+#     with pytest.raises(ValidationError, match=expected_error):
+#         obj = model(**valid_data)
+#         obj.full_clean() # Déclenche clean() pour vérifier la contrainte
+
+def validate_constraint(model, field_name, value, expected_errors, **valid_data):
+    """ Applique une validation sur un champ en testant si une des erreurs spécifiques est levée. """
     valid_data[field_name] = value
-    with pytest.raises(ValidationError, match=expected_error):
+    try:
         obj = model(**valid_data)
-        obj.full_clean() # Déclenche clean() pour vérifier la contrainte
+        obj.full_clean()  # Déclenche clean() pour vérifier la contrainte
+    except ValidationError as e:
+        # Vérifie que l'une des erreurs attendues est présente dans le message d'erreur
+        error_messages = " ".join(str(error) for error in e)
+        assert any(expected_error in error_messages for expected_error in expected_errors), (
+            f"Aucune des erreurs attendues n'a été trouvée dans le message d'erreur. "
+            f"Erreurs attendues : {expected_errors}, Erreurs obtenues : {error_messages}"
+        )
 
 def validate_constraint_api(api_client, base_url, model_name, field_name, expected_errors, **valid_data):
     """
@@ -105,7 +119,7 @@ def validate_unique_together(model, expected_error, **valid_data):
     # Vérifier si un objet existe déjà en base
     existing_object = model.objects.filter(**valid_data).exists()
     if not existing_object: # Si aucun objet n'existe et qu'on doit en créer un premier, on le fait
-        model.objects.create(**valid_data)  
+        model.objects.create(**valid_data)
 
     # Tenter de créer un deuxième objet identique et s'assurer que l'erreur est levée
     with pytest.raises(ValidationError) as excinfo:

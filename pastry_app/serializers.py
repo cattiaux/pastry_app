@@ -181,7 +181,7 @@ class CategorySerializer(serializers.ModelSerializer):
         # Vérifier l'unicité du category_name (insensible à la casse)
         category_id = self.instance.id if self.instance else None
         if Category.objects.exclude(id=category_id).filter(category_name__iexact=value).exists():
-            raise serializers.ValidationError("Category with this Category name already exists.")
+            raise serializers.ValidationError("Category with this name already exists.")
 
         return value
 

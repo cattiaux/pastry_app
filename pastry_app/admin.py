@@ -59,7 +59,7 @@ class SubRecipeInline(admin.TabularInline):
 
 class RecipeAdmin(admin.ModelAdmin):
     inlines = [RecipeIngredientInline, RecipeStepInline, SubRecipeInline]
-    list_display = ('recipe_name', 'id', 'chef')
+    list_display = ('recipe_name', 'id', 'chef_name')
     exclude = ('content_type', 'object_id',)
 
 class RecipeIngredientAdmin(admin.ModelAdmin):

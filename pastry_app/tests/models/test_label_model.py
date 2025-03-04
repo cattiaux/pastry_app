@@ -1,6 +1,6 @@
 import pytest
 from pastry_app.models import Label
-from pastry_app.tests.utils import normalize_case
+from pastry_app.tests.utils import *
 from pastry_app.constants import LABEL_NAME_CHOICES
 
 # Définir model_name pour les tests de Label
@@ -41,3 +41,21 @@ def test_label_deletion(label):
     label_id = label.id
     label.delete()
     assert not Label.objects.filter(id=label_id).exists()
+
+@pytest.mark.parametrize("field_name", ["label_name"])
+@pytest.mark.django_db
+def test_required_fields_label(field_name):
+    """ Vérifie que les champs obligatoires ne peuvent pas être vides """
+    expected_error = ["field cannot be null", "This field cannot be blank."]
+    for invalid_value in [None, "", "   "]:
+        validate_constraint(Label, field_name, invalid_value, expected_error)
+
+@pytest.mark.parametrize("field_names", [["label_name"]])
+@pytest.mark.django_db
+def test_unique_constraint_label(field_names, label):
+    """Vérifie que deux Label ne peuvent pas avoir le même `label_name`."""
+    # Construire `valid_data` avec TOUS les champs listés dans `field_names`
+    valid_data = {field: getattr(label, field) for field in field_names}
+    field_labels = [Label._meta.get_field(field).verbose_name.capitalize() for field in field_names] # Récupérer le verbose_name avec majuscule
+    expected_error = f"Label with this {', '.join(field_labels)} already exists."
+    validate_unique_together(Label, expected_error, **valid_data)

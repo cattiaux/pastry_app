@@ -112,9 +112,8 @@ class Category(models.Model):
     ]
     # Note : `unique=True` dans le field 'category_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
     # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
-    category_name = models.CharField(max_length=200) #unique=True à activer en production
+    category_name = models.CharField(max_length=200,  verbose_name="category_name", unique=True) #unique=True à activer en production
     category_type = models.CharField(max_length=10, choices=CATEGORY_CHOICES, default='both')
-    created_at = models.DateTimeField(auto_now_add=True)
     parent_category = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="subcategories")
 
     def __str__(self):
@@ -148,9 +147,8 @@ class Label(models.Model):
     ]
     # Note : `unique=True` dans le field 'label_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
     # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
-    label_name = models.CharField(max_length=200, unique=True) #unique=True à activer en production
+    label_name = models.CharField(max_length=200,  verbose_name="label_name", unique=True) #unique=True à activer en production
     label_type = models.CharField(max_length=10, choices=LABEL_CHOICES, default='both')
-    created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.label_name

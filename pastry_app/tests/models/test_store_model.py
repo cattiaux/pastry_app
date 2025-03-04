@@ -54,7 +54,7 @@ def test_unique_constraint_store(fields, store):
     """ Vérifie qu'on ne peut pas créer deux magasins identiques (unique_together) """
     # Construire dynamiquement `valid_data` avec les valeurs de la fixture `store`
     valid_data = {field: getattr(store, field) for field in fields}
-    validate_unique_together(Store, "Ce magasin existe déjà.", create_initial=False, **valid_data)
+    validate_unique_together(Store, "Ce magasin existe déjà.", **valid_data)
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("city, zip_code", [(None, None), ("", "")])
