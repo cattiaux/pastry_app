@@ -1,12 +1,12 @@
 from math import pi
 from django.db import models
 from django.core.validators import MinValueValidator
-from django.utils import timezone
 from django.utils.timezone import now
-from .constants import UNIT_CHOICES, CATEGORY_TYPE_MAP, LABEL_TYPE_MAP
+from django.utils.text import slugify
 from django.core.exceptions import ValidationError
-from pastry_app.tests.utils import normalize_case
 from django.db.models import UniqueConstraint
+from pastry_app.tests.utils import normalize_case
+from .constants import UNIT_CHOICES, CATEGORY_TYPE_MAP, LABEL_TYPE_MAP
 
 class BaseModel(models.Model):
     class Meta:
@@ -119,18 +119,25 @@ class Category(models.Model):
     def __str__(self):
         return self.category_name
 
+    def clean(self):
+        # Vérifier que le nom est correct, normalisé
+        self.category_name = normalize_case(self.category_name)
+
+        # Vérifie que `category_type` est défini à la création
+        if not self.category_type:
+            raise ValidationError("Le champ `category_type` est obligatoire et doit être spécifié à la création.")
+
     def save(self, *args, **kwargs):
-        """ 
-        Validation avant sauvegarde : nettoyage, validation et attribution du type automatique.
-        """
-        self.category_name = normalize_case(self.category_name) # Lower + supprime espaces inutiles
+        """ Validation avant sauvegarde : nettoyage, validation. """
+        self.clean()
 
-        # Vérifier si `category_name` est valide (dans la liste des choix autorisés)
-        if self.category_name not in CATEGORY_TYPE_MAP:
-            raise ValidationError(f"'{self.category_name}' n'est pas une catégorie valide.")
+        # Empêche la création d'une catégorie par un utilisateur non-admin
+        request = kwargs.pop("request", None)
+        if request and not request.user.is_staff:
+            raise ValidationError("Seuls les administrateurs peuvent créer ou modifier des catégories.")
 
-        # Assigner automatiquement `category_type`
-        self.category_type = CATEGORY_TYPE_MAP[self.category_name]
+        if not self.category_type:
+            raise ValidationError("Le type de catégorie est obligatoire.")
 
         super().save(*args, **kwargs)
 

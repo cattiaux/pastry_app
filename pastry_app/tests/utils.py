@@ -81,9 +81,10 @@ def validate_delete_object(model, **valid_data):
 
 
 
-def validate_unique_constraint(model, field_name, expected_error, **valid_data):
+def validate_unique_constraint(model, field_name, expected_error, create_initiate=True, **valid_data):
     """ Vérifie qu’un champ unique ne peut pas être dupliqué (unique=True). """
-    instance = model.objects.create(**valid_data)
+    if not create_initiate:
+        instance = model.objects.create(**valid_data)
     # Modifier uniquement le champ testé pour forcer un doublon
     duplicate_data = valid_data.copy()
     duplicate_data[field_name] = getattr(instance, field_name)  # Même valeur
@@ -149,8 +150,6 @@ def validate_update_to_duplicate_api(api_client, base_url, model_name, valid_dat
     # Création de deux objets distincts
     response1 = api_client.post(url, valid_data1, format="json")
     response2 = api_client.post(url, valid_data2, format="json")
-    print("response1 : ", response1.json())
-    print("response2 : ", response2.json())
     assert response1.status_code == status.HTTP_201_CREATED
     assert response2.status_code == status.HTTP_201_CREATED
 
@@ -158,8 +157,6 @@ def validate_update_to_duplicate_api(api_client, base_url, model_name, valid_dat
 
     # Tenter de mettre à jour `obj2` avec les valeurs de `obj1`
     response3 = api_client.patch(f"{url}{obj_id}/", valid_data1, format="json")
-    print("response3 : ", response3.json())
-    print("response3 : ", response3)
     assert response3.status_code == status.HTTP_400_BAD_REQUEST  # Vérifier que la mise à jour est rejetée
     assert "non_field_errors" in response3.json()  # Vérifier l’erreur sous `non_field_errors`
     assert "must make a unique set" in response3.json()["non_field_errors"][0]
@@ -187,9 +184,7 @@ def validate_field_normalization_api(api_client, base_url, model_name, field_nam
     """ Vérifie qu’un champ est bien normalisé après création via l’API. """
     url = base_url(model_name)
     valid_data[field_name] = raw_value  # Injecter la valeur brute
-    print("valid_data : ", valid_data)
     response = api_client.post(url, valid_data, format="json")
-    print("json response : ", response.json())
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()[field_name] == normalize_case(raw_value)
 

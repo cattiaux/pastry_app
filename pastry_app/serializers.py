@@ -1,8 +1,5 @@
-# serializers.py
 from rest_framework import serializers
-from rest_framework.validators import UniqueTogetherValidator
 from django.db import IntegrityError
-from django.db.models import Index
 from .models import Recipe, Pan, Ingredient, IngredientPrice, IngredientPriceHistory, Store, Category, Label, RecipeIngredient, RecipeStep, SubRecipe, RoundPan, SquarePan
 from .utils import get_pan_model, update_related_instances
 from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
@@ -151,44 +148,81 @@ class IngredientPriceHistorySerializer(serializers.ModelSerializer):
     
 class CategorySerializer(serializers.ModelSerializer):
     category_type = serializers.CharField(required=False)
+    parent_category = serializers.SlugRelatedField(queryset=Category.objects.all(), slug_field="category_name", allow_null=True, required=False)
 
     class Meta:
         model = Category
-        fields = ['id', 'category_name', 'category_type', 'created_at']
+        fields = ['id', 'category_name', 'category_type', 'parent_category']
 
-    def to_representation(self, instance):
-        ret = super().to_representation(instance)
-        ret['category_name'] = ret['category_name'].lower()
-        return ret
+    def validate_category_name(self, value):
+        """ Vérifie que 'category_name' existe en base et empêche les utilisateurs non-admins d'ajouter des catégories. """
+        value = normalize_case(value)  # Normalisation
+        request = self.context.get("request")
+        
+        # Vérifie si la catégorie existe déjà en base
+        category_exists = Category.objects.filter(category_name__iexact=value).exists()
+        if category_exists:
+            raise serializers.ValidationError("Une catégorie avec ce nom existe déjà.")
+
+        # Seuls les admins peuvent ajouter de nouvelles catégories
+        if not request.user.is_staff and not category_exists:
+            raise serializers.ValidationError("Vous ne pouvez choisir qu'une catégorie existante.")
+
+        return value
 
     def create(self, validated_data):
-        """ Vérifie l’unicité via l’API et capture IntegrityError pour plus de sécurité """
-        if Category.objects.filter(category_name__iexact=validated_data["category_name"]).exists():
-            raise serializers.ValidationError({"category_name": "Une catégorie avec ce nom existe déjà."})
+        """ Seuls les admins peuvent créer une catégorie. """
+        request = self.context.get("request")
+        if not request.user.is_staff:
+            raise serializers.ValidationError("Seuls les administrateurs peuvent créer des catégories.")
+
+        # Convertir le `parent_category` de `category_name` en instance `Category`
+        parent_category_name = validated_data.pop("parent_category", None)
+        if parent_category_name:
+            parent_category_instance = Category.objects.filter(category_name__iexact=parent_category_name).first()
+            if not parent_category_instance:
+                raise serializers.ValidationError({"parent_category": "La catégorie parente spécifiée n'existe pas."})
+            validated_data["parent_category"] = parent_category_instance
+
         try:
             return super().create(validated_data)
         except IntegrityError:
-            raise serializers.ValidationError({"category_name": "Erreur d’unicité en base. Contactez un administrateur."})
+            raise serializers.ValidationError({"category_name": "Cette catégorie existe déjà."})
 
-    def validate_category_name(self, value):
-        """ Vérifie que 'category_name' est valide et vérifie si une autre catégorie existe déjà avec ce nom (insensible à la casse)"""
-        value = " ".join(value.lower().strip().split())  # Normalisation
+    def create(self, validated_data):
+        """Gère la création de Category avec `parent_category` en tant que `category_name`."""
+        # Vérification d’unicité du `category_name` en ignorant la casse
+        if Category.objects.filter(category_name__iexact=validated_data["category_name"]).exists():
+            raise serializers.ValidationError({"category_name": "Une catégorie avec ce nom existe déjà."})
 
-        # Vérifier que la catégorie existe bien dans CATEGORY_NAME_CHOICES
-        if value not in CATEGORY_NAME_CHOICES:
-            raise serializers.ValidationError("Cette catégorie n'est pas valide.")
 
-        # Vérifier l'unicité du category_name (insensible à la casse)
-        category_id = self.instance.id if self.instance else None
-        if Category.objects.exclude(id=category_id).filter(category_name__iexact=value).exists():
-            raise serializers.ValidationError("Category with this name already exists.")
+    def update(self, instance, validated_data):
+        """ Seuls les admins peuvent modifier une catégorie. """
+        request = self.context.get("request")
+        if not request.user.is_staff:
+            raise serializers.ValidationError("Seuls les administrateurs peuvent modifier une catégorie.")
 
-        return value
+        return super().update(instance, validated_data)
+    
+    # def validate_category_name(self, value):
+    #     """ Vérifie que 'category_name' est valide et vérifie si une autre catégorie existe déjà avec ce nom (insensible à la casse)"""
+    #     value = normalize_case(value)  # Normalisation
+
+    #     # Vérifier que la catégorie existe bien dans CATEGORY_NAME_CHOICES
+    #     if value not in CATEGORY_NAME_CHOICES:
+    #         raise serializers.ValidationError("Cette catégorie n'est pas valide.")
+
+    #     # Vérifier l'unicité du category_name (insensible à la casse)
+    #     category_id = self.instance.id if self.instance else None
+    #     if Category.objects.exclude(id=category_id).filter(category_name__iexact=value).exists():
+    #         raise serializers.ValidationError("Category with this name already exists.")
+
+    #     return value
 
 class LabelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Label
-        fields = ['id', 'label_name', 'label_type', 'created_at']
+        fields = ['id', 'label_name', 'label_type']
 
     def to_representation(self, instance):
         ret = super().to_representation(instance)

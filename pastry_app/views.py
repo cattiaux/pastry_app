@@ -1,13 +1,14 @@
 # views.py
 from rest_framework import viewsets, generics, status
-from .models import Recipe, Ingredient, Pan, Category, Label, Store, IngredientPrice, IngredientPriceHistory
-from .serializers import RecipeSerializer, IngredientSerializer, PanSerializer, CategorySerializer, LabelSerializer, StoreSerializer, IngredientPriceSerializer, IngredientPriceHistorySerializer
-from .utils import get_pan_model
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.db.utils import IntegrityError 
 from django.db.models import ProtectedError
 from pastry_app.tests.utils import normalize_case
+from .utils import get_pan_model
+from .models import Recipe, Ingredient, Pan, Category, Label, Store, IngredientPrice, IngredientPriceHistory
+from .serializers import RecipeSerializer, IngredientSerializer, PanSerializer, CategorySerializer, LabelSerializer, StoreSerializer, IngredientPriceSerializer, IngredientPriceHistorySerializer
 
 class PanDeleteView(generics.DestroyAPIView):
     queryset = Pan.objects.all()
@@ -185,7 +186,13 @@ class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
     filter_backends = [SearchFilter]
     search_fields = ['category_name']
-    
+
+    def get_permissions(self):
+        """Définit les permissions selon l'action."""
+        if self.action in ["create", "update", "partial_update", "destroy"]:
+            return [IsAdminUser()]  # Seuls les admins peuvent modifier/supprimer
+        return [IsAuthenticated()]  # Les utilisateurs authentifiés peuvent voir les catégories
+
     def destroy(self, request, *args, **kwargs):
         """Gère la suppression d'une Category avec une option pour supprimer ou non ses sous-catégories."""
         category = self.get_object()
