@@ -170,6 +170,13 @@ class CategorySerializer(serializers.ModelSerializer):
 
         return value
 
+    def validate_category_type(self, value):
+        """ Vérifie que `category_type` est dans les choix valides. """
+        valid_choices = dict(Category.CATEGORY_CHOICES).keys()
+        if value not in valid_choices:
+            raise serializers.ValidationError(f"`category_type` doit être l'une des valeurs suivantes : {', '.join(valid_choices)}.")
+        return value
+
     def create(self, validated_data):
         """ Seuls les admins peuvent créer une catégorie. """
         request = self.context.get("request")
@@ -189,35 +196,19 @@ class CategorySerializer(serializers.ModelSerializer):
         except IntegrityError:
             raise serializers.ValidationError({"category_name": "Cette catégorie existe déjà."})
 
-    def create(self, validated_data):
-        """Gère la création de Category avec `parent_category` en tant que `category_name`."""
-        # Vérification d’unicité du `category_name` en ignorant la casse
-        if Category.objects.filter(category_name__iexact=validated_data["category_name"]).exists():
-            raise serializers.ValidationError({"category_name": "Une catégorie avec ce nom existe déjà."})
-
-
     def update(self, instance, validated_data):
-        """ Seuls les admins peuvent modifier une catégorie. """
+        # Seuls les admins peuvent modifier une catégorie.
         request = self.context.get("request")
         if not request.user.is_staff:
             raise serializers.ValidationError("Seuls les administrateurs peuvent modifier une catégorie.")
 
+        # Empêche la modification de `category_name` vers un nom déjà existant.
+        new_name = validated_data.get("category_name", instance.category_name)
+        if normalize_case(new_name) != normalize_case(instance.category_name):
+            if Category.objects.exclude(id=instance.id).filter(category_name__iexact=new_name).exists():
+                raise serializers.ValidationError({"category_name": "Une catégorie avec ce nom existe déjà."})
+
         return super().update(instance, validated_data)
-    
-    # def validate_category_name(self, value):
-    #     """ Vérifie que 'category_name' est valide et vérifie si une autre catégorie existe déjà avec ce nom (insensible à la casse)"""
-    #     value = normalize_case(value)  # Normalisation
-
-    #     # Vérifier que la catégorie existe bien dans CATEGORY_NAME_CHOICES
-    #     if value not in CATEGORY_NAME_CHOICES:
-    #         raise serializers.ValidationError("Cette catégorie n'est pas valide.")
-
-    #     # Vérifier l'unicité du category_name (insensible à la casse)
-    #     category_id = self.instance.id if self.instance else None
-    #     if Category.objects.exclude(id=category_id).filter(category_name__iexact=value).exists():
-    #         raise serializers.ValidationError("Category with this name already exists.")
-
-    #     return value
 
 class LabelSerializer(serializers.ModelSerializer):
     class Meta:

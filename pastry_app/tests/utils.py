@@ -81,13 +81,13 @@ def validate_delete_object(model, **valid_data):
 
 
 
-def validate_unique_constraint(model, field_name, expected_error, create_initiate=True, **valid_data):
+def validate_unique_constraint(model, field_name, expected_error, instance=None, create_initiate=True, **valid_data):
     """ Vérifie qu’un champ unique ne peut pas être dupliqué (unique=True). """
-    if not create_initiate:
+    if not create_initiate and instance is None:
         instance = model.objects.create(**valid_data)
     # Modifier uniquement le champ testé pour forcer un doublon
     duplicate_data = valid_data.copy()
-    duplicate_data[field_name] = getattr(instance, field_name)  # Même valeur
+    duplicate_data[field_name] = getattr(instance, field_name) if instance else valid_data[field_name] # Même valeur
     with pytest.raises(IntegrityError, match=expected_error):
         model.objects.create(**duplicate_data)
 

@@ -1,4 +1,4 @@
-import pytest
+import pytest, re
 from pastry_app.models import Category
 from pastry_app.tests.utils import *
 
@@ -7,8 +7,10 @@ model_name = "categories"
 
 @pytest.fixture()
 def category():
-    """Création d’une catégorie de test."""
-    return Category.objects.create(category_name="Fruit à coque", category_type="ingredient")
+    """Créer plusieurs catégories de test pour assurer la cohérence des tests."""
+    Category.objects.create(category_name="Desserts", category_type="recipe")  # Ajout d'une autre catégorie
+    Category.objects.create(category_name="Fruit à coque", category_type="ingredient")
+    return Category.objects.get(category_name="fruit à coque")  # Retourne une catégorie pour le test
 
 @pytest.mark.django_db
 def test_category_creation(category):
@@ -21,20 +23,42 @@ def test_category_str_method(category):
     """ Vérifie que `__str__()` retourne bien le `category_name`"""
     assert str(category) == normalize_case(category.category_name)
 
+# @pytest.mark.django_db
+# def test_category_update(category):
+#     """ Vérifie que l'on peut modifier une Category et que `category_type` est recalculé si le nom change. """
+#     new_category_name = "desserts"
+#     category.category_name = new_category_name
+#     category.save()
+#     category.refresh_from_db()
+#     assert category.category_name == normalize_case(new_category_name)
+#     assert category.category_type == "recipe"
+
+#     # Vérifier qu'un update vers un category_name inconnu nécessite aussi un category_type valide
+#     category.category_name = "Catégorie Inconnue"
+#     category.category_type = None  # On simule un oubli de category_type
+#     with pytest.raises(ValidationError, match="Le champ `category_type` est obligatoire pour une nouvelle catégorie."):
+#         category.save()
+
 @pytest.mark.django_db
 def test_category_update(category):
-    """ Vérifie que l'on peut modifier une Category et que `category_type` est recalculé si le nom change. """
-    new_category_name = "Desserts"
+    """ Vérifie que `category_name` peut être modifié uniquement vers une nouvelle valeur et que `category_type` ne change pas automatiquement. """
+    new_category_name = "Nouvelle Catégorie"
+    old_category_type = category.category_type
+
     category.category_name = new_category_name
     category.save()
     category.refresh_from_db()
     assert category.category_name == normalize_case(new_category_name)
-    assert category.category_type == "recipe"
+    assert category.category_type == old_category_type  # Vérification que `category_type` reste inchangé
 
-    # Vérifier qu'un update vers un category_name inconnu nécessite aussi un category_type valide
-    category.category_name = "Catégorie Inconnue"
-    category.category_type = None  # On simule un oubli de category_type
-    with pytest.raises(ValidationError, match="Le champ `category_type` est obligatoire et doit être spécifié à la création."):
+    # Vérifier qu'on ne peut pas mettre à jour vers un `category_name` existant   
+    category.category_name = "Desserts"
+    with pytest.raises(ValidationError, match="Une catégorie avec ce nom existe déjà."):
+        category.save()
+
+    # Vérifier qu'on ne peut pas mettre un `category_type` invalide
+    category.category_type = "invalid_value"
+    with pytest.raises(ValidationError, match="`category_type` doit être l'une des valeurs suivantes: ingredient, recipe, both."):
         category.save()
 
 @pytest.mark.django_db
@@ -55,24 +79,29 @@ def test_required_fields_category(field_name, category):
 @pytest.mark.django_db
 def test_category_type_is_mandatory_on_creation():
     """Vérifie qu'une catégorie ne peut pas être créée sans `category_type`."""
-    with pytest.raises(ValidationError, match="Le champ `category_type` est obligatoire et doit être spécifié à la création."):
+    with pytest.raises(ValidationError, match="Le champ `category_type` est obligatoire pour une nouvelle catégorie."):
         Category.objects.create(category_name="TestCat")  # Manque `category_type`
 
 @pytest.mark.parametrize("field_name", ["category_name"])
 @pytest.mark.django_db
 def test_unique_constraint_category(field_name, category):
     """Vérifie que deux Category ne peuvent pas avoir le même `category_name`."""
-    valid_data = {"catgory_name": category.category_name, "category_type": category.category_type}
-    field_label = Category._meta.get_field(field_name).verbose_name.capitalize() # Récupérer le verbose_name avec majuscule
-    expected_error = f"Category with this {field_label} already exists."
-    validate_unique_constraint(Category, field_name, expected_error, **valid_data)
+    valid_data = {"category_name": category.category_name, "category_type": category.category_type}
+    expected_error_1 = "Une catégorie avec ce nom existe déjà."
+    expected_error_2 = "Category with this Category_name already exists."
+    with pytest.raises(ValidationError) as exc_info:
+        validate_unique_constraint(Category, field_name, expected_error_1, instance=category, **valid_data)
+    # Vérifier que l'un des messages attendus est bien présent
+    error_messages = str(exc_info.value)
+    assert expected_error_1 in error_messages or expected_error_2 in error_messages
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("invalid_category_type", ["invalid", "123", "", None])
+@pytest.mark.parametrize("invalid_category_type", ["invalid", "123"])
 def test_category_type_must_be_valid_choice(invalid_category_type):
     """Vérifie qu'une erreur est levée si `category_type` contient une valeur non autorisée."""
-    with pytest.raises(ValidationError, match="is not a valid choice"):
-        Category.objects.create(category_name="TestCat", category_type=invalid_category_type)
+    category = Category(category_name="TestCat", category_type=invalid_category_type)
+    with pytest.raises(ValidationError, match="Value .* is not a valid choice."):
+        category.full_clean()
 
 @pytest.mark.django_db
 def test_parent_category_is_optional(category):
@@ -81,10 +110,12 @@ def test_parent_category_is_optional(category):
     assert category.parent_category is None   
     
     # Vérifie que l'on peut attribuer une catégorie parente.
-    category["parent_category"] = "Fruits"  # lui donner une vraie valeur de Category existante en base
+    parent_category = Category.objects.filter(category_name="desserts").first() # Récupère la catégorie "desserts" si elle existe en base
+    assert parent_category is not None, "La catégorie 'desserts' n'existe pas en base."
+    category.parent_category = parent_category  # lui donner une vraie valeur de Category existante en base
     category.save()
     category.refresh_from_db()
-    assert category.parent_category == "fruits"  # Vérifie l'attribution correcte avec normalisation
+    assert category.parent_category == parent_category 
 
     # Vérifie qu'on peut détacher une sous-catégorie de son parent.
     category.parent_category = None

@@ -113,23 +113,30 @@ class Category(models.Model):
     # Note : `unique=True` dans le field 'category_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
     # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
     category_name = models.CharField(max_length=200,  verbose_name="category_name", unique=True) #unique=True à activer en production
-    category_type = models.CharField(max_length=10, choices=CATEGORY_CHOICES, default='both')
+    category_type = models.CharField(max_length=10, choices=CATEGORY_CHOICES, blank=False, null=False)
     parent_category = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="subcategories")
 
     def __str__(self):
         return self.category_name
 
     def clean(self):
-        # Vérifier que le nom est correct, normalisé
-        self.category_name = normalize_case(self.category_name)
+        """ Vérifie les règles métier lors de la création et de l’update. """
+        self.category_name = normalize_case(self.category_name)  # Normalisation
 
-        # Vérifie que `category_type` est défini à la création
+        # Vérifier que `category_type` est valide
         if not self.category_type:
-            raise ValidationError("Le champ `category_type` est obligatoire et doit être spécifié à la création.")
+            raise ValidationError("Le champ `category_type` est obligatoire pour une nouvelle catégorie.")
+        elif self.category_type not in dict(self.CATEGORY_CHOICES):
+            raise ValidationError(f"`category_type` doit être l'une des valeurs suivantes: {', '.join(dict(self.CATEGORY_CHOICES).keys())}.")
+
+        # Vérifier qu'on ne met pas à jour un `category_name` existant
+        existing_category = Category.objects.filter(category_name=self.category_name).exclude(id=self.id).first()
+        if existing_category:
+            raise ValidationError("Une catégorie avec ce nom existe déjà.")
 
     def save(self, *args, **kwargs):
         """ Validation avant sauvegarde : nettoyage, validation. """
-        self.clean()
+        self.full_clean()
 
         # Empêche la création d'une catégorie par un utilisateur non-admin
         request = kwargs.pop("request", None)
