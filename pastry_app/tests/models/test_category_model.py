@@ -107,3 +107,13 @@ def test_parent_category_is_optional(category):
     category.refresh_from_db()
     assert category.parent_category is None  # Vérifie que la catégorie n’a plus de parent
 
+@pytest.mark.django_db
+def test_delete_category_with_subcategories_model():
+    """Vérifie que la suppression d'une catégorie met bien à NULL ses sous-catégories en base de données."""
+    parent = Category.objects.create(category_name="Parent", category_type="recipe")
+    child = Category.objects.create(category_name="Child", category_type="recipe", parent_category=parent)
+    
+    assert child.parent_category == parent  # Vérifie que la relation parent -> enfant existe bien avant suppression
+    parent.delete()  # Supprime la catégorie parente
+    child.refresh_from_db()  # Recharge la sous-catégorie depuis la base
+    assert child.parent_category is None  # Vérifie que `parent_category` est bien mis à NULL

@@ -40,6 +40,14 @@ def test_get_category(api_client, base_url, setup_category):
     assert response.json().get("category_name") == normalize_case(setup_category.category_name)
 
 @pytest.mark.django_db
+def test_list_categories(api_client, base_url, setup_category):
+    """Test que l'API retourne bien la liste des catégories."""
+    url = base_url(model_name)
+    response = api_client.get(url)
+    assert response.status_code == status.HTTP_200_OK
+    assert len(response.json()) > 0  # Vérifie que l'API retourne au moins une catégorie
+
+@pytest.mark.django_db
 def test_update_category_parent(admin_client, base_url, setup_category):
     """Test de mise à jour d’une catégorie en changeant son `parent_category`"""
     # Création d'une nouvelle catégorie pour servir de parent
@@ -56,6 +64,17 @@ def test_update_category_parent(admin_client, base_url, setup_category):
     # Vérifie en base que la modification a bien été enregistrée
     setup_category.refresh_from_db()
     assert setup_category.parent_category == new_parent  # Vérifie que le parent a bien changé
+
+@pytest.mark.django_db
+def test_partial_update_category(admin_client, base_url, setup_category):
+    """Test la mise à jour partielle d'une catégorie via PATCH."""
+    url = base_url(model_name) + f"{setup_category.id}/"
+    new_category = Category.objects.create(category_name="Tartes", category_type="recipe")
+    response = admin_client.patch(url, data=json.dumps({"parent_category": new_category.category_name}), content_type="application/json")
+    assert response.status_code == status.HTTP_200_OK
+    setup_category.refresh_from_db()
+    assert setup_category.parent_category == new_category  # Vérifie que c'est bien l'objet
+    assert setup_category.parent_category.category_name == normalize_case("Tartes")  # Vérifie que c'est bien le bon nom
 
 @pytest.mark.django_db
 def test_delete_category(setup_category, admin_client, base_url):

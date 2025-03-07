@@ -47,12 +47,19 @@ def test_optional_fields_api(admin_client, base_url, field_name):
     assert response.json()[field_name] == None  # Vérification
 
 @pytest.mark.django_db
-def test_normalized_fields_category_api(admin_client, base_url):
-    """ Vérifie que `brand_name` et est bien normalisé après création via l’API. """
-    field_name = "category_name"
-    raw_value = " CakeS  "
-    valid_data = {field_name: raw_value, "category_type": "recipe"}
-    validate_field_normalization_api(admin_client, base_url, model_name, field_name, raw_value, **valid_data)
+@pytest.mark.parametrize("field_name, raw_value, expected_value", [
+    ("category_name", " CakeS  ", "cakes"),
+    ("category_type", "RECIPE", "recipe"),
+])
+def test_normalized_fields_category_api(admin_client, base_url, field_name, raw_value, expected_value):
+    """ Vérifie que `category_name` et `category_type` sont bien normalisés après création via l’API. """
+    url = base_url(model_name)
+    valid_data = {"category_name": "Test Category", "category_type": "recipe"}  # Valeurs par défaut
+    valid_data[field_name] = raw_value  # On remplace la valeur du champ testé
+
+    response = admin_client.post(url, data=json.dumps(valid_data), content_type="application/json")
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()[field_name] == expected_value  # Vérifie la normalisation
 
 @pytest.mark.django_db
 def test_create_duplicate_category_api(admin_client, base_url):
@@ -107,3 +114,25 @@ def test_non_admin_cannot_create_category(api_client, base_url):
     url = base_url(model_name)
     response = api_client.post(url, data={"category_name": "Test", "category_type": "recipe"}, format="json")
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+@pytest.mark.django_db
+def test_create_category_with_uppercase_type(admin_client, base_url):
+    """ Vérifie que `category_type` est bien normalisé en minuscule dans le serializer. """
+    url = base_url(model_name)
+    response = admin_client.post(url, data={"category_name": "Viennoiseries", "category_type": "RECIPE"})
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()["category_type"] == "recipe"  # Vérifie la normalisation
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("delete_subcategories, expected_count", [("true", 0), ("false", 1)])
+def test_delete_category_with_subcategories(admin_client, base_url, delete_subcategories, expected_count):
+    """Vérifie que la suppression d'une catégorie détache ou supprime ses sous-catégories selon l'option."""
+    parent = Category.objects.create(category_name="Parent", category_type="recipe")
+    child = Category.objects.create(category_name="Child", category_type="recipe", parent_category=parent)
+
+    url = base_url("categories") + f"{parent.id}/?delete_subcategories={delete_subcategories}"
+    response = admin_client.delete(url)
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    assert Category.objects.filter(id=parent.id).count() == 0  # Parent supprimé
+    assert Category.objects.filter(id=child.id).count() == expected_count  # Détaché ou supprimé selon le paramètre

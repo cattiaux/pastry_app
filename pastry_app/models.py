@@ -126,7 +126,6 @@ class Category(models.Model):
 
         # Normalisation du `parent_category`
         if self.parent_category:
-            print("clean : ", self.parent_category)
             normalized_parent = normalize_case(self.parent_category.category_name)
             self.parent_category = Category.objects.filter(category_name__iexact=normalized_parent).first()
 
