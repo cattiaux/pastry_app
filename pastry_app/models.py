@@ -112,7 +112,7 @@ class Category(models.Model):
     ]
     # Note : `unique=True` dans le field 'category_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
     # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
-    category_name = models.CharField(max_length=200,  verbose_name="category_name", unique=True) #unique=True à activer en production
+    category_name = models.CharField(max_length=200,  verbose_name="category_name")#, unique=True) #unique=True à activer en production
     category_type = models.CharField(max_length=10, choices=CATEGORY_CHOICES, blank=False, null=False)
     parent_category = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="subcategories")
 
@@ -121,7 +121,20 @@ class Category(models.Model):
 
     def clean(self):
         """ Vérifie les règles métier lors de la création et de l’update. """
-        self.category_name = normalize_case(self.category_name)  # Normalisation
+        # Normalisation du `category_name`
+        self.category_name = normalize_case(self.category_name)
+
+        # Normalisation du `parent_category`
+        if self.parent_category:
+            print("clean : ", self.parent_category)
+            normalized_parent = normalize_case(self.parent_category.category_name)
+            self.parent_category = Category.objects.filter(category_name__iexact=normalized_parent).first()
+
+        # Normalisation du `category_type`
+        if self.category_type:
+            self.category_type = normalize_case(self.category_type)
+            if self.category_type not in dict(self.CATEGORY_CHOICES):
+                raise ValidationError(f"`category_type` doit être l'une des valeurs suivantes: {', '.join(dict(self.CATEGORY_CHOICES).keys())}.")
 
         # Vérifier que `category_type` est valide
         if not self.category_type:
@@ -130,7 +143,7 @@ class Category(models.Model):
             raise ValidationError(f"`category_type` doit être l'une des valeurs suivantes: {', '.join(dict(self.CATEGORY_CHOICES).keys())}.")
 
         # Vérifier qu'on ne met pas à jour un `category_name` existant
-        existing_category = Category.objects.filter(category_name=self.category_name).exclude(id=self.id).first()
+        existing_category = Category.objects.exclude(id=self.id).filter(category_name__iexact=self.category_name).exists()
         if existing_category:
             raise ValidationError("Une catégorie avec ce nom existe déjà.")
 
@@ -147,6 +160,14 @@ class Category(models.Model):
             raise ValidationError("Le type de catégorie est obligatoire.")
 
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Empêche la suppression d'une catégorie par un utilisateur non-admin."""
+        request = kwargs.pop("request", None)
+        if request and not request.user.is_staff:
+            raise ValidationError("Seuls les administrateurs peuvent supprimer des catégories.")
+
+        super().delete(*args, **kwargs)
 
 class Label(models.Model):
     """

@@ -2,7 +2,7 @@
 from rest_framework import viewsets, generics, status
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import AllowAny, IsAdminUser
 from django.db.utils import IntegrityError 
 from django.db.models import ProtectedError
 from pastry_app.tests.utils import normalize_case
@@ -73,7 +73,6 @@ class IngredientPriceViewSet(viewsets.ModelViewSet):
 
         # Extraire les données validées après la validation
         validated_data = serializer.validated_data
-        print("validated_data : ", validated_data)
         store = validated_data.get("store")
         brand_name = validated_data.get("brand_name", "")
         quantity = validated_data.get("quantity")
@@ -186,17 +185,23 @@ class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
     filter_backends = [SearchFilter]
     search_fields = ['category_name']
+    # permission_classes = [IsAdminUser] 
+    permission_classes = []  # On définit les permissions dans `get_permissions`
 
     def get_permissions(self):
         """Définit les permissions selon l'action."""
         if self.action in ["create", "update", "partial_update", "destroy"]:
             return [IsAdminUser()]  # Seuls les admins peuvent modifier/supprimer
-        return [IsAuthenticated()]  # Les utilisateurs authentifiés peuvent voir les catégories
+        return [AllowAny()]  # Autoriser la lecture à tout le monde
 
     def destroy(self, request, *args, **kwargs):
         """Gère la suppression d'une Category avec une option pour supprimer ou non ses sous-catégories."""
         category = self.get_object()
         subcategories = Category.objects.filter(parent_category=category)
+
+        # Vérification admin (double sécurité en plus de `permission_classes`)
+        if not request.user.is_staff:
+            return Response({"error": "Seuls les administrateurs peuvent supprimer des catégories."}, status=status.HTTP_403_FORBIDDEN)
 
         # Vérifier si la catégorie est utilisée par une recette ou un ingrédient
         if category.recipecategory_set.exists() or category.ingredientcategory_set.exists():
@@ -213,7 +218,8 @@ class CategoryViewSet(viewsets.ModelViewSet):
                     subcategories.delete()  # Supprime toutes les sous-catégories
                 else:
                     subcategories.update(parent_category=None)  # Délie les sous-catégories
-            
+
+            # Suppression sécurisée          
             category.delete()
             return Response({"message": "Catégorie supprimée avec succès."}, status=status.HTTP_204_NO_CONTENT)
 

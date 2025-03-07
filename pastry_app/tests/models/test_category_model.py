@@ -1,4 +1,4 @@
-import pytest, re
+import pytest
 from pastry_app.models import Category
 from pastry_app.tests.utils import *
 
@@ -22,22 +22,6 @@ def test_category_creation(category):
 def test_category_str_method(category):
     """ Vérifie que `__str__()` retourne bien le `category_name`"""
     assert str(category) == normalize_case(category.category_name)
-
-# @pytest.mark.django_db
-# def test_category_update(category):
-#     """ Vérifie que l'on peut modifier une Category et que `category_type` est recalculé si le nom change. """
-#     new_category_name = "desserts"
-#     category.category_name = new_category_name
-#     category.save()
-#     category.refresh_from_db()
-#     assert category.category_name == normalize_case(new_category_name)
-#     assert category.category_type == "recipe"
-
-#     # Vérifier qu'un update vers un category_name inconnu nécessite aussi un category_type valide
-#     category.category_name = "Catégorie Inconnue"
-#     category.category_type = None  # On simule un oubli de category_type
-#     with pytest.raises(ValidationError, match="Le champ `category_type` est obligatoire pour une nouvelle catégorie."):
-#         category.save()
 
 @pytest.mark.django_db
 def test_category_update(category):

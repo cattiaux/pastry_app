@@ -154,9 +154,20 @@ class CategorySerializer(serializers.ModelSerializer):
         model = Category
         fields = ['id', 'category_name', 'category_type', 'parent_category']
 
+    def to_internal_value(self, data):
+        """ Normalise AVANT validation. """
+        data = data.copy()  # Rend le QueryDict mutable
+        
+        if "category_name" in data:
+            data["category_name"] = normalize_case(data["category_name"])
+        if "category_type" in data:
+            data["category_type"] = normalize_case(data["category_type"])
+        if "parent_category" in data and isinstance(data["parent_category"], str):
+            data["parent_category"] = normalize_case(data["parent_category"]) 
+        return super().to_internal_value(data)
+
     def validate_category_name(self, value):
         """ Vérifie que 'category_name' existe en base et empêche les utilisateurs non-admins d'ajouter des catégories. """
-        value = normalize_case(value)  # Normalisation
         request = self.context.get("request")
         
         # Vérifie si la catégorie existe déjà en base
@@ -182,14 +193,6 @@ class CategorySerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request.user.is_staff:
             raise serializers.ValidationError("Seuls les administrateurs peuvent créer des catégories.")
-
-        # Convertir le `parent_category` de `category_name` en instance `Category`
-        parent_category_name = validated_data.pop("parent_category", None)
-        if parent_category_name:
-            parent_category_instance = Category.objects.filter(category_name__iexact=parent_category_name).first()
-            if not parent_category_instance:
-                raise serializers.ValidationError({"parent_category": "La catégorie parente spécifiée n'existe pas."})
-            validated_data["parent_category"] = parent_category_instance
 
         try:
             return super().create(validated_data)
