@@ -4,35 +4,43 @@ Synthèse des Contraintes pour le Modèle Category
         CONTRAINTES	                                                                 TEST CORRESPONDANT
 Création d’une catégorie	                                                        -> test_create_category
 category_name unique (en API, unique=True en production)                            -> test_create_duplicate_category
-category_name normalisé en minuscule                                                -> test_category_name_is_normalized
-category_name ne peut pas être vide                                                 -> test_create_category_without_name
+category_name et parent_category normalisé en minuscule                             -> test_normalized_fields_category_api
+category_name ne peut pas être vide                                                 -> test_required_fields_category_api
 Mise à jour du category_name                                                        -> test_update_category
 Suppression d’une catégorie existante                                               -> test_delete_category
 Récupération d’une catégorie existante                                              -> test_get_category
 Erreur 404 si catégorie inexistante	                                                -> test_get_nonexistent_category et test_delete_nonexistent_category
 Suppression bloquée si la catégorie est utilisée (ingredient ou recipe)             -> test_delete_category_with_linked_objects
-category_name doit exister dans CATEGORY_NAME_CHOICES                               -> test_create_category_invalid_name
-Le category_type est automatiquement défini                                         -> test_category_type_assignment
-Mise à jour interdite vers un category_name déjà existant                           -> test_update_category_to_duplicate
-(OLD) category_name longueur min ≥ 2                                                -> test_category_name_cannot_be_too_short
-(OLD) category_name ne peut pas être uniquement numérique                           -> test_category_name_cannot_be_numeric
-(OLD) Mise à jour du category_type                                                  -> test_update_category_type
-(OLD) category_type ne peut avoir que certaines valeurs (ingredient, recipe, both)  -> test_category_type_must_be_valid
+category_type doit être une valeur valide (recipe, ingredient, both)                -> test_create_category_invalid_type
+Mise à jour interdite vers un category_name déjà existant                           -> test_update_category_to_duplicate_api
+Suppression d’une catégorie avec des sous-catégories	                            -> test_delete_category_with_subcategories (API) & test_delete_category_with_subcategories_model (Base)
+Mise à jour partielle (PATCH) du parent_category	                                -> test_partial_update_category
+Création d’une catégorie avec un parent_category invalide	                        -> test_create_category_with_invalid_parent
+Création d’une catégorie avec un parent_category valide	                            -> test_parent_category_validation
+Détachement d’une sous-catégorie (parent_category=None)                         	-> test_parent_category_is_optional
+Vérification de la normalisation de category_type (ex: uppercase ➝ lowercase)      	-> test_normalized_fields_category_api
+
 
 Contraintes Métier :
     1. Nom de Catégorie (category_name) :
-        ◦ Doit être unique.
+        ◦ Doit être unique (contrôle API et DB en production).
         ◦ Ne peut pas être vide.
-        ◦ Doit exister dans CATEGORY_NAME_CHOICES (contrôle strict).
         ◦ Est normalisé en minuscule.
     2. Type de Catégorie (category_type) : 
-        ◦ Attribué automatiquement (values: recipe, ingredient, both) en fonction de category_name.
-        ◦ Ne peut plus être défini manuellement par l’utilisateur.
+        ◦ Doit être l’une des valeurs suivantes : recipe, ingredient, both.
+        ◦ Doit être validé en API et en base de données.
+        ◦ Normalisation automatique en minuscule.
+    3. Parent de Catégorie (parent_category)
+        ◦ Peut être NULL (catégorie racine).
+        ◦ Si défini, doit être un category_name existant.
+        ◦ Peut être modifié via PATCH.
+        ◦ Une sous-catégorie peut être détachée de son parent (parent_category=None).
 
 Contraintes Techniques :
     1. Type de Données :
         ◦ category_name : CharField (max 200 caractères, valeurs prédéfinies).
-        ◦ category_type : CharField (max 10 caractères, assigné automatiquement).
+        ◦ category_type : CharField (max 10 caractères, doit être recipe, ingredient, both).
+        ◦ parent_category : ForeignKey vers self, optionnel (on_delete=models.SET_NULL)
     2. Indexation :
         ◦ category_name est indexé pour des recherches rapides.
 
@@ -40,18 +48,23 @@ Contraintes d'Intégrité :
     1. Références :
         ◦ Category est liée aux modèles Ingredient et Recipe.
     2. Cohérence des Données :
-        ◦ Validations appliquées lors des mises à jour (test_update_category et test_update_category_type).
+        ◦ Mises à jour contrôlées (test_update_category).
         ◦ Suppression gérée avec précaution (test_delete_category_with_linked_objects).
     3. Protection contre les suppressions invalides
-        ◦ Si une Category est utilisée par un Ingredient ou une Recipe, elle ne peut pas être supprimée (test_delete_category_with_linked_objects).
+        ◦ Si une Category est utilisée par un Ingredient ou une Recipe, elle ne peut pas être supprimée.
         ◦ Gestion via on_delete=PROTECT dans PostgreSQL.
         ◦ Vérification ajoutée dans destroy() de CategoryViewSet
+
+Gestion de la Suppression d'une Catégorie avec des Sous-Catégories
+    Suppression d'une catégorie sans sous-catégories        -> Suppression directe
+    Suppression d'une catégorie avec des sous-catégories (on_delete=models.SET_NULL)    -> parent_category des sous-catégories devient NULL
+    Suppression avec ?delete_subcategories=true     -> Supprime aussi les sous-catégories
 
 Préparation pour la Production :
     Ajout de unique=True sur category_name en production :
         ◦ Actuellement, category_name n’a pas unique=True pour éviter des conflits en développement et permettre des tests.
         ◦ Une fois en production, unique=True sera ajouté pour garantir l’unicité en base.
-        ◦ L’API continuera de vérifier l’unicité pour éviter les erreurs 500 Internal Server Error.
+        ◦ L’API empêche déjà les doublons, donc aucune erreur 500 (IntegrityError) ne devrait survenir après l’activation.
 
 
 
