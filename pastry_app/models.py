@@ -18,7 +18,7 @@ class BaseModel(models.Model):
 
 class Pan(models.Model):
     PAN_TYPES = [('ROUND', 'Round'),('SQUARE', 'Square'),('CUSTOM', 'Custom'),]
-    pan_name = models.TextField(max_length=200, unique=True)
+    pan_name = models.CharField(max_length=200, unique=True)
     pan_type = models.CharField(max_length=200, choices=PAN_TYPES)
 
     class Meta:
@@ -257,7 +257,7 @@ class RecipeLabel(models.Model):
 
 class Recipe(models.Model):
     parent_recipe = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="versions")
-    recipe_name = models.TextField(max_length=200)
+    recipe_name = models.CharField(max_length=200)
     chef_name = models.CharField(max_length=200, default="Anonyme")
     ingredients = models.ManyToManyField("Ingredient", through='RecipeIngredient', related_name="recipes")
     categories = models.ManyToManyField(Category, through="RecipeCategory", related_name="recipes") 
@@ -275,11 +275,6 @@ class Recipe(models.Model):
 
     def __str__(self):
         return self.recipe_name
-    
-    # def clean(self):
-    #     """Vérifie qu'au moins `default_servings` ou `pan` est renseigné."""
-    #     if not self.default_servings and not self.pan:
-    #         raise ValidationError("Vous devez renseigner au moins `default_servings` ou `pan`.")
 
     def calculate_avg_density(self):
         """
@@ -454,10 +449,10 @@ class Store(models.Model):
 
 class IngredientPrice(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name="prices")
-    brand_name = models.TextField(max_length=200, null=True, blank=True, default=None)
+    brand_name = models.CharField(max_length=200, null=True, blank=True, default=None)
     store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name="prices", null=True, blank=True)
     quantity = models.FloatField(validators=[MinValueValidator(0)])       # Quantité
-    unit = models.TextField(max_length=50, choices=UNIT_CHOICES)          # Unité de mesure
+    unit = models.CharField(max_length=50, choices=UNIT_CHOICES)          # Unité de mesure
     price = models.FloatField(validators=[MinValueValidator(0)])          # Prix normal
     date = models.DateField(null=True, blank=True, default=now)    # Date d'enregistrement du prix
 
@@ -590,9 +585,9 @@ class IngredientPriceHistory(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.SET_NULL, null=True, blank=True)  # Laisse l’historique même si l’ingrédient est supprimé)
     ingredient_name = models.CharField(max_length=255, null=True, blank=True, default="")  # Ajout du nom pour référence
     store = models.ForeignKey(Store, on_delete=models.CASCADE, null=True, blank=True)  # Ajout du magasin
-    brand_name = models.TextField(max_length=200, blank=True, null=True, default=None)  # Ajout de la marque
+    brand_name = models.CharField(max_length=200, blank=True, null=True, default=None)  # Ajout de la marque
     quantity = models.FloatField(validators=[MinValueValidator(0)])  # Ajout de la quantité
-    unit = models.TextField(max_length=50, choices=UNIT_CHOICES)  # Ajout de l'unité
+    unit = models.CharField(max_length=50, choices=UNIT_CHOICES)  # Ajout de l'unité
     price = models.FloatField(validators=[MinValueValidator(0)])
     is_promo = models.BooleanField(default=False)
     promotion_end_date = models.DateField(null=True, blank=True)  # Ajout de la date de fin de promo
