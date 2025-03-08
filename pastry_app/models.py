@@ -187,20 +187,49 @@ class Label(models.Model):
     def __str__(self):
         return self.label_name
 
+    def clean(self):
+        """ Vérifie les règles métier lors de la création et de l’update. """
+        # Normalisation du `label_name`
+        self.label_name = normalize_case(self.label_name)
+
+        # Normalisation du `label_type`
+        if self.label_type:
+            self.label_type = normalize_case(self.label_type)
+            if self.label_type not in dict(self.LABEL_CHOICES):
+                raise ValidationError(f"`label_type` doit être l'une des valeurs suivantes: {', '.join(dict(self.LABEL_CHOICES).keys())}.")
+
+        # Vérifier que `label_type` est valide
+        if not self.label_type:
+            raise ValidationError("Le champ `label_type` est obligatoire pour un nouveau label.")
+        elif self.label_type not in dict(self.LABEL_CHOICES):
+            raise ValidationError(f"`label_type` doit être l'une des valeurs suivantes: {', '.join(dict(self.LABEL_CHOICES).keys())}.")
+
+        # Vérifier qu'on ne met pas à jour un `label_name` existant
+        existing_label = Label.objects.exclude(id=self.id).filter(label_name__iexact=self.label_name).exists()
+        if existing_label:
+            raise ValidationError("Un label avec ce nom existe déjà.")
+
     def save(self, *args, **kwargs):
-        """ 
-        Validation avant sauvegarde : nettoyage, validation et attribution du type automatique.
-        """
-        self.label_name = normalize_case(self.label_name) # Lower + supprime espaces inutiles
+        """ Validation avant sauvegarde : nettoyage, validation. """
+        self.full_clean()
 
-        # Vérifier si `label_name` est valide (dans la liste des choix autorisés)
-        if self.label_name not in LABEL_TYPE_MAP:
-            raise ValidationError(f"'{self.label_name}' n'est pas une catégorie valide.")
+        # Empêche la création d'un label par un utilisateur non-admin
+        request = kwargs.pop("request", None)
+        if request and not request.user.is_staff:
+            raise ValidationError("Seuls les administrateurs peuvent créer ou modifier des labels.")
 
-        # Assigner automatiquement `label_type`
-        self.label_type = LABEL_TYPE_MAP[self.label_name]
+        if not self.label_type:
+            raise ValidationError("Le type de label est obligatoire.")
 
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Empêche la suppression d'un label par un utilisateur non-admin."""
+        request = kwargs.pop("request", None)
+        if request and not request.user.is_staff:
+            raise ValidationError("Seuls les administrateurs peuvent supprimer des labels.")
+
+        super().delete(*args, **kwargs)
 
 ####### AVEC AUTRE QUE SQLITE : POSTRESQL ou MYSQL ###############
 # Utiliser une table intermédiaire avec on_delete=PROTECT oblige Django à empêcher la suppression en base

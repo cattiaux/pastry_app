@@ -185,7 +185,6 @@ class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
     filter_backends = [SearchFilter]
     search_fields = ['category_name']
-    # permission_classes = [IsAdminUser] 
     permission_classes = []  # On définit les permissions dans `get_permissions`
 
     def get_permissions(self):
@@ -231,18 +230,33 @@ class LabelViewSet(viewsets.ModelViewSet):
     serializer_class = LabelSerializer
     filter_backends = [SearchFilter]
     search_fields = ['label_name']
+    permission_classes = []  # On définit les permissions dans `get_permissions`
+
+    def get_permissions(self):
+        """Définit les permissions selon l'action."""
+        if self.action in ["create", "update", "partial_update", "destroy"]:
+            return [IsAdminUser()]  # Seuls les admins peuvent modifier/supprimer
+        return [AllowAny()]  # Autoriser la lecture à tout le monde
 
     def destroy(self, request, *args, **kwargs):
-        """Empêche la suppression d'un Label s'il est utilisé par un Ingredient ou par une Recipe."""
+        """Gère la suppression d'un Label."""
         label = self.get_object()
-        try:
-            self.perform_destroy(label)  # Utilisation de DRF
-        except ProtectedError:
+
+        # Vérification admin (double sécurité en plus de `permission_classes`)
+        if not request.user.is_staff:
+            return Response({"error": "Seuls les administrateurs peuvent supprimer des labels."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Vérifier si le label est utilisé par une recette ou un ingrédient
+        if label.recipelabel_set.exists() or label.ingredientlabel_set.exists():
             return Response(
-                {"error": "Ce label est utilisé par un ingrédient ou une recette et ne peut pas être supprimé."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        return Response(status=status.HTTP_204_NO_CONTENT)
+                {"error": "Ce label est utilisé par un ingrédient ou une recette et ne peut pas être supprimée."},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            label.delete()
+            return Response({"message": "Label supprimé avec succès."}, status=status.HTTP_204_NO_CONTENT)
+        except IntegrityError:
+            return Response({"error": "Erreur lors de la suppression du label."}, status=status.HTTP_400_BAD_REQUEST)
 
 class PanViewSet(viewsets.ModelViewSet):
     queryset = Pan.objects.none()

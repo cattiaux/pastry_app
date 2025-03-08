@@ -4,7 +4,7 @@ from pastry_app.models import Category, Ingredient, Recipe, IngredientCategory, 
 from pastry_app.tests.base_api_test import api_client, base_url, update_object
 from pastry_app.tests.utils import normalize_case
 from django.contrib.auth.models import User
-
+ 
 # Définir model_name pour les tests de Category
 model_name = "categories"
 

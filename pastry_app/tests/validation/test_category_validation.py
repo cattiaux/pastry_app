@@ -31,7 +31,7 @@ def test_unique_constraint_category_api(admin_client, base_url, field_name, cate
 @pytest.mark.django_db
 def test_required_fields_category_api(admin_client, base_url, field_name):
     """ Vérifie que les champs obligatoires sont bien requis via l'API """
-    expected_errors = ["This field is required.", "This field may not be null.", "This field cannot be blank.", "This field may not be blank."]
+    expected_errors = ["This field is required.", "This field may not be null.", "This field cannot be blank.", "This field may not be blank.", "\"\" is not a valid choice."]
     for invalid_value in [None, ""]:  # Teste `None` et `""`
         validate_constraint_api(admin_client, base_url, model_name, field_name, expected_errors, **{field_name: invalid_value})
 
@@ -47,11 +47,11 @@ def test_optional_fields_api(admin_client, base_url, field_name):
     assert response.json()[field_name] == None  # Vérification
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("field_name, raw_value, expected_value", [
-    ("category_name", " CakeS  ", "cakes"),
-    ("category_type", "RECIPE", "recipe"),
+@pytest.mark.parametrize("field_name, raw_value", [
+    ("category_name", " CakeS  "),
+    ("category_type", "RECIPE"),
 ])
-def test_normalized_fields_category_api(admin_client, base_url, field_name, raw_value, expected_value):
+def test_normalized_fields_category_api(admin_client, base_url, field_name, raw_value):
     """ Vérifie que `category_name` et `category_type` sont bien normalisés après création via l’API. """
     url = base_url(model_name)
     valid_data = {"category_name": "Test Category", "category_type": "recipe"}  # Valeurs par défaut
@@ -59,7 +59,7 @@ def test_normalized_fields_category_api(admin_client, base_url, field_name, raw_
 
     response = admin_client.post(url, data=json.dumps(valid_data), content_type="application/json")
     assert response.status_code == status.HTTP_201_CREATED
-    assert response.json()[field_name] == expected_value  # Vérifie la normalisation
+    assert response.json()[field_name] == normalize_case(raw_value)  # Vérifie la normalisation
 
 @pytest.mark.django_db
 def test_create_duplicate_category_api(admin_client, base_url):
@@ -87,7 +87,7 @@ def test_create_category_invalid_type(admin_client, base_url, invalid_category_t
     assert "category_type" in response.json()  # Vérifie que l'API bloque bien
 
 
-# 🔴 Attention : Ce test d'unicité (test_update_category_to_duplicate) fonctionnent UNIQUEMENT si `unique=True` est retiré du modèle.
+# 🔴 Attention : Ce test d'unicité (test_update_category_to_duplicate_api) fonctionnent UNIQUEMENT si `unique=True` est retiré du modèle.
 # Si `unique=True`, Django bloque la validation AVANT que l'API ne réponde -> `IntegrityError`
 # Solution recommandée :
 # 1️. Tester l'unicité dans l'API avec `validate_category_name()` dans `serializers.py` (sans `unique=True`).
@@ -114,14 +114,6 @@ def test_non_admin_cannot_create_category(api_client, base_url):
     url = base_url(model_name)
     response = api_client.post(url, data={"category_name": "Test", "category_type": "recipe"}, format="json")
     assert response.status_code == status.HTTP_403_FORBIDDEN
-
-@pytest.mark.django_db
-def test_create_category_with_uppercase_type(admin_client, base_url):
-    """ Vérifie que `category_type` est bien normalisé en minuscule dans le serializer. """
-    url = base_url(model_name)
-    response = admin_client.post(url, data={"category_name": "Viennoiseries", "category_type": "RECIPE"})
-    assert response.status_code == status.HTTP_201_CREATED
-    assert response.json()["category_type"] == "recipe"  # Vérifie la normalisation
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("delete_subcategories, expected_count", [("true", 0), ("false", 1)])

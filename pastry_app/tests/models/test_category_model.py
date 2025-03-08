@@ -52,19 +52,13 @@ def test_category_deletion(category):
     category.delete()
     assert not Category.objects.filter(id=category_id).exists()
 
-@pytest.mark.parametrize("field_name", ["category_name"])
+@pytest.mark.parametrize("field_name", ["category_name", "category_type"])
 @pytest.mark.django_db
 def test_required_fields_category(field_name, category):
     """ Vérifie que les champs obligatoires ne peuvent pas être vides """
     expected_error = ["field cannot be null", "This field cannot be blank."]
     for invalid_value in [None, "", "   "]:
         validate_constraint(Category, field_name, invalid_value, expected_error, category_type=category.category_type)
-
-@pytest.mark.django_db
-def test_category_type_is_mandatory_on_creation():
-    """Vérifie qu'une catégorie ne peut pas être créée sans `category_type`."""
-    with pytest.raises(ValidationError, match="Le champ `category_type` est obligatoire pour une nouvelle catégorie."):
-        Category.objects.create(category_name="TestCat")  # Manque `category_type`
 
 @pytest.mark.parametrize("field_name", ["category_name"])
 @pytest.mark.django_db

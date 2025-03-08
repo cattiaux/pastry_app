@@ -147,7 +147,6 @@ class IngredientPriceHistorySerializer(serializers.ModelSerializer):
         read_only_fields = fields  # Empêche toute modification via l'API
     
 class CategorySerializer(serializers.ModelSerializer):
-    category_type = serializers.CharField(required=False)
     parent_category = serializers.SlugRelatedField(queryset=Category.objects.all(), slug_field="category_name", allow_null=True, required=False)
 
     class Meta:
@@ -157,7 +156,7 @@ class CategorySerializer(serializers.ModelSerializer):
     def to_internal_value(self, data):
         """ Normalise AVANT validation. """
         data = data.copy()  # Rend le QueryDict mutable
-        
+
         if "category_name" in data:
             data["category_name"] = normalize_case(data["category_name"])
         if "category_type" in data:
@@ -171,7 +170,7 @@ class CategorySerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         
         # Vérifie si la catégorie existe déjà en base
-        category_exists = Category.objects.filter(category_name__iexact=value).exists()
+        category_exists = Category.objects.exclude(id=self.instance.id if self.instance else None).filter(category_name__iexact=value).exists()
         if category_exists:
             raise serializers.ValidationError("Une catégorie avec ce nom existe déjà.")
 
@@ -218,35 +217,63 @@ class LabelSerializer(serializers.ModelSerializer):
         model = Label
         fields = ['id', 'label_name', 'label_type']
 
-    def to_representation(self, instance):
-        ret = super().to_representation(instance)
-        ret['label_name'] = ret['label_name'].lower()
-        return ret
-    
+    def to_internal_value(self, data):
+        """ Normalise AVANT validation. """
+        data = data.copy()  # Rend le QueryDict mutable
+
+        if "label_name" in data:
+            data["label_name"] = normalize_case(data["label_name"])
+        if "label_type" in data:
+            data["label_type"] = normalize_case(data["label_type"])
+        return super().to_internal_value(data)
+
+    def validate_label_name(self, value):
+        """ Vérifie que 'label_name' existe en base et empêche les utilisateurs non-admins d'ajouter des labels. """
+        request = self.context.get("request")
+        
+        # Vérifie si la catégorie existe déjà en base
+        label_exists = Label.objects.exclude(id=self.instance.id if self.instance else None).filter(label_name__iexact=value).exists()
+        if label_exists:
+            raise serializers.ValidationError("Un label avec ce nom existe déjà.")
+
+        # Seuls les admins peuvent ajouter de nouveaux labels
+        if not request.user.is_staff and not label_exists:
+            raise serializers.ValidationError("Vous ne pouvez choisir qu'un label existant.")
+
+        return value
+
+    def validate_label_type(self, value):
+        """ Vérifie que `label_type` est dans les choix valides. """
+        valid_choices = dict(Label.LABEL_CHOICES).keys()
+        if value not in valid_choices:
+            raise serializers.ValidationError(f"`label_type` doit être l'une des valeurs suivantes : {', '.join(valid_choices)}.")
+        return value
+
     def create(self, validated_data):
-        """ Vérifie l’unicité via l’API et capture IntegrityError pour plus de sécurité """
-        if Label.objects.filter(label_name__iexact=validated_data["label_name"]).exists():
-            raise serializers.ValidationError({"label_name": "Un label avec ce nom existe déjà."})
+        """ Seuls les admins peuvent créer un label. """
+        request = self.context.get("request")
+        if not request.user.is_staff:
+            raise serializers.ValidationError("Seuls les administrateurs peuvent créer des labels.")
+
         try:
             return super().create(validated_data)
         except IntegrityError:
-            raise serializers.ValidationError({"label_name": "Erreur d’unicité en base. Contactez un administrateur."})
+            raise serializers.ValidationError({"label_name": "Ce label existe déjà."})
 
-    def validate_label_name(self, value):
-        """ Vérifie que 'label_name' est valide et vérifie si un autre label existe déjà avec ce nom (insensible à la casse)"""
-        value = normalize_case(value)  # Normalisation
+    def update(self, instance, validated_data):
+        # Seuls les admins peuvent modifier un label.
+        request = self.context.get("request")
+        if not request.user.is_staff:
+            raise serializers.ValidationError("Seuls les administrateurs peuvent modifier un label.")
 
-        # Vérifier que le label existe bien dans LABEL_NAME_CHOICES
-        if value not in LABEL_NAME_CHOICES:
-            raise serializers.ValidationError("Ce label n'est pas valide.")
+        # Empêche la modification de `label_name` vers un nom déjà existant.
+        new_name = validated_data.get("label_name", instance.label_name)
+        if normalize_case(new_name) != normalize_case(instance.label_name):
+            if Label.objects.exclude(id=instance.id).filter(label_name=new_name).exists():
+                raise serializers.ValidationError({"label_name": "Un label avec ce nom existe déjà."})
 
-        # Vérifier l'unicité du label_name (insensible à la casse)
-        label_id = self.instance.id if self.instance else None
-        if Label.objects.exclude(id=label_id).filter(label_name__iexact=value).exists():
-            raise serializers.ValidationError("Label with this Label name already exists.")
+        return super().update(instance, validated_data)
 
-        return value
-    
 class IngredientSerializer(serializers.ModelSerializer):
     prices = IngredientPriceSerializer(many=True, read_only=True)
     categories = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), many=True, required=False) #PrimaryKeyRelatedField assure la vérification de l'existence de la category par DRF
