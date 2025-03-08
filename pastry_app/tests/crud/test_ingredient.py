@@ -3,7 +3,6 @@ from pastry_app.models import Ingredient, Category, Label, Recipe
 from rest_framework import status
 from pastry_app.tests.utils import normalize_case
 from pastry_app.tests.base_api_test import api_client, base_url
-from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
 
 """Test CRUD sur le modèle Ingredient"""
 
@@ -39,12 +38,12 @@ def setup_ingredient(db):
 @pytest.fixture
 def category():
     """Crée une catégorie valide pour les tests."""
-    return Category.objects.create(category_name=CATEGORY_NAME_CHOICES[0])
+    return Category.objects.create(category_name="Fruits", category_type="ingredient")
 
 @pytest.fixture
 def label():
     """Crée un label valide pour les tests."""
-    return Label.objects.create(label_name=LABEL_NAME_CHOICES[0])
+    return Label.objects.create(label_name="Bio", label_type="recipe")
 
 @pytest.fixture
 def recipe():
@@ -130,7 +129,6 @@ def test_update_ingredient_add_category(api_client, base_url, setup_ingredient, 
     data = {"categories": [category.id]}
 
     response = api_client.patch(url, data=json.dumps(data), content_type="application/json")
-
     assert response.status_code == status.HTTP_200_OK
     setup_ingredient.refresh_from_db()
     assert category in setup_ingredient.categories.all()
@@ -142,7 +140,6 @@ def test_update_ingredient_add_label(api_client, base_url, setup_ingredient, lab
     data = {"labels": [label.id]}
 
     response = api_client.patch(url, data=json.dumps(data), content_type="application/json")
-
     assert response.status_code == status.HTTP_200_OK
     setup_ingredient.refresh_from_db()
     assert label in setup_ingredient.labels.all()
@@ -155,7 +152,6 @@ def test_update_ingredient_remove_category(api_client, base_url, setup_ingredien
     data = {"categories": []}  # On vide la liste
 
     response = api_client.patch(url, data=json.dumps(data), content_type="application/json")
-
     assert response.status_code == status.HTTP_200_OK
     setup_ingredient.refresh_from_db()
     assert category not in setup_ingredient.categories.all()
@@ -168,7 +164,6 @@ def test_update_ingredient_remove_label(api_client, base_url, setup_ingredient, 
     data = {"labels": []}  # On vide la liste
 
     response = api_client.patch(url, data=json.dumps(data), content_type="application/json")
-
     assert response.status_code == status.HTTP_200_OK
     setup_ingredient.refresh_from_db()
     assert label not in setup_ingredient.labels.all()

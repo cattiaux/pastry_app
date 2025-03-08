@@ -157,7 +157,7 @@ def test_ingredientprice_str(is_promo, has_store, brand_name, quantity, price, u
 @pytest.mark.django_db
 def test_promotion_end_date_constraints_db(field_name, invalid_value, is_promo_value, expected_error, ingredient_price):
     """ Vérifie les contraintes sur `promotion_end_date` en utilisant `validate_constraint`. """
-    validate_constraint(IngredientPrice, field_name=field_name, value=invalid_value, expected_error=expected_error, 
+    validate_constraint(IngredientPrice, field_name, invalid_value, expected_error, 
                         ingredient=ingredient_price.ingredient, store=ingredient_price.store, brand_name=ingredient_price.brand_name, 
                         quantity=ingredient_price.quantity, unit=ingredient_price.unit, price=ingredient_price.price, is_promo=is_promo_value)
 

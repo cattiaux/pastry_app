@@ -15,13 +15,6 @@ def test_required_fields_store_api(api_client, base_url, field_name):
     for invalid_value in [None, ""]:  # Teste `None` et `""`
         validate_constraint_api(api_client, base_url, model_name, field_name, expected_errors, **{field_name: invalid_value})
 
-# @pytest.mark.parametrize("field_name", ["store_name"])
-# @pytest.mark.django_db
-# def test_unique_constraint_store_api(api_client, base_url, field_name):
-#     """ Vérifie que les contraintes `unique=True` sont bien respectées via l’API. """
-#     valid_data = {"store_name": "Monoprix", "city": "Lyon", "zip_code": "69001"}
-#     validate_unique_constraint_api(api_client, base_url, model_name, field_name, **valid_data)
-
 @pytest.mark.parametrize(("fields, values"), [(("store_name", "city", "zip_code"), ("Monoprix", "Lyon", "69001"))])
 @pytest.mark.django_db
 def test_unique_together_store_api(api_client, base_url, fields, values):
@@ -60,7 +53,7 @@ def test_update_store_to_duplicate_api(api_client, base_url, fields):
     # Construire dynamiquement `valid_data1` et `valid_data2`
     valid_data1 = dict(zip(fields, values1))
     valid_data2 = dict(zip(fields, values2))
-    validate_update_to_duplicate_api(api_client, base_url, model_name, valid_data1, valid_data2)
+    validate_update_to_duplicate_api(api_client, base_url, model_name, valid_data1, valid_data2, create_initiate=False)
 
 @pytest.mark.parametrize("related_models", [
     [

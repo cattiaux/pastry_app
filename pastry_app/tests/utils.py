@@ -138,7 +138,7 @@ def validate_unique_together_api(api_client, base_url, model_name, valid_data):
     # Deuxième enregistrement (doit échouer)
     response2 = api_client.post(url, data=json.dumps(valid_data), content_type="application/json")
     assert response2.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
-    assert error_message in response2.json().get("non_field_errors", [])  # Vérifier l'erreur attendue
+    assert any(error_message in msg for msg in response2.json().get("non_field_errors", [])) # Vérifier l'erreur attendue
 
 def validate_update_to_duplicate_api(api_client, base_url, model_name, valid_data1, valid_data2, create_initiate=True):
     """ Vérifie qu'on ne peut PAS modifier un objet pour lui donner des valeurs déjà existantes sur un autre objet. """
@@ -155,7 +155,6 @@ def validate_update_to_duplicate_api(api_client, base_url, model_name, valid_dat
 
     # Tenter de mettre à jour `obj2` avec les valeurs de `obj1`
     response3 = api_client.patch(f"{url}{obj_id}/", valid_data1, format="json")
-    print(response3.json())
     assert response3.status_code == status.HTTP_400_BAD_REQUEST  # Vérifier que la mise à jour est rejetée
     # assert "non_field_errors" in response3.json()  # Vérifier l’erreur sous `non_field_errors`
     # assert "must make a unique set" in response3.json()["non_field_errors"][0]

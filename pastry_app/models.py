@@ -6,7 +6,7 @@ from django.utils.text import slugify
 from django.core.exceptions import ValidationError
 from django.db.models import UniqueConstraint
 from pastry_app.tests.utils import normalize_case
-from .constants import UNIT_CHOICES, CATEGORY_TYPE_MAP, LABEL_TYPE_MAP
+from .constants import UNIT_CHOICES
 
 class BaseModel(models.Model):
     class Meta:

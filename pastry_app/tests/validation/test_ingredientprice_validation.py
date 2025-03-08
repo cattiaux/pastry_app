@@ -1,12 +1,10 @@
 import pytest
 from rest_framework import status
-from django.utils.timezone import now
-from django.forms.models import model_to_dict
 from pastry_app.tests.base_api_test import api_client, base_url
 from pastry_app.tests.utils import *
-from pastry_app.serializers import IngredientPriceSerializer
 from pastry_app.models import Ingredient, Store, IngredientPrice, IngredientPriceHistory
 from pastry_app.constants import UNIT_CHOICES
+
 # Définition du nom du modèle pour l'API
 model_name = "ingredient_prices"
 

@@ -2,7 +2,6 @@ import pytest
 from django.db import IntegrityError
 from pastry_app.models import Ingredient, Category, Label
 from pastry_app.tests.utils import normalize_case
-from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
 
 """Tests unitaires du modèle Ingredient"""
 
@@ -22,8 +21,6 @@ from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
 # Contraintes Spécifiques
 # test_ingredient_can_have_categories → Vérifie qu'un ingrédient peut être associé à des catégories.
 # test_ingredient_can_have_labels → Vérifie qu'un ingrédient peut être associé à des labels.
-# test_cannot_assign_nonexistent_category → Vérifie qu'on ne peut PAS attribuer une catégorie inexistante via ManyToManyField.
-# test_cannot_assign_nonexistent_label → Vérifie qu'on ne peut PAS attribuer un label inexistant via ManyToManyField.
 
 # Définir model_name pour les tests de Ingredient
 model_name = "ingredients"
@@ -63,19 +60,15 @@ def test_ingredient_deletion(ingredient):
 @pytest.mark.django_db
 def test_ingredient_can_have_categories(ingredient):
     """ Vérifie qu'un ingrédient peut être associé à des catégories."""
-    valid_category_name = CATEGORY_NAME_CHOICES[0]  # Prendre une catégorie existante
-    category = Category.objects.create(category_name=valid_category_name) 
+    category = Category.objects.create(category_name="TestCaté", category_type='recipe') 
     ingredient.categories.add(category)  # Assigner une catégorie
-
     assert category in ingredient.categories.all()  # Vérifier l’association
 
 @pytest.mark.django_db
 def test_ingredient_can_have_labels(ingredient):
     """ Vérifie qu'un ingrédient peut être associé à des labels."""
-    valid_label_name = LABEL_NAME_CHOICES[0]  # Prendre une catégorie existante
-    label = Label.objects.create(label_name=valid_label_name)
+    label = Label.objects.create(label_name="Bio", label_type='recipe')
     ingredient.labels.add(label)  # Assigner un label
-
     assert label in ingredient.labels.all()  # Vérifier l’association
 
 @pytest.mark.django_db

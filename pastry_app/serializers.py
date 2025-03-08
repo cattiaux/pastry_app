@@ -2,7 +2,6 @@ from rest_framework import serializers
 from django.db import IntegrityError
 from .models import Recipe, Pan, Ingredient, IngredientPrice, IngredientPriceHistory, Store, Category, Label, RecipeIngredient, RecipeStep, SubRecipe, RoundPan, SquarePan
 from .utils import get_pan_model, update_related_instances
-from pastry_app.constants import CATEGORY_NAME_CHOICES, LABEL_NAME_CHOICES
 from pastry_app.tests.utils import normalize_case
 from django.utils.timezone import now
 
