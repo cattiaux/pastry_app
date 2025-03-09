@@ -5,6 +5,8 @@ from django.utils.timezone import now
 from django.utils.text import slugify
 from django.core.exceptions import ValidationError
 from django.db.models import UniqueConstraint
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
 from pastry_app.tests.utils import normalize_case
 from .constants import UNIT_CHOICES
 
@@ -258,7 +260,7 @@ class RecipeLabel(models.Model):
 class Recipe(models.Model):
     parent_recipe = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="versions")
     recipe_name = models.CharField(max_length=200)
-    chef_name = models.CharField(max_length=200, default="Anonyme")
+    chef_name = models.CharField(max_length=200, null=True, blank=True)
     ingredients = models.ManyToManyField("Ingredient", through='RecipeIngredient', related_name="recipes")
     categories = models.ManyToManyField(Category, through="RecipeCategory", related_name="recipes") 
     default_volume = models.FloatField(null=True, blank=True, validators=[MinValueValidator(0)])
@@ -274,7 +276,7 @@ class Recipe(models.Model):
         ordering = ['recipe_name', 'chef_name']
 
     def __str__(self):
-        return self.recipe_name
+        return f"{self.recipe_name} de {self.chef_name}"
 
     def calculate_avg_density(self):
         """
@@ -283,11 +285,26 @@ class Recipe(models.Model):
         total_weight = sum(ri.quantity for ri in self.recipeingredient_set.all())  # Poids total
         return total_weight / self.default_volume if self.default_volume and self.default_volume > 0 else None
 
+    def clean(self):
+        """ Vérifications métier avant sauvegarde. """
+        # Normalisation du `recipe_name`
+        self.recipe_name = normalize_case(self.recipe_name)
+        # Normalisation du `chef_name`
+        self.chef_name = normalize_case(self.chef_name)
+
+        if self.parent_recipe and self.parent_recipe == self:
+            raise ValidationError("Une recette ne peut pas être sa propre version précédente.")
+        
+        # Vérifie qu'une recette contient au moins un ingrédient.
+        if not self.id:  # Si la recette n'existe pas encore en base, on ne peut pas vérifier
+            return
+        if not self.ingredients.exists():
+            raise ValidationError("Une recette doit contenir au moins un ingrédient.")
+    
     def save(self, *args, **kwargs):
         """Vérifie les contraintes et met à jour `avg_density` avant la sauvegarde."""
-        # self.clean()  # Vérifie que `default_servings` ou `pan` est rempli
-        self.recipe_name = self.recipe_name.lower() if self.recipe_name else None
-        self.chef_name = self.chef_name.lower() if self.chef_name else None
+        self.clean() 
+
         if self.default_volume and self.default_volume > 0:
             self.avg_density = self.calculate_avg_density()
         super().save(*args, **kwargs)
@@ -319,7 +336,19 @@ class RecipeStep(models.Model):
     def clean(self):
         super().clean()
 
+        # Vérifier si `recipe` est défini sans provoquer d'erreur
+        recipe = getattr(self, "recipe", None)
+        if recipe is None:
+            return  # On stoppe la validation pour éviter toute erreur
+    
+        # Assigner automatiquement max(step_number) + 1 dans la recette si step_number n'est pas spécifié
+        if self.step_number is None:
+            max_step = RecipeStep.objects.filter(recipe=self.recipe).aggregate(models.Max("step_number"))["step_number__max"]
+            self.step_number = 1 if max_step is None else max_step + 1
         # Vérifier que le numéro d'étape est strictement supérieur à 0
+        if self.step_number < 1:
+            raise ValidationError("Step number must start at 1.")
+    
         if self.step_number <= 0:
             raise ValidationError("Une étape ne doit pas avoir un numéro inférieur à 1.")
         
@@ -337,9 +366,17 @@ class RecipeStep(models.Model):
     def save(self, *args, **kwargs):
         self.clean() 
 
-        if RecipeStep.objects.filter(recipe=self.recipe, step_number=self.step_number).exists():
+        if RecipeStep.objects.filter(recipe=self.recipe, step_number=self.step_number).exclude(pk=self.pk).exists():
             raise ValidationError(f'Step number {self.step_number} already exists in the recipe.')
+
         super().save(*args, **kwargs)
+
+# Ajout du signal pour bloquer la suppression du dernier RecipeStep d’une recette
+@receiver(pre_delete, sender=RecipeStep)
+def prevent_deleting_last_step(sender, instance, **kwargs):
+    """Empêche la suppression du dernier RecipeStep d’une recette."""
+    if instance.recipe.steps.count() == 1:
+        raise ValidationError("Une recette doit avoir au moins une étape.")
 
 class SubRecipe(models.Model):
     recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='main_recipes')

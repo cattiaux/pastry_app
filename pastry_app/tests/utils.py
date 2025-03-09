@@ -118,13 +118,12 @@ def validate_unique_together(model, expected_error, **valid_data):
     existing_object = model.objects.filter(**valid_data).exists()
     if not existing_object: # Si aucun objet n'existe et qu'on doit en créer un premier, on le fait
         model.objects.create(**valid_data)
-
     # Tenter de créer un deuxième objet identique et s'assurer que l'erreur est levée
     with pytest.raises(ValidationError) as excinfo:
         obj = model(**valid_data)
         obj.full_clean()  # Déclenche la ValidationError avant le save
         obj.save()
-    assert expected_error in str(excinfo.value), f"Erreur attendue '{expected_error}' non trouvée dans '{excinfo.value}'" # Vérifier que l'erreur attendue est bien levée
+    assert expected_error in str(excinfo.value.message_dict), f"Erreur attendue '{expected_error}' non trouvée dans '{excinfo.value}'" # Vérifier que l'erreur attendue est bien levée
 
 def validate_unique_together_api(api_client, base_url, model_name, valid_data):
     """ Vérifie qu'une contrainte `unique_together` est respectée en API et empêche la duplication. """
