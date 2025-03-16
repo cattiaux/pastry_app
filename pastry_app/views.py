@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
 from django.db.utils import IntegrityError 
 from django.db.models import ProtectedError
+from django.core.exceptions import ValidationError
 from pastry_app.tests.utils import normalize_case
 from .utils import get_pan_model
 from .models import Recipe, RecipeStep, Ingredient, Pan, Category, Label, Store, IngredientPrice, IngredientPriceHistory

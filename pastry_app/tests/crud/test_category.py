@@ -35,7 +35,6 @@ def test_get_category(api_client, base_url, setup_category):
     """Test de récupération d’une catégorie"""
     url = base_url(model_name) + f"{setup_category.id}/"
     response = api_client.get(url)
-    print(response.json())
     assert response.status_code == status.HTTP_200_OK
     assert response.json().get("category_name") == normalize_case(setup_category.category_name)
 

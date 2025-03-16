@@ -339,11 +339,11 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
         return value
     
 class RecipeStepSerializer(serializers.ModelSerializer):
-    step_number = serializers.IntegerField(required=False, min_value=1)
+    step_number = serializers.IntegerField(default=None, min_value=1)
 
     class Meta:
         model = RecipeStep
-        fields = ['id', 'step_number', 'instruction', 'trick']
+        fields = ['id', 'recipe', 'step_number', 'instruction', 'trick']
 
     def validate_instruction(self, value):
         """ Vérifie que l'instruction contient au moins 5 caractères. """
@@ -353,6 +353,9 @@ class RecipeStepSerializer(serializers.ModelSerializer):
 
     def validate_step_number(self, value):
         """ Vérifie que `step_number` est bien consécutif. """
+        if value is None:  # Éviter la comparaison `None > int`
+            return value 
+        
         recipe = self.initial_data.get("recipe")  # Récupérer la recette envoyée
         if recipe:
             last_step = RecipeStep.objects.filter(recipe=recipe).aggregate(Max("step_number"))["step_number__max"]
@@ -363,8 +366,8 @@ class RecipeStepSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         """ Gère la création d'un `RecipeStep` en attribuant `step_number` automatiquement si nécessaire. """
         recipe = validated_data.get("recipe")
-        # Auto-incrément de `step_number` si non fourni
-        if "step_number" not in validated_data:
+        # Auto-incrément de `step_number` si non fourni ou None
+        if validated_data.get("step_number") is None:
             max_step = RecipeStep.objects.filter(recipe=recipe).aggregate(Max("step_number"))["step_number__max"]
             validated_data["step_number"] = 1 if max_step is None else max_step + 1
         return super().create(validated_data)

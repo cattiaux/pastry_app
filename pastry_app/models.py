@@ -362,10 +362,6 @@ class RecipeStep(models.Model):
 
     def save(self, *args, **kwargs):
         self.clean() 
-
-        if RecipeStep.objects.filter(recipe=self.recipe, step_number=self.step_number).exclude(pk=self.pk).exists():
-            raise ValidationError(f'Step number {self.step_number} already exists in the recipe.')
-
         super().save(*args, **kwargs)
 
 # Ajout du signal pour bloquer la suppression du dernier RecipeStep d’une recette

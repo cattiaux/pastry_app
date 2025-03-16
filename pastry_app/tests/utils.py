@@ -3,13 +3,6 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from rest_framework import status, serializers
 
-# def validate_constraint(model, field_name, value, expected_error, **valid_data):
-#     """ Applique une validation sur un champ en testant si une erreur spécifique est levée. """
-#     valid_data[field_name] = value
-#     with pytest.raises(ValidationError, match=expected_error):
-#         obj = model(**valid_data)
-#         obj.full_clean() # Déclenche clean() pour vérifier la contrainte
-
 def validate_constraint(model, field_name, value, expected_errors, **valid_data):
     """ Applique une validation sur un champ en testant si une des erreurs spécifiques est levée. """
     valid_data[field_name] = value
@@ -37,7 +30,6 @@ def validate_constraint_api(api_client, base_url, model_name, field_name, expect
     """
     url = base_url(model_name)  # Récupérer l'URL de création de l'objet
     response = api_client.post(url, valid_data, format="json")  # Envoyer la requête POST
-    print("response : ", response.json())
     assert response.status_code == status.HTTP_400_BAD_REQUEST, f"Attendu 400, obtenu {response.status_code} : {response.json()}" # Vérifier que l'API renvoie bien une erreur 400
     assert field_name in response.json(), f"L'erreur pour `{field_name}` n'a pas été trouvée dans la réponse : {response.json()}" # Vérifier que l'erreur est bien retournée sur le bon champ
     
@@ -104,15 +96,13 @@ def validate_unique_constraint_api(api_client, base_url, model_name, field_name,
 
     if not create_initiate:
         # Création du premier objet (OK)
-        response1 = api_client.post(url, data=json.dumps(valid_data), content_type="application/json")
+        response1 = api_client.post(url, data=valid_data, format="json")
         assert response1.status_code == status.HTTP_201_CREATED  # Doit réussir
 
     # Tentative de création du doublon (DOIT ÉCHOUER)
-    response2 = api_client.post(url, data=json.dumps(valid_data), content_type="application/json")
-    print(response2.json())
+    response2 = api_client.post(url, data=valid_data, format="json")
     assert response2.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
-    # Vérification du message d’erreur (gestion dynamique)
-    assert field_name in response2.json()
+    return response2
 
 def validate_unique_together(model, expected_error, **valid_data):
     """ Vérifie qu'une contrainte `unique_together` est respectée et empêche la duplication. """

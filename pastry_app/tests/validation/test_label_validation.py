@@ -25,7 +25,8 @@ def label(db):
 def test_unique_constraint_label_api(admin_client, base_url, field_name, label):
     """ Vérifie que les contraintes `unique=True` sont bien respectées via l’API. """
     valid_data = {"label_name": label.label_name, "label_type": label.label_type} 
-    validate_unique_constraint_api(admin_client, base_url, model_name, field_name, **valid_data)
+    response = validate_unique_constraint_api(admin_client, base_url, model_name, field_name, **valid_data)
+    assert field_name in response.json()
 
 @pytest.mark.parametrize("field_name", ["label_name", "label_type"])
 @pytest.mark.django_db

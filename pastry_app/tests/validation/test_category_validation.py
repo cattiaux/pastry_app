@@ -25,7 +25,8 @@ def category(db):
 def test_unique_constraint_category_api(admin_client, base_url, field_name, category):
     """ Vérifie que les contraintes `unique=True` sont bien respectées via l’API. """
     valid_data = {"category_name": category.category_name, "category_type": category.category_type} 
-    validate_unique_constraint_api(admin_client, base_url, model_name, field_name, **valid_data)
+    response = validate_unique_constraint_api(admin_client, base_url, model_name, field_name, **valid_data)
+    assert field_name in response.json()
 
 @pytest.mark.parametrize("field_name", ["category_name", "category_type"])
 @pytest.mark.django_db
