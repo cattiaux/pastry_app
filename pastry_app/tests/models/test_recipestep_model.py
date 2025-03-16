@@ -100,15 +100,9 @@ def test_step_number_must_be_strictly_increasing(recipe_step):
 @pytest.mark.django_db
 def test_min_length_instruction_recipestep(instruction, recipe_step):
     """Vérifie que `instruction` doit avoir au moins 2 caractères."""
-    min_length = 2
+    min_length = 5
     expected_error="Instruction must be at least 2 characters long."
     validate_constraint(RecipeStep, "instruction", "A" * (min_length - 1), expected_error, recipe=recipe_step.recipe, step_number=1)
-
-# @pytest.mark.parametrize("field_name", ["trick"])
-# @pytest.mark.django_db
-# def test_optional_field_recipestep(field_name, recipe_step):
-#     """Vérifie que `trick` est bien un champ optionnel (`None` ou `""`)."""
-#     validate_optional_field_value_db(RecipeStep, field_name, recipe=recipe_step.recipe, step_number=1, instruction="Mélanger.")
 
 @pytest.mark.parametrize("field_name", ["trick"])
 @pytest.mark.django_db

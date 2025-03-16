@@ -1,10 +1,10 @@
 from rest_framework import serializers
 from django.db import IntegrityError
+from django.db.models import Max
 from .models import Recipe, Pan, Ingredient, IngredientPrice, IngredientPriceHistory, Store, Category, Label, RecipeIngredient, RecipeStep, SubRecipe, RoundPan, SquarePan
 from .utils import get_pan_model, update_related_instances
 from pastry_app.tests.utils import normalize_case
 from django.utils.timezone import now
-
 class StoreSerializer(serializers.ModelSerializer):
     """ Sérialise les magasins où sont vendus les ingrédients. """
     store_name = serializers.CharField(
@@ -339,11 +339,44 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
         return value
     
 class RecipeStepSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(required=False)
+    step_number = serializers.IntegerField(required=False, min_value=1)
 
     class Meta:
         model = RecipeStep
         fields = ['id', 'step_number', 'instruction', 'trick']
+
+    def validate_instruction(self, value):
+        """ Vérifie que l'instruction contient au moins 5 caractères. """
+        if len(value) < 5:
+            raise serializers.ValidationError("L'instruction doit contenir au moins 5 caractères.")
+        return value
+
+    def validate_step_number(self, value):
+        """ Vérifie que `step_number` est bien consécutif. """
+        recipe = self.initial_data.get("recipe")  # Récupérer la recette envoyée
+        if recipe:
+            last_step = RecipeStep.objects.filter(recipe=recipe).aggregate(Max("step_number"))["step_number__max"]
+            if last_step is not None and value > last_step + 1:
+                raise serializers.ValidationError("Step numbers must be consecutive.")
+        return value
+
+    def create(self, validated_data):
+        """ Gère la création d'un `RecipeStep` en attribuant `step_number` automatiquement si nécessaire. """
+        recipe = validated_data.get("recipe")
+        # Auto-incrément de `step_number` si non fourni
+        if "step_number" not in validated_data:
+            max_step = RecipeStep.objects.filter(recipe=recipe).aggregate(Max("step_number"))["step_number__max"]
+            validated_data["step_number"] = 1 if max_step is None else max_step + 1
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        """ Gère la mise à jour d'un `RecipeStep`, tout en validant `step_number` si changé. """
+        step_number = validated_data.get("step_number", instance.step_number)
+        # Vérifie si on essaye de modifier `step_number` en doublon
+        if step_number != instance.step_number:
+            if RecipeStep.objects.filter(recipe=instance.recipe, step_number=step_number).exclude(pk=instance.pk).exists():
+                raise serializers.ValidationError({"step_number": "Ce numéro d'étape existe déjà pour cette recette."})
+        return super().update(instance, validated_data)
 
 class SubRecipeSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)

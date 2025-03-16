@@ -348,12 +348,9 @@ class RecipeStep(models.Model):
         # Vérifier que le numéro d'étape est strictement supérieur à 0
         if self.step_number < 1:
             raise ValidationError("Step number must start at 1.")
-    
-        if self.step_number <= 0:
-            raise ValidationError("Une étape ne doit pas avoir un numéro inférieur à 1.")
         
         # Vérifie que l'instruction a une longueur minimale
-        if self.instruction and len(self.instruction) < 2:
+        if self.instruction and len(self.instruction) < 5:
             raise ValidationError("L'instruction doit contenir au moins 2 caractères.")
         
         # Vérifier que le `step_number` est consécutif

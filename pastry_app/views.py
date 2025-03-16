@@ -7,8 +7,8 @@ from django.db.utils import IntegrityError
 from django.db.models import ProtectedError
 from pastry_app.tests.utils import normalize_case
 from .utils import get_pan_model
-from .models import Recipe, Ingredient, Pan, Category, Label, Store, IngredientPrice, IngredientPriceHistory
-from .serializers import RecipeSerializer, IngredientSerializer, PanSerializer, CategorySerializer, LabelSerializer, StoreSerializer, IngredientPriceSerializer, IngredientPriceHistorySerializer
+from .models import Recipe, RecipeStep, Ingredient, Pan, Category, Label, Store, IngredientPrice, IngredientPriceHistory
+from .serializers import *
 
 class PanDeleteView(generics.DestroyAPIView):
     queryset = Pan.objects.all()
@@ -122,21 +122,6 @@ class IngredientPriceHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = IngredientPriceHistorySerializer
     filter_backends = [SearchFilter]
     search_fields = ["ingredient__ingredient_name"]
-
-    # def create(self, request, *args, **kwargs):
-    #     """ Interdiction de créer des entrées manuelles dans l'historique. """
-    #     return Response({"error": "L'historique des prix est généré automatiquement et ne peut pas être modifié manuellement."},
-    #                     status=status.HTTP_405_METHOD_NOT_ALLOWED)
-
-    # def update(self, request, *args, **kwargs):
-    #     """ Désactive la mise à jour des prix pour conserver l'historique. """
-    #     return Response({"error": "La mise à jour des historiques de prix est interdite."},
-    #                     status=status.HTTP_405_METHOD_NOT_ALLOWED)
-
-    # def destroy(self, request, *args, **kwargs):
-    #     """ Interdiction de supprimer une entrée historique. """
-    #     return Response({"error": "Les entrées de l'historique des prix ne peuvent pas être supprimées."},
-    #                     status=status.HTTP_405_METHOD_NOT_ALLOWED)
     
 class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Recipe.objects.all()
@@ -257,6 +242,22 @@ class LabelViewSet(viewsets.ModelViewSet):
             return Response({"message": "Label supprimé avec succès."}, status=status.HTTP_204_NO_CONTENT)
         except IntegrityError:
             return Response({"error": "Erreur lors de la suppression du label."}, status=status.HTTP_400_BAD_REQUEST)
+
+class RecipeStepViewSet(viewsets.ModelViewSet):
+    """ API CRUD pour gérer les étapes d'une recette. """
+    queryset = RecipeStep.objects.all()
+    serializer_class = RecipeStepSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        """ Empêche la suppression du dernier `RecipeStep` et réorganise les numéros d'étapes après suppression. """
+        instance = self.get_object()
+
+        try:
+            instance.delete()
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 class PanViewSet(viewsets.ModelViewSet):
     queryset = Pan.objects.none()

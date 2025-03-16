@@ -21,6 +21,7 @@ from django.contrib import admin
 
 router = DefaultRouter()
 router.register(r'recipes', RecipeViewSet)
+router.register(r"recipesteps", RecipeStepViewSet) 
 router.register(r'ingredients', IngredientViewSet)
 router.register(r'ingredient_prices', IngredientPriceViewSet)
 router.register(r'ingredient_prices_history', IngredientPriceHistoryViewSet)
@@ -32,6 +33,7 @@ router.register(r'stores', StoreViewSet)
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),
+    path('categories/<int:pk>/delete-subcategories/', CategoryViewSet.as_view({"delete": "delete_subcategories"}), name="delete_subcategories"),
     path('api/ingredients/<int:pk>/delete/', IngredientDeleteView.as_view(), name='ingredient_delete'),
     path('api/recipes/<int:pk>/delete/', RecipeDeleteView.as_view(), name='recipe_delete'),
     path('api/pans/<int:pk>/delete/', PanDeleteView.as_view(), name='pan_delete'),
