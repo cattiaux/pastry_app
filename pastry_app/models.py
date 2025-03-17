@@ -2,7 +2,6 @@ from math import pi
 from django.db import models
 from django.core.validators import MinValueValidator
 from django.utils.timezone import now
-from django.utils.text import slugify
 from django.core.exceptions import ValidationError
 from django.db.models import UniqueConstraint
 from django.db.models.signals import pre_delete
@@ -725,20 +724,43 @@ class IngredientPriceHistory(models.Model):
 #     end_date = models.DateField(null=True, blank=True)  # Fin de promo optionnelle
 
 class RecipeIngredient(models.Model):
-    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
-    ingredient = models.ForeignKey(Ingredient, on_delete=models.PROTECT)
-    quantity = models.FloatField(default=0, validators=[MinValueValidator(0)])
-    unit = models.CharField(max_length=50, choices=UNIT_CHOICES, null=True, blank=True)
+    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name="recipe_ingredients")
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.PROTECT, related_name="ingredient_recipes")
+    quantity = models.FloatField(validators=[MinValueValidator(0)])
+    unit = models.CharField(max_length=50, choices=UNIT_CHOICES)
+
+    class Meta:
+        ordering = ['recipe', 'ingredient']
+
+    def __str__(self):
+        return f"{self.quantity} {self.unit} de {self.ingredient.ingredient_name} pour {self.recipe.recipe_name}"
 
 # When creating a new Recipe through the Django admin site, Django uses the ModelAdmin class to handle the creation of the Recipe and its related RecipeIngredient objects. 
 # The ModelAdmin class does not use the RecipeSerializer or RecipeIngredientSerializer, so the validate_quantity method in the RecipeIngredientSerializer is not being called.
 # To enforce the validation when creating a Recipe through the Django admin site, override the clean method of the RecipeIngredient model.
     def clean(self):
+        """ Vérifie les règles métier avant sauvegarde. """
+        # Vérifier que l'ingrédient, la quantité et l'unité sont bien renseignés
+        if not self.ingredient:
+            raise ValidationError("Un ingrédient est obligatoire.")
+        if not self.quantity:
+            raise ValidationError("Une quantité est obligatoire.")
+        if not self.unit:
+            raise ValidationError("Une unité de mesure est obligatoire.")
+
+        # Vérifier que la quantité est valide
         if self.quantity <= 0:
             raise ValidationError("Quantity must be a positive number.")
 
-    def __str__(self):
-        return self.ingredient.ingredient_name
+        # Vérifier que `unit` fait partie des choix définis
+        valid_units = dict(UNIT_CHOICES).keys()
+        if self.unit not in valid_units:
+            raise ValidationError(f"L'unité '{self.unit}' n'est pas valide. Choisissez parmi {list(valid_units)}.")
+
+    def save(self, *args, **kwargs):
+        """ Nettoyage des données et validation avant sauvegarde. """
+        self.clean()
+        super().save(*args, **kwargs)
 
 class PanServing(models.Model):
     pan = models.ForeignKey(Pan, on_delete=models.CASCADE)

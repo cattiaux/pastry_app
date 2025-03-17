@@ -1,10 +1,12 @@
 from rest_framework import serializers
 from django.db import IntegrityError
 from django.db.models import Max
-from .models import Recipe, Pan, Ingredient, IngredientPrice, IngredientPriceHistory, Store, Category, Label, RecipeIngredient, RecipeStep, SubRecipe, RoundPan, SquarePan
-from .utils import get_pan_model, update_related_instances
-from pastry_app.tests.utils import normalize_case
 from django.utils.timezone import now
+from .models import *
+from .constants import UNIT_CHOICES
+from pastry_app.tests.utils import normalize_case
+from .utils import get_pan_model, update_related_instances
+
 class StoreSerializer(serializers.ModelSerializer):
     """ Sérialise les magasins où sont vendus les ingrédients. """
     store_name = serializers.CharField(
@@ -320,23 +322,29 @@ class IngredientSerializer(serializers.ModelSerializer):
         return representation
 
 class RecipeIngredientSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(required=False)
+    recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all())
     ingredient = serializers.PrimaryKeyRelatedField(queryset=Ingredient.objects.all())
-    unit = serializers.CharField(max_length=50)
+    unit = serializers.ChoiceField(choices=UNIT_CHOICES)
 
     class Meta:
         model = RecipeIngredient
-        fields = ['id', 'ingredient', 'quantity', 'unit']
+        fields = ['id', 'recipe', 'ingredient', 'quantity', 'unit']
 
     def validate_quantity(self, value):
+        """ Vérifie que la quantité est strictement positive. """
         if value <= 0:
             raise serializers.ValidationError("Quantity must be a positive number.")
         return value
 
-    def validate_recipe_name(self, value):
-        if not value or value.isspace():
-            raise serializers.ValidationError("Recipe name cannot be empty or only contain whitespace.")
-        return value
+    def validate(self, data):
+        """ Vérifie que l’ingrédient, la quantité et l’unité sont bien présents. """
+        if "ingredient" not in data:
+            raise serializers.ValidationError({"ingredient": "Un ingrédient est obligatoire."})
+        if "quantity" not in data:
+            raise serializers.ValidationError({"quantity": "Une quantité est obligatoire."})
+        if "unit" not in data:
+            raise serializers.ValidationError({"unit": "Une unité de mesure est obligatoire."})
+        return data
     
 class RecipeStepSerializer(serializers.ModelSerializer):
     step_number = serializers.IntegerField(default=None, min_value=1)

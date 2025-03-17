@@ -260,6 +260,11 @@ class RecipeStepViewSet(viewsets.ModelViewSet):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+class RecipeIngredientViewSet(viewsets.ModelViewSet):
+    """ API CRUD pour la gestion des ingrédients dans les recettes. """
+    queryset = RecipeIngredient.objects.all()
+    serializer_class = RecipeIngredientSerializer
+
 class PanViewSet(viewsets.ModelViewSet):
     queryset = Pan.objects.none()
     serializer_class = PanSerializer
