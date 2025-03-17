@@ -81,3 +81,44 @@ def test_unit_must_be_valid_db(recipe_ingredient):
     with pytest.raises(ValidationError, match="L'unité .* n'est pas valide"):
         price = RecipeIngredient(recipe=recipe_ingredient.recipe, ingredient=recipe_ingredient.ingredient, quantity=50, unit="INVALID_UNIT")  # Unité invalide
         price.full_clean()
+
+@pytest.mark.django_db
+def test_suffix_is_incremented(recipe_ingredient):
+    """ Vérifie que les suffixes sont ajoutés correctement lors de l'ajout d'un même ingrédient plusieurs fois """
+    recipe = recipe_ingredient.recipe
+    ingredient = recipe_ingredient.ingredient
+
+    # Ajout du second "Sucre" → Doit avoir "Sucre 2"
+    ing2 = RecipeIngredient.objects.create(recipe=recipe, ingredient=ingredient, quantity=50, unit="g")
+    assert ing2.display_name == normalize_case("Sucre 2")
+
+    # Ajout du troisième "Sucre" → Doit avoir "Sucre 3"
+    ing3 = RecipeIngredient.objects.create(recipe=recipe, ingredient=ingredient, quantity=30, unit="g")
+    assert ing3.display_name == normalize_case("Sucre 3")
+
+@pytest.mark.django_db
+def test_suffix_reassignment_on_deletion(recipe_ingredient):
+    """ Vérifie que les suffixes sont réattribués après la suppression d'un ingrédient """
+    recipe = recipe_ingredient.recipe
+    ingredient = recipe_ingredient.ingredient
+
+    # Ajout de trois "Sucre" avec des suffixes
+    ing2 = RecipeIngredient.objects.create(recipe=recipe, ingredient=ingredient, quantity=50, unit="g")
+    ing3 = RecipeIngredient.objects.create(recipe=recipe, ingredient=ingredient, quantity=30, unit="g")
+
+    ing2.delete() # Suppression du second ingrédient ("Sucre 2")
+
+    # Vérifier que les suffixes ont été réattribués correctement
+    recipe_ingredient.refresh_from_db()
+    ing3.refresh_from_db()
+
+    assert recipe_ingredient.display_name == normalize_case("Sucre 1")
+    assert ing3.display_name == normalize_case("Sucre 2")  # Était "Sucre 3", devient "Sucre 2"
+
+@pytest.mark.django_db
+def test_no_suffix_when_ingredient_is_unique(recipe_ingredient):
+    """ Vérifie qu'un ingrédient unique ne reçoit pas de suffixe """
+    recipe = recipe_ingredient.recipe
+    beurre = Ingredient.objects.create(ingredient_name="Beurre")
+    ing = RecipeIngredient.objects.create(recipe=recipe, ingredient=beurre, quantity=200, unit="g")
+    assert ing.display_name == normalize_case("Beurre")

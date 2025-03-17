@@ -749,6 +749,10 @@ class RecipeIngredient(models.Model):
         if not self.unit:
             raise ValidationError("Une unité de mesure est obligatoire.")
 
+        # Normaliser le display_name
+        if self.display_name:
+            self.display_name = normalize_case(self.display_name)
+        
         # Vérifier que la quantité est valide
         if self.quantity <= 0:
             raise ValidationError("Quantity must be a positive number.")
