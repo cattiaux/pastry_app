@@ -96,3 +96,42 @@ Solution : Ajouter une contrainte unique en base de données
 - UniqueConstraint(fields=["field1", "field2"], name="constraint_name")	
     Avantages : Plus flexible (on peut ajouter des filtres condition, deferrable...), recommandé par Django	
     Inconvénient : Un peu plus verbeux
+
+
+### Gestion des recettes multi-utilisateurs avec partage et recettes publiques
+Dans une application de gestion de recettes multi-utilisateurs, on doit gérer :
+✔ Les recettes propres à chaque utilisateur
+✔ Le partage de recettes entre utilisateurs
+✔ Une base de recettes publiques accessibles à tous
+
+1. Associer chaque recette à un utilisateur
+    Ajout d’un champ user, visibility et is_default dans le modèle Recipe :
+            user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="recipes")
+            visibility = models.CharField(max_length=10, choices=[('private', 'Privée'), ('public', 'Publique')], default='private')
+            is_default = models.BooleanField(default=False)  # Recette fournie par l'app (voir section 3)
+        ✔ Chaque utilisateur possède ses recettes privées (visibility='private').
+        ✔ Il peut choisir de les rendre publiques (visibility='public').
+        ✔ Certaines recettes peuvent être des recettes "de base" (is_default=True).
+2. Gérer le partage des recettes
+    Dans la vue API, permettre aux utilisateurs de voir :
+        Leurs propres recettes
+        Les recettes publiques des autres utilisateurs
+        Les recettes de base fournies par l'application
+        Filtrer les recettes en fonction de l’utilisateur connecté :
+            ✔ Chaque utilisateur voit uniquement ses recettes privées + celles partagées + les recettes publiques de base.
+            ✔ Les recettes publiques restent visibles à tous, mais ne sont modifiables que par leur créateur.
+3. Ajouter une base de recettes publiques
+Méthode 1 : Utiliser is_default=True (Simple et efficace)
+    Créer des recettes de base et marquer is_default=True : user=None, is_default=True et visibility="public"
+    ✔ Toutes les recettes avec is_default=True sont accessibles à tous.
+    ✔ Elles apparaissent dans get_queryset() sans être liées à un utilisateur.
+Méthode 2 : Utiliser un utilisateur "système" (shared_recipes)
+    Créer un utilisateur spécial shared_recipes : def get_system_user(): """Retourne l'utilisateur système qui possède les recettes de base"""
+    Créer les recettes de base sous cet utilisateur : Recipe.objects.create(user=get_system_user(), recipe_name="Crêpes faciles", description="Recette universelle", visibility="public")
+    Adapter get_queryset() : def get_queryset(self):  """Retourne les recettes de l'utilisateur + celles qui sont publiques + les recettes de base"""
+                                        user = self.request.user
+                                        return Recipe.objects.filter(Q(user=user) | Q(visibility="public") | Q(is_default=True))
+    ✔ Les recettes de base sont gérées sous un utilisateur spécifique.
+    ✔ Elles peuvent être modifiées par un admin, mais accessibles à tous.
+Bonus : Permettre aux utilisateurs de copier une recette publique
+    Créer une méthode pour dupliquer une recette : def copy_recipe_to_user(user, recipe)

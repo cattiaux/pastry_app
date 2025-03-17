@@ -728,6 +728,7 @@ class RecipeIngredient(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.PROTECT, related_name="ingredient_recipes")
     quantity = models.FloatField(validators=[MinValueValidator(0)])
     unit = models.CharField(max_length=50, choices=UNIT_CHOICES)
+    display_name = models.CharField(max_length=255, blank=True, null=True)  # Nom avec suffixe (ex: "Sucre 1")
 
     class Meta:
         ordering = ['recipe', 'ingredient']
@@ -760,7 +761,28 @@ class RecipeIngredient(models.Model):
     def save(self, *args, **kwargs):
         """ Nettoyage des données et validation avant sauvegarde. """
         self.clean()
+
+        # Génère un suffixe si l’ingrédient est déjà utilisé dans la recette
+        if not self.display_name:  # Seulement si `display_name` n'est pas déjà défini
+            count = RecipeIngredient.objects.filter(recipe=self.recipe, ingredient=self.ingredient).count()
+            suffix = f" {count + 1}" if count > 0 else ""  # Ajoute un numéro si nécessaire
+            self.display_name = f"{self.ingredient.ingredient_name}{suffix}"
+
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """ Supprime l'ingrédient et réattribue les suffixes des autres """
+        recipe_ingredients = RecipeIngredient.objects.filter(
+            recipe=self.recipe,
+            ingredient=self.ingredient
+        ).order_by('id')  # On trie pour avoir un ordre logique
+        
+        super().delete(*args, **kwargs)  # Suppression de l'objet actuel
+
+        # Réattribuer les suffixes aux autres ingrédients de la même recette
+        for index, ingredient in enumerate(recipe_ingredients, start=1):
+            ingredient.display_name = f"{ingredient.ingredient.ingredient_name} {index}"
+            ingredient.save(update_fields=['display_name'])  # Évite un save complet
 
 class PanServing(models.Model):
     pan = models.ForeignKey(Pan, on_delete=models.CASCADE)
