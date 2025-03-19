@@ -405,3 +405,74 @@ Contraintes d'Intégrité :
 3. Protection contre les suppressions invalides
     ◦ Si une recette n’a qu’un seul RecipeStep, la suppression est bloquée.
     ◦ Après suppression d’un RecipeStep, les step_number sont réorganisés.
+
+
+
+Synthèse des Contraintes pour le Modèle RecipeIngredient
+
+        CONTRAINTES	                                                                                 TEST CORRESPONDANT
+Création d’un RecipeIngredient	                                                    -> test_create_recipeingredient_api
+quantity doit être strictement positive	                                            -> test_recipeingredient_quantity_must_be_positive_db & test_quantity_must_be_positive_api
+unit doit être une valeur valide (existe dans UNIT_CHOICES)             	        -> test_unit_must_be_valid_recipeingredient_db & test_unit_must_be_valid_choice_api
+quantity et unit sont obligatoires	                                                -> test_required_fields_recipeingredient_db & test_required_fields_recipeingredient_api
+Mise à jour de quantity et unit	                                                    -> test_recipeingredient_update_db & test_partial_update_recipeingredient_api
+Suppression d’un RecipeIngredient existant	                                        -> test_delete_recipeingredient_api
+Suppression impossible si c’est le dernier ingrédient d’une recette             	-> test_cannot_delete_last_recipe_ingredient_model & test_cannot_delete_last_recipeingredient_api
+Récupération d’un RecipeIngredient existant	                                        -> test_get_recipeingredient_api
+Liste des RecipeIngredient pour une recette                                     	-> test_list_recipeingredient_api
+Erreur 404 si RecipeIngredient inexistante	                                        -> test_get_nonexistent_recipeingredient_api & test_delete_nonexistent_recipeingredient_api
+Suppression d’une RecipeIngredient réattribue correctement les suffixes	            -> test_suffix_reassignment_on_deletion & test_suffix_increment_and_reassignment_on_deletion_api
+Ajout d’un ingrédient plusieurs fois doit générer un suffixe (Sucre 2, etc.)	    -> test_suffix_is_incremented & test_suffix_increment_on_duplicate_ingredient
+Suppression d’une recette entraîne la suppression des RecipeIngredient associées	-> test_recipe_deletion_cascades_to_recipeingredient
+
+
+Contraintes Métier :
+1. Ingrédient dans une Recette
+    ◦ Un RecipeIngredient doit toujours être lié à une Recipe et un Ingredient.
+    ◦ Une recette ne peut pas exister sans au moins un RecipeIngredient.
+    ◦ Un ingrédient peut apparaître plusieurs fois dans une recette, avec un suffixe (Sucre, Sucre 2, Sucre 3).
+2. Quantité (quantity)
+    ◦ Obligatoire (ne peut pas être null ou vide).
+    ◦ Doit être strictement positive (> 0).
+    ◦ Peut être mise à jour mais pas supprimée indépendamment
+3. Unité (unit)
+    ◦ Obligatoire.
+    ◦ Doit être une valeur valide définie dans UNIT_CHOICES.
+    ◦ Peut être mise à jour.
+4. Gestion des Suffixes
+    ◦ Lorsqu’un ingrédient est ajouté plusieurs fois dans une recette, un suffixe est ajouté (Sucre, Sucre 2, Sucre 3).
+    ◦ Suppression d’un ingrédient réattribue les suffixes des suivants (Sucre 3 devient Sucre 2 si Sucre 2 est supprimé).
+5. Suppression
+    ◦ Un RecipeIngredient peut être supprimé, sauf si c'est le dernier de la recette.
+    ◦ Suppression d’une recette entraîne la suppression de ses RecipeIngredient.
+    ◦ Un ingrédient (Ingredient) peut être supprimé sans affecter les RecipeIngredient existants.
+
+
+Contraintes Techniques :
+1. Type de Données
+    ◦ recipe : ForeignKey(Recipe) -> Obligatoire, on_delete=models.CASCADE
+    ◦ ingredient : ForeignKey(Ingredient) -> Obligatoire, on_delete=models.PROTECT
+    ◦ quantity : FloatField -> Obligatoire, MinValueValidator(0)
+    ◦ unit : CharField(max_length=50) -> Obligatoire, choices=UNIT_CHOICES
+    ◦ display_name : CharField(max_length=255) -> Gère les suffixes (Sucre 2, Sucre 3)
+2. Indexation
+    ◦ recipe et ingredient sont indexés pour optimiser les recherches.
+    ◦ display_name est calculé dynamiquement (pas d’indexation nécessaire).
+
+Contraintes d'Intégrité
+1. Relations et Références
+    ◦ RecipeIngredient est lié à Recipe et Ingredient.
+    ◦ Un ingrédient (Ingredient) peut être supprimé, mais pas une recette sans ingrédient.
+    ◦ on_delete=models.CASCADE pour recipe (supprime tous les RecipeIngredient associés).
+    ◦ on_delete=models.PROTECT pour ingredient (évite de supprimer un ingrédient en usage).
+2. Cohérence des Données
+    ◦ Vérifications strictes lors de la création et de la mise à jour (quantity positive, unit valide).
+    ◦ Validation métier et API cohérentes (Model + Serializer).
+    ◦ Les mises à jour et suppressions respectent les règles métier.
+
+Gestion de la Suppression :
+   ◦ Suppression d’un RecipeIngredient s’il y en a d’autres -> Autorisé
+   ◦ Suppression du dernier RecipeIngredient d’une recette -> Interdit (ValidationError)
+   ◦ Suppression d’une Recipe -> Supprime tous les RecipeIngredient liés
+   ◦ Suppression d’un Ingredient -> Autorisé, ne supprime pas les RecipeIngredient (protégé)
+   ◦ Suppression d’un RecipeIngredient avec suffixe ->  Réattribue les suffixes des suivants (Sucre 3 devient Sucre 2)
