@@ -424,7 +424,7 @@ class Ingredient(models.Model):
     def save(self, *args, **kwargs):
         """ Sauvegarde et validation sans duplication d'ID."""
         # Forcer la validation `clean()` AVANT `full_clean()`
-        self.clean() 
+        self.full_clean() 
         
         # Si l'objet est nouveau, on le sauvegarde une première fois pour obtenir un ID
         is_new = self.pk is None
@@ -764,18 +764,24 @@ class RecipeIngredient(models.Model):
 
     def save(self, *args, **kwargs):
         """ Nettoyage des données et validation avant sauvegarde. """
-        self.clean()
+        self.full_clean()
 
         # Génère un suffixe si l’ingrédient est déjà utilisé dans la recette
         if not self.display_name:  # Seulement si `display_name` n'est pas déjà défini
             count = RecipeIngredient.objects.filter(recipe=self.recipe, ingredient=self.ingredient).count()
             suffix = f" {count + 1}" if count > 0 else ""  # Ajoute un numéro si nécessaire
-            self.display_name = f"{self.ingredient.ingredient_name}{suffix}"
+            self.display_name = normalize_case(f"{self.ingredient.ingredient_name}{suffix}")
 
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        """ Supprime l'ingrédient et réattribue les suffixes des autres """
+        """ Empêche la suppression du dernier ingrédient d'une recette et réattribue les suffixes après suppression. """
+
+        # Vérifier si c'est le dernier ingrédient de la recette
+        if self.recipe.recipe_ingredients.count() == 1:
+            raise ValidationError("Une recette doit contenir au moins un ingrédient.")
+    
+        # Récupérer tous les ingrédients de la recette AVANT suppression
         recipe_ingredients = RecipeIngredient.objects.filter(
             recipe=self.recipe,
             ingredient=self.ingredient

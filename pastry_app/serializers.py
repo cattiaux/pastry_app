@@ -328,7 +328,7 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RecipeIngredient
-        fields = ['id', 'recipe', 'ingredient', 'quantity', 'unit']
+        fields = ['id', 'recipe', 'ingredient', 'quantity', 'unit', 'display_name']
 
     def validate_quantity(self, value):
         """ Vérifie que la quantité est strictement positive. """
@@ -337,13 +337,18 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        """ Vérifie que l’ingrédient, la quantité et l’unité sont bien présents. """
-        if "ingredient" not in data:
-            raise serializers.ValidationError({"ingredient": "Un ingrédient est obligatoire."})
-        if "quantity" not in data:
-            raise serializers.ValidationError({"quantity": "Une quantité est obligatoire."})
-        if "unit" not in data:
-            raise serializers.ValidationError({"unit": "Une unité de mesure est obligatoire."})
+        """ Vérifie que l’ingrédient, la quantité et l’unité sont bien présents (sauf en PATCH). """
+        request = self.context.get("request", None)
+        is_partial = request and request.method == "PATCH"  # Vérifie si c'est un PATCH
+
+        if not is_partial:  # Ne pas exiger tous les champs en PATCH
+            if "ingredient" not in data:
+                raise serializers.ValidationError({"ingredient": "Un ingrédient est obligatoire."})
+            if "quantity" not in data:
+                raise serializers.ValidationError({"quantity": "Une quantité est obligatoire."})
+            if "unit" not in data:
+                raise serializers.ValidationError({"unit": "Une unité de mesure est obligatoire."})
+            
         return data
     
 class RecipeStepSerializer(serializers.ModelSerializer):

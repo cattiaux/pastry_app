@@ -265,6 +265,15 @@ class RecipeIngredientViewSet(viewsets.ModelViewSet):
     queryset = RecipeIngredient.objects.all()
     serializer_class = RecipeIngredientSerializer
 
+    def destroy(self, request, *args, **kwargs):
+        """ Empêche la suppression du dernier ingrédient en capturant `ValidationError`. """
+        instance = self.get_object()
+        try:
+            instance.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 class PanViewSet(viewsets.ModelViewSet):
     queryset = Pan.objects.none()
     serializer_class = PanSerializer

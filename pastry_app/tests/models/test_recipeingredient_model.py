@@ -31,6 +31,8 @@ def test_recipeingredient_update_db(recipe_ingredient):
 def test_recipeingredient_deletion_db(recipe_ingredient):
     """ Vérifie qu'on peut supprimer un RecipeIngredient sans supprimer l’Ingrédient """
     ingredient = recipe_ingredient.ingredient
+    ingredient2 = Ingredient.objects.create(ingredient_name="Farine")
+    recipeingredient2 = RecipeIngredient.objects.create(recipe=recipe_ingredient.recipe, ingredient=ingredient2, quantity=400.0, unit="g")
     recipe_ingredient.delete()
     assert not RecipeIngredient.objects.filter(id=recipe_ingredient.id).exists()
     assert Ingredient.objects.filter(id=ingredient.id).exists()  # L'ingrédient doit toujours exister
@@ -57,30 +59,23 @@ def test_recipeingredient_quantity_must_be_positive_db(invalid_quantity, recipe_
     with pytest.raises(ValidationError, match="Quantity must be a positive number.|Une quantité est obligatoire."):
         recipe_ingredient.full_clean()
 
-@pytest.mark.django_db
-def test_recipeingredient_unit_must_be_valid_db(recipe_ingredient):
-    """ Vérifie qu’une unité invalide génère une erreur """
-    recipe_ingredient.unit = "invalid_unit"
-    with pytest.raises(ValidationError, match="L'unité .* n'est pas valide"):
-        recipe_ingredient.full_clean()
-
 @pytest.mark.parametrize("field_name", ["quantity", "unit"])
 @pytest.mark.django_db
 def test_required_fields_recipeingredient_db(field_name, recipe_ingredient):
     """ Vérifie que tous les champs obligatoires sont bien requis """
-    expected_errors = ["This field cannot be null", "This field is required.", "This field cannot be blank.", "Une quantité est obligatoire.", "Une unité de mesure est obligatoire."]
-    
+    expected_errors = ["This field cannot be null", "This field is required.", "This field cannot be blank.", 
+                       "Une quantité est obligatoire.", "Une unité de mesure est obligatoire."]
     for invalid_value in [None, ""]:
         validate_constraint(RecipeIngredient, field_name, invalid_value, expected_errors, 
                             recipe=recipe_ingredient.recipe, ingredient=recipe_ingredient.ingredient, 
                             quantity=recipe_ingredient.quantity, unit=recipe_ingredient.unit)
 
 @pytest.mark.django_db
-def test_unit_must_be_valid_db(recipe_ingredient):
-    """Vérifie que `unit` doit être parmi `UNIT_CHOICES`."""
+def test_unit_must_be_valid_recipeingredient_db(recipe_ingredient):
+    """ Vérifie qu’une unité invalide génère une erreur """
+    recipe_ingredient.unit = "invalid_unit"
     with pytest.raises(ValidationError, match="L'unité .* n'est pas valide"):
-        price = RecipeIngredient(recipe=recipe_ingredient.recipe, ingredient=recipe_ingredient.ingredient, quantity=50, unit="INVALID_UNIT")  # Unité invalide
-        price.full_clean()
+        recipe_ingredient.full_clean()
 
 @pytest.mark.django_db
 def test_suffix_is_incremented(recipe_ingredient):
@@ -122,3 +117,11 @@ def test_no_suffix_when_ingredient_is_unique(recipe_ingredient):
     beurre = Ingredient.objects.create(ingredient_name="Beurre")
     ing = RecipeIngredient.objects.create(recipe=recipe, ingredient=beurre, quantity=200, unit="g")
     assert ing.display_name == normalize_case("Beurre")
+
+@pytest.mark.django_db
+def test_cannot_delete_last_recipe_ingredient_model(recipe_ingredient):
+    """ Vérifie qu'on ne peut pas supprimer le dernier ingrédient d'une recette au niveau du modèle """
+    # Tentative de suppression du dernier ingrédient
+    with pytest.raises(ValidationError, match="Une recette doit contenir au moins un ingrédient."): 
+        recipe_ingredient.delete()
+    assert RecipeIngredient.objects.filter(id=recipe_ingredient.id).exists()  # Vérifie que l'ingrédient est toujours présent en base
