@@ -329,6 +329,7 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
     class Meta:
         model = RecipeIngredient
         fields = ['id', 'recipe', 'ingredient', 'quantity', 'unit', 'display_name']
+        extra_kwargs = {"recipe": {"read_only": True},}  # Une fois l'ingrédient ajouté à une recette, il ne peut pas être déplacé
 
     def validate_quantity(self, value):
         """ Vérifie que la quantité est strictement positive. """
@@ -357,6 +358,7 @@ class RecipeStepSerializer(serializers.ModelSerializer):
     class Meta:
         model = RecipeStep
         fields = ['id', 'recipe', 'step_number', 'instruction', 'trick']
+        extra_kwargs = {"recipe": {"read_only": True},}  # Une fois l'étape ajoutée, elle ne peut pas être déplacée
 
     def validate_instruction(self, value):
         """ Vérifie que l'instruction contient au moins 5 caractères. """
@@ -395,12 +397,18 @@ class RecipeStepSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 class SubRecipeSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(required=False)
     sub_recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all())
 
     class Meta:
         model = SubRecipe
-        fields = ['id', 'sub_recipe', 'quantity']
+        fields = ["id", "recipe", "sub_recipe", "quantity", "unit"]
+        extra_kwargs = {"recipe": {"read_only": True},}  # La recette principale ne peut pas être modifiée
+
+    def validate_sub_recipe(self, value):
+        """ Vérifie qu'une recette ne peut pas être sa propre sous-recette """
+        if self.instance and self.instance.recipe == value:
+            raise serializers.ValidationError("Une recette ne peut pas être sa propre sous-recette.")
+        return value
 
 class RecipeSerializer(serializers.ModelSerializer):
     ingredients = RecipeIngredientSerializer(source='recipeingredient_set', many=True)

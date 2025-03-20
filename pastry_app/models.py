@@ -372,10 +372,23 @@ def prevent_deleting_last_step(sender, instance, **kwargs):
 
 class SubRecipe(models.Model):
     recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='main_recipes')
-    sub_recipe = models.ForeignKey(Recipe, on_delete=models.PROTECT, related_name='subrecipe_set')
+    sub_recipe = models.ForeignKey(Recipe, on_delete=models.PROTECT, related_name='used_in_recipes')
     quantity = models.FloatField(default=0, validators=[MinValueValidator(0.1)])
     unit = models.CharField(max_length=50, choices=UNIT_CHOICES)
-    
+
+    def clean(self):
+        """ Validation métier avant sauvegarde """
+        if self.recipe == self.sub_recipe:
+            raise ValidationError("Une recette ne peut pas être sa propre sous-recette.")
+
+    def save(self, *args, **kwargs):
+        """ Applique les validations avant la sauvegarde """
+        self.clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.quantity} {self.unit} de {self.sub_recipe.recipe_name} dans {self.recipe.recipe_name}"
+
 class Ingredient(models.Model):
     """
     ⚠️ IMPORTANT ⚠️

@@ -8,7 +8,7 @@ from django.db.models import ProtectedError
 from django.core.exceptions import ValidationError
 from pastry_app.tests.utils import normalize_case
 from .utils import get_pan_model
-from .models import Recipe, RecipeStep, Ingredient, Pan, Category, Label, Store, IngredientPrice, IngredientPriceHistory
+from .models import *
 from .serializers import *
 
 class PanDeleteView(generics.DestroyAPIView):
@@ -267,6 +267,20 @@ class RecipeIngredientViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """ Empêche la suppression du dernier ingrédient en capturant `ValidationError`. """
+        instance = self.get_object()
+        try:
+            instance.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class SubRecipeViewSet(viewsets.ModelViewSet):
+    """ API CRUD pour gérer les sous-recettes """
+    queryset = SubRecipe.objects.all()
+    serializer_class = SubRecipeSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        """ Empêche la suppression si la recette est utilisée ailleurs """
         instance = self.get_object()
         try:
             instance.delete()

@@ -21,7 +21,8 @@ from django.contrib import admin
 
 router = DefaultRouter()
 router.register(r'recipes', RecipeViewSet)
-router.register(r"recipesteps", RecipeStepViewSet) 
+router.register(r"recipesteps", RecipeStepViewSet)
+router.register(r"sub_recipes", SubRecipeViewSet)
 router.register(r'ingredients', IngredientViewSet)
 router.register(r'ingredient_prices', IngredientPriceViewSet)
 router.register(r'ingredient_prices_history', IngredientPriceHistoryViewSet)
