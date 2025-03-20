@@ -135,3 +135,31 @@ Méthode 2 : Utiliser un utilisateur "système" (shared_recipes)
     ✔ Elles peuvent être modifiées par un admin, mais accessibles à tous.
 Bonus : Permettre aux utilisateurs de copier une recette publique
     Créer une méthode pour dupliquer une recette : def copy_recipe_to_user(user, recipe)
+
+
+### Optimisation des traitements dans clean() et save()
+Contexte
+    Actuellement, certaines validations sont effectuées dans clean() et save(). 
+    Cependant, si elles ne sont pas bien optimisées, elles peuvent ralentir l'application, 
+    notamment lors d’opérations en masse ou d'accès fréquents à la base de données.
+
+Améliorations à mettre en place
+1. Limiter les requêtes en base dans clean()
+    - Éviter les .filter().exists() répétitifs qui génèrent plusieurs requêtes SQL.
+    - Préférer une approche qui utilise un count() si nécessaire.
+2. Ne pas appeler full_clean() dans save() systématiquement
+    - full_clean() peut être coûteux si save() est exécuté en masse.
+    - À utiliser uniquement si la validation ne peut être garantie autrement (ex : API ouverte, gestion externe).
+3. Regrouper les traitements pour éviter des accès multiples à la base
+    - Si plusieurs vérifications nécessitent des requêtes SQL, les regrouper en une seule requête plutôt que d’en exécuter plusieurs dans clean().
+4. Éviter full_clean() lors d’imports en masse
+    - Remplacer .save() sur chaque objet par bulk_create() pour améliorer les performances.
+    - Exemple :
+        objs = [SubRecipe(**data) for data in dataset]
+        SubRecipe.objects.bulk_create(objs)  # Évite full_clean(), optimise l’insertion
+
+Actions à mener
+    - Identifier les clean() et save() qui contiennent des requêtes répétitives et les optimiser.
+    - Supprimer les full_clean() inutiles dans save(), sauf si une validation stricte est requise.
+    - Utiliser bulk_create() pour les traitements de masse.
+
