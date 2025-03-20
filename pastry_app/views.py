@@ -3,6 +3,7 @@ from rest_framework import viewsets, generics, status
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.db.utils import IntegrityError 
 from django.db.models import ProtectedError
 from django.core.exceptions import ValidationError

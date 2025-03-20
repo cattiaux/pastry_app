@@ -397,6 +397,7 @@ class RecipeStepSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 class SubRecipeSerializer(serializers.ModelSerializer):
+    recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all())
     sub_recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all())
 
     class Meta:
@@ -409,6 +410,31 @@ class SubRecipeSerializer(serializers.ModelSerializer):
         if self.instance and self.instance.recipe == value:
             raise serializers.ValidationError("Une recette ne peut pas être sa propre sous-recette.")
         return value
+
+    def validate_quantity(self, value):
+        """ Vérifie que la quantité est strictement positive """
+        if value <= 0:
+            raise serializers.ValidationError("La quantité doit être strictement positive.")
+        return value
+
+    def validate(self, data):
+        """ 
+        Vérifie des règles métier :
+        1. Une recette ne peut pas être sa propre sous-recette.
+        2. Le champ `recipe` ne peut pas être modifié après création.
+        """
+        recipe = data.get("recipe")
+        sub_recipe = data.get("sub_recipe")
+
+        # Interdiction d'une recette en sous-recette d'elle-même
+        if recipe and sub_recipe and recipe.id == sub_recipe.id:
+            raise serializers.ValidationError({"sub_recipe": "Une recette ne peut pas être sa propre sous-recette."})
+
+        # Empêcher la modification du champ `recipe` après création
+        if self.instance and "recipe" in data and self.instance.recipe.id != recipe:
+            raise serializers.ValidationError({"recipe": "Recipe cannot be changed after creation."})
+
+        return data
 
 class RecipeSerializer(serializers.ModelSerializer):
     ingredients = RecipeIngredientSerializer(source='recipeingredient_set', many=True)

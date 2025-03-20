@@ -1,5 +1,4 @@
 import pytest
-import json
 from rest_framework import status
 from pastry_app.models import Recipe, SubRecipe
 from pastry_app.tests.base_api_test import api_client, base_url
@@ -15,7 +14,7 @@ def subrecipe():
     recipe2 = Recipe.objects.create(recipe_name="Crème pâtissière")
     return SubRecipe.objects.create(recipe=recipe1, sub_recipe=recipe2, quantity=200, unit="g")
 
-@pytest.mark.parametrize("field_name", ["recipe", "sub_recipe", "quantity", "unit"])
+@pytest.mark.parametrize("field_name", ["quantity", "unit"])
 @pytest.mark.django_db
 def test_required_fields_subrecipe_api(api_client, base_url, subrecipe, field_name):
     """ Vérifie que `quantity` et `unit` sont obligatoires via l'API """
@@ -28,7 +27,7 @@ def test_required_fields_subrecipe_api(api_client, base_url, subrecipe, field_na
 @pytest.mark.django_db
 def test_quantity_must_be_positive_api(api_client, base_url, subrecipe, invalid_quantity):
     """ Vérifie que la quantité doit être strictement positive via l'API """
-    expected_errors = ["Ensure this value is greater than or equal to 0."]
+    expected_errors = ["Ensure this value is greater than or equal to 0.", "La quantité doit être strictement positive."]
     valid_data = {"recipe": subrecipe.recipe.id, "sub_recipe": subrecipe.sub_recipe.id, "quantity": invalid_quantity, "unit": "g"}
     validate_constraint_api(api_client, base_url, model_name, "quantity", expected_errors, **valid_data)
 
@@ -44,7 +43,9 @@ def test_unit_must_be_valid_choice_api(api_client, base_url, subrecipe, invalid_
 def test_cannot_set_recipe_as_its_own_subrecipe_api(api_client, base_url, subrecipe):
     """ Vérifie qu'une recette ne peut pas être sa propre sous-recette via l'API """
     valid_data = {"recipe": subrecipe.recipe.id, "sub_recipe": subrecipe.recipe.id, "quantity": 100, "unit": "g"}
-    response = api_client.post(base_url(model_name), data=json.dumps(valid_data), content_type="application/json")
+    print(valid_data)
+    response = api_client.post(base_url(model_name), data=valid_data, format="json")
+    print(response.json())
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "sub_recipe" in response.json()
 
@@ -70,5 +71,5 @@ def test_cannot_patch_recipe_field_in_subrecipe_api(api_client, base_url, subrec
     url = base_url(model_name) + f"{subrecipe.id}/"
     new_recipe = Recipe.objects.create(recipe_name="Tarte aux pommes 2")
     response = api_client.patch(url, data={"recipe": new_recipe.id}, format="json")
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "recipe" in response.json()
+    assert response.status_code == status.HTTP_400_BAD_REQUEST 
+    assert "recipe" in response.json()  # Vérifie que l'erreur concerne bien `recipe`

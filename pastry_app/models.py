@@ -384,6 +384,12 @@ class SubRecipe(models.Model):
         # Vérifier uniquement si quantity est bien un nombre avant de comparer
         if isinstance(self.quantity, (int, float)) and self.quantity <= 0:
             raise ValidationError("La quantité doit être strictement positive.")
+        
+        # Empêcher la modification de `recipe` après création
+        if self.pk:
+            original = SubRecipe.objects.get(pk=self.pk)
+            if original.recipe != self.recipe:
+                raise ValidationError("Recipe cannot be changed after creation.")
 
     def save(self, *args, **kwargs):
         """ Applique les validations avant la sauvegarde """
