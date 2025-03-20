@@ -91,3 +91,9 @@ def test_cannot_delete_recipe_used_as_subrecipe(subrecipe):
     with pytest.raises(ProtectedError, match="Cannot delete some instances of model 'Recipe'"):
         subrecipe.sub_recipe.delete()
 
+@pytest.mark.django_db
+def test_cannot_update_recipe_field_in_subrecipe(subrecipe):
+    """ Vérifie que `recipe` ne peut pas être modifié après création """
+    subrecipe.recipe = Recipe.objects.create(recipe_name="Crème pâtissière 2")  # Essaye de modifier la recette principale
+    with pytest.raises(ValidationError, match="Recipe cannot be changed after creation."):
+        subrecipe.full_clean()

@@ -1,61 +1,74 @@
-from pastry_app.models import Recipe, SubRecipe
-from ..base_api_test import BaseAPITest
+import pytest
+import json
 from rest_framework import status
+from pastry_app.models import Recipe, SubRecipe
+from pastry_app.tests.base_api_test import api_client, base_url
+from pastry_app.tests.utils import validate_constraint_api
 
-class SubRecipeValidationTest(BaseAPITest):
-    """Tests de validation et de gestion des erreurs pour le modèle SubRecipe"""
-    model = SubRecipe
-    model_name = "subrecipe"
+# Définir model_name pour les tests de SubRecipe
+model_name = "sub_recipes"
 
-    def setUp(self):
-        """Préparation : création d’une recette principale et d’une sous-recette pour tester les validations"""
-        super().setUp()
-        self.recipe = Recipe.objects.create(recipe_name="Tarte au citron", chef="Chef Marie")
-        self.sub_recipe = Recipe.objects.create(recipe_name="Pâte sablée", chef="Chef Marie")
-        self.sub_recipe_link = SubRecipe.objects.create(recipe=self.recipe, sub_recipe=self.sub_recipe, quantity=1)
+@pytest.fixture
+def subrecipe():
+    """ Crée une sous-recette d'une recette"""
+    recipe1 = Recipe.objects.create(recipe_name="Tarte aux pommes")
+    recipe2 = Recipe.objects.create(recipe_name="Crème pâtissière")
+    return SubRecipe.objects.create(recipe=recipe1, sub_recipe=recipe2, quantity=200, unit="g")
 
-    def test_create_subrecipe_without_recipe(self):
-        """ Vérifie qu'on ne peut PAS créer un `SubRecipe` sans `recipe`"""
-        response = self.create_object({"sub_recipe": self.sub_recipe.id, "quantity": 1})  # Pas de `recipe`
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("recipe", response.json())
+@pytest.mark.parametrize("field_name", ["recipe", "sub_recipe", "quantity", "unit"])
+@pytest.mark.django_db
+def test_required_fields_subrecipe_api(api_client, base_url, subrecipe, field_name):
+    """ Vérifie que `quantity` et `unit` sont obligatoires via l'API """
+    expected_errors = ["This field is required.", "This field may not be null.", "This field cannot be blank."]
+    valid_data = {"recipe": subrecipe.recipe.id, "sub_recipe": subrecipe.sub_recipe.id, "quantity": 200, "unit": "g"}
+    del valid_data[field_name]  # Supprimer le champ testé
+    validate_constraint_api(api_client, base_url, model_name, field_name, expected_errors, **valid_data)
 
-    def test_create_subrecipe_without_sub_recipe(self):
-        """ Vérifie qu'on ne peut PAS créer un `SubRecipe` sans `sub_recipe`"""
-        response = self.create_object({"recipe": self.recipe.id, "quantity": 1})  # Pas de `sub_recipe`
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("sub_recipe", response.json())
+@pytest.mark.parametrize("invalid_quantity", [0, -50])
+@pytest.mark.django_db
+def test_quantity_must_be_positive_api(api_client, base_url, subrecipe, invalid_quantity):
+    """ Vérifie que la quantité doit être strictement positive via l'API """
+    expected_errors = ["Ensure this value is greater than or equal to 0."]
+    valid_data = {"recipe": subrecipe.recipe.id, "sub_recipe": subrecipe.sub_recipe.id, "quantity": invalid_quantity, "unit": "g"}
+    validate_constraint_api(api_client, base_url, model_name, "quantity", expected_errors, **valid_data)
 
-    def test_create_subrecipe_without_quantity(self):
-        """ Vérifie qu'on ne peut PAS créer un `SubRecipe` sans `quantity`"""
-        response = self.create_object({"recipe": self.recipe.id, "sub_recipe": self.sub_recipe.id})  # Pas de `quantity`
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("quantity", response.json())
+@pytest.mark.parametrize("invalid_unit", ["invalid", "XYZ"])
+@pytest.mark.django_db
+def test_unit_must_be_valid_choice_api(api_client, base_url, subrecipe, invalid_unit):
+    """ Vérifie qu'une unité invalide génère une erreur via l'API """
+    expected_errors = ["is not a valid choice."]
+    valid_data = {"recipe": subrecipe.recipe.id, "sub_recipe": subrecipe.sub_recipe.id, "quantity": 100, "unit": invalid_unit}
+    validate_constraint_api(api_client, base_url, model_name, "unit", expected_errors, **valid_data)
 
-    def test_create_subrecipe_with_negative_quantity(self):
-        """ Vérifie qu'on ne peut PAS créer un `SubRecipe` avec une quantité négative"""
-        response = self.create_object({"recipe": self.recipe.id, "sub_recipe": self.sub_recipe.id, "quantity": -1})
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("quantity", response.json())
+@pytest.mark.django_db
+def test_cannot_set_recipe_as_its_own_subrecipe_api(api_client, base_url, subrecipe):
+    """ Vérifie qu'une recette ne peut pas être sa propre sous-recette via l'API """
+    valid_data = {"recipe": subrecipe.recipe.id, "sub_recipe": subrecipe.recipe.id, "quantity": 100, "unit": "g"}
+    response = api_client.post(base_url(model_name), data=json.dumps(valid_data), content_type="application/json")
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "sub_recipe" in response.json()
 
-    def test_create_subrecipe_with_zero_quantity(self):
-        """ Vérifie qu'on ne peut PAS créer un `SubRecipe` avec une quantité de 0"""
-        response = self.create_object({"recipe": self.recipe.id, "sub_recipe": self.sub_recipe.id, "quantity": 0})
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("quantity", response.json())
+@pytest.mark.django_db
+def test_patch_cannot_set_recipe_as_its_own_subrecipe_api(api_client, base_url, subrecipe):
+    """ Vérifie qu'on ne peut pas modifier une sous-recette pour pointer vers elle-même via `PATCH` """
+    url = base_url(model_name) + f"{subrecipe.id}/"
+    response = api_client.patch(url, data={"sub_recipe": subrecipe.recipe.id}, format="json")
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "sub_recipe" in response.json()
 
-    def test_create_subrecipe_with_same_recipe_as_subrecipe(self):
-        """ Vérifie qu'on ne peut PAS créer un `SubRecipe` où `recipe` et `sub_recipe` sont identiques"""
-        response = self.create_object({"recipe": self.recipe.id, "sub_recipe": self.recipe.id, "quantity": 1})
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("sub_recipe", response.json())
+@pytest.mark.django_db
+def test_cannot_delete_recipe_used_as_subrecipe_api(api_client, base_url, subrecipe):
+    """ Vérifie qu'on ne peut pas supprimer une recette utilisée comme sous-recette via l'API """
+    url = base_url("recipes") + f"{subrecipe.sub_recipe.id}/"
+    delete_response = api_client.delete(url)
+    assert delete_response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "Cannot delete" in delete_response.json()["error"]
 
-    def test_get_nonexistent_subrecipe(self):
-        """ Vérifie qu'on obtient une erreur 404 quand on essaie de récupérer un `SubRecipe` qui n'existe pas"""
-        response = self.get_object(9999)  # ID inexistant
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-
-    def test_delete_nonexistent_subrecipe(self):
-        """ Vérifie qu'on obtient une erreur 404 quand on essaie de supprimer un `SubRecipe` qui n'existe pas"""
-        response = self.delete_object(9999)  # ID inexistant
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+@pytest.mark.django_db
+def test_cannot_patch_recipe_field_in_subrecipe_api(api_client, base_url, subrecipe):
+    """ Vérifie que `recipe` est `read_only` et ne peut pas être modifié via `PATCH` """
+    url = base_url(model_name) + f"{subrecipe.id}/"
+    new_recipe = Recipe.objects.create(recipe_name="Tarte aux pommes 2")
+    response = api_client.patch(url, data={"recipe": new_recipe.id}, format="json")
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "recipe" in response.json()
