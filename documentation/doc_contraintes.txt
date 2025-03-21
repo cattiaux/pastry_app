@@ -476,3 +476,63 @@ Gestion de la Suppression :
    ◦ Suppression d’une Recipe -> Supprime tous les RecipeIngredient liés
    ◦ Suppression d’un Ingredient -> Autorisé, ne supprime pas les RecipeIngredient (protégé)
    ◦ Suppression d’un RecipeIngredient avec suffixe ->  Réattribue les suffixes des suivants (Sucre 3 devient Sucre 2)
+
+
+
+Synthèse des Contraintes pour le Modèle SubRecipe
+
+        CONTRAINTES	                                                    TEST CORRESPONDANT
+Création d’une sous-recette valide	                            -> test_create_subrecipe
+Suppression d’une sous-recette existante	                    -> test_delete_subrecipe_db & test_delete_subrecipe_api
+Récupération d’une sous-recette existante	                    -> test_get_subrecipe_api
+Modification de quantity et unit autorisée	                    -> test_update_subrecipe_quantity_and_unit_db & test_update_subrecipe_api
+Modification du champ recipe interdite (modèle et API)	        -> test_cannot_update_recipe_field_in_subrecipe & test_cannot_update_recipe_field_api
+Une recette ne peut pas être sa propre sous-recette	            -> test_cannot_add_recipe_as_its_own_subrecipe & test_cannot_set_recipe_as_its_own_subrecipe_api
+Suppression bloquée si la sous-recette est utilisée	            -> test_cannot_delete_recipe_used_as_subrecipe & test_cannot_delete_recipe_used_as_subrecipe_api
+quantity obligatoire et strictement positif	                    -> test_required_fields_subrecipe_db, test_quantity_must_be_positive_subrecipe_db, test_quantity_must_be_positive_api
+unit obligatoire et valeur valide                       	    -> test_required_fields_subrecipe_db, test_unit_must_be_valid_subrecipe_db, test_unit_must_be_valid_choice_api
+Champs recipe et sub_recipe obligatoires en API	                -> test_required_fk_fields_subrecipe_api
+Erreur 404 pour une sous-recette inexistante            	    -> test_get_nonexistent_subrecipe, test_delete_nonexistent_subrecipe
+Format lisible pour __str__()	                                -> test_subrecipe_str_method
+Lecture de la liste des sous-recettes	                        -> test_list_subrecipe_api
+
+
+Contraintes Métier :
+1.Sous-recette (sub_recipe) :
+    ◦ Une recette ne peut pas être sa propre sous-recette.
+    ◦ Le champ sub_recipe est obligatoire.
+    ◦ Le champ sub_recipe peut être modifié via l’API (pour changer la version de la sous-recette).
+    ◦ sub_recipe est une FK vers Recipe, protégée (on_delete=PROTECT).
+2. Recette principale (recipe) :
+    ◦ Obligatoire à la création.
+    ◦ Ne peut pas être modifiée après création (read_only=True dans l'API).
+    ◦ FK vers Recipe, suppression en cascade (on_delete=CASCADE).
+3. Quantité (quantity) :
+    ◦ Obligatoire.
+    ◦ Doit être un float.
+    ◦ Doit être strictement positive (> 0).
+4. Unité (unit) :
+    ◦ Obligatoire.
+    ◦ Doit appartenir aux UNIT_CHOICES.
+
+Contraintes Techniques :
+1. Type de Données
+    ◦ quantity : FloatField avec MinValueValidator(0)
+    ◦ unit : CharField avec choices=UNIT_CHOICES (géré à la fois en DB et en API)
+    ◦ recipe : ForeignKey vers Recipe, on_delete=models.CASCADE
+    ◦ sub_recipe : ForeignKey vers Recipe, on_delete=models.PROTECT
+
+Contraintes d'Intégrité :
+1. Références croisée :
+    ◦ sub_recipe est une Recipe, donc une entité complète utilisée dans d'autres contextes.
+2. Protection contre les suppressions invalides :
+    ◦ Une sub_recipe utilisée ne peut pas être supprimée (ProtectedError).
+    ◦ La suppression d’une SubRecipe ne supprime pas la sub_recipe.
+3. Verrouillage logique :
+    ◦ Une fois créée, une SubRecipe ne peut plus changer de recipe.
+
+Gestion des erreurs spécifiques :
+    ◦ Suppression d’une Recipe utilisée comme sub_recipe	-> ProtectedError / 400 Bad Request
+    ◦ Création sans quantity, unit, recipe ou sub_recipe	-> ValidationError (400 Bad Request)
+    ◦ Tentative de PATCH sur recipe	                        -> ValidationError (400 Bad Request)
+    ◦ Doublon strict de sous-recette	                    -> ValidationError en API uniquement
