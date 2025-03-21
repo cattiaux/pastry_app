@@ -446,12 +446,12 @@ class RecipeSerializer(serializers.ModelSerializer):
         model = Recipe
         fields = ['recipe_name', 'chef', 'ingredients', 'steps', 'sub_recipes', 'default_volume', 'default_servings', 'pan']
     
-    def validate_pan(self, value):
-        if isinstance(value, Pan):
-            value = value.id
-        if not (Pan.objects.filter(id=value).exists() or RoundPan.objects.filter(id=value).exists() or SquarePan.objects.filter(id=value).exists()):
-            raise serializers.ValidationError("Invalid pan ID.")
-        return value
+    # def validate_pan(self, value):
+    #     if isinstance(value, Pan):
+    #         value = value.id
+    #     if not (Pan.objects.filter(id=value).exists() or RoundPan.objects.filter(id=value).exists() or SquarePan.objects.filter(id=value).exists()):
+    #         raise serializers.ValidationError("Invalid pan ID.")
+    #     return value
 
     def create(self, validated_data):
         ingredients_data = validated_data.pop('recipeingredient_set')
@@ -498,31 +498,48 @@ class RecipeSerializer(serializers.ModelSerializer):
         return instance
 
 class PanSerializer(serializers.ModelSerializer):
+    pan_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    brand = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    volume_cm3 = serializers.FloatField(read_only=True)  # expose le volume calculé, non modifiable
+
     class Meta:
         model = Pan
-        fields = ['pan_name', 'pan_type']
+        fields = [
+            "id", "pan_name", "pan_type", "brand",
+            "diameter", "height",
+            "length", "width", "rect_height",
+            "volume_raw", "unit",
+            "volume_cm3", "volume_cm3_cache"
+        ]
+        read_only_fields = ["volume_cm3", "volume_cm3_cache"]
 
-    def create(self, validated_data):
-        pan_type = validated_data.get('pan_type')
-        pan_model = get_pan_model(pan_type)
-        pan = pan_model.objects.create(**validated_data)
-        return pan
+    def to_internal_value(self, data):
+        data = data.copy()
+        if "pan_name" in data:
+            data["pan_name"] = normalize_case(data["pan_name"])
+        if "brand" in data:
+            data["brand"] = normalize_case(data["brand"])
+        return super().to_internal_value(data)
 
-    def update(self, instance, validated_data):
-        pan_type = validated_data.get('pan_type', instance.pan_type)
-        pan_model = get_pan_model(instance.pan_type)
-        pan = pan_model.objects.get(id=instance.id)
-        for key, value in validated_data.items():
-            setattr(pan, key, value)
-        pan.save()
-        return pan
-    
-class RoundPanSerializer(serializers.ModelSerializer):
-    class Meta(PanSerializer.Meta):
-        model = RoundPan
-        fields = PanSerializer.Meta.fields + ['diameter', 'height']
+    def validate(self, data):
+        pan_type = data.get("pan_type", getattr(self.instance, "pan_type", None))
 
-class SquarePanSerializer(serializers.ModelSerializer):
-    class Meta(PanSerializer.Meta):
-        model = SquarePan
-        fields = PanSerializer.Meta.fields + ['length', 'width', 'height']
+        # Champs requis par type
+        if pan_type == "ROUND":
+            for field in ["diameter", "height"]:
+                if not data.get(field) and not getattr(self.instance, field, None):
+                    raise serializers.ValidationError({field: "Ce champ est requis pour un moule rond."})
+        elif pan_type == "RECTANGLE":
+            for field in ["length", "width", "rect_height"]:
+                if not data.get(field) and not getattr(self.instance, field, None):
+                    raise serializers.ValidationError({field: "Ce champ est requis pour un moule rectangulaire."})
+        elif pan_type == "CUSTOM":
+            if not data.get("volume_raw") and not getattr(self.instance, "volume_raw", None):
+                raise serializers.ValidationError({"volume_raw": "Volume requis pour un moule personnalisé."})
+            if not data.get("unit") and not getattr(self.instance, "unit", None):
+                raise serializers.ValidationError({"unit": "Unité requise pour un moule personnalisé."})
+        else:
+            raise serializers.ValidationError({"pan_type": "Type de moule invalide."})
+
+        return data
+

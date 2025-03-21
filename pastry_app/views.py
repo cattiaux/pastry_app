@@ -3,12 +3,11 @@ from rest_framework import viewsets, generics, status
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
-from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.db.utils import IntegrityError 
 from django.db.models import ProtectedError
 from django.core.exceptions import ValidationError
+from django_filters.rest_framework import DjangoFilterBackend
 from pastry_app.tests.utils import normalize_case
-from .utils import get_pan_model
 from .models import *
 from .serializers import *
 
@@ -299,33 +298,7 @@ class SubRecipeViewSet(viewsets.ModelViewSet):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class PanViewSet(viewsets.ModelViewSet):
-    queryset = Pan.objects.none()
+    queryset = Pan.objects.all().order_by('pan_name')
     serializer_class = PanSerializer
-
-    def get_queryset(self):
-        pan_type = self.request.query_params.get('pan_type', None)
-        if pan_type is not None:
-            pan_model = get_pan_model(pan_type)
-            return pan_model.objects.all()
-        else:
-            return Pan.objects.all()
-
-    def get_serializer_class(self):
-        pan_type = self.request.query_params.get('pan_type', None)
-        if pan_type is not None:
-            pan_model = get_pan_model(pan_type)
-            return globals()[pan_model.__name__ + 'Serializer']
-        else:
-            return PanSerializer
-
-# class PanViewSet(viewsets.ModelViewSet):
-#     queryset = Pan.objects.all()
-#     serializer_class = PanSerializer
-
-# class RoundPanViewSet(viewsets.ModelViewSet):
-#     queryset = RoundPan.objects.all()
-#     serializer_class = RoundPanSerializer
-
-# class SquarePanViewSet(viewsets.ModelViewSet):
-#     queryset = SquarePan.objects.all()
-#     serializer_class = SquarePanSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['pan_type', 'brand']  # autorise le filtre ?pan_type=ROUND&brand=DeBuyer
