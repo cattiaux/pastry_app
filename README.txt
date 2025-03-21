@@ -163,3 +163,27 @@ Actions à mener
     - Supprimer les full_clean() inutiles dans save(), sauf si une validation stricte est requise.
     - Utiliser bulk_create() pour les traitements de masse.
 
+
+
+### Analyse et implémentation des filter_backends dans les ViewSet
+Contexte :
+Pour l’instant, certaines vues utilisent uniquement SearchFilter pour les recherches textuelles (via ?search=), 
+mais les besoins métiers futurs (notamment côté admin ou frontend) nécessiteront de 
+filtrer précisément les objets via des champs spécifiques (ex: ?pan_type=ROUND, ?brand=...).
+
+Objectif :
+Passer en revue tous les ViewSet exposés par l’API afin d’identifier les cas où il serait pertinent d'ajouter :
+- DjangoFilterBackend pour les filtres champ à champ (filterset_fields)
+- Des filtres plus complexes (via FilterSet custom si besoin)
+
+Étapes à faire :
+- Auditer tous les ViewSet de l’API
+    - Identifier les besoins métiers en termes de filtrage pour chaque entité
+    - Ex: pouvoir filtrer les recettes par label, category, ou les ingrédients par store, unit, etc.
+- Ajouter progressivement filter_backends = [DjangoFilterBackend] là où nécessaire
+- Écrire des tests de filtrage simples (ex : ?champ=valeur retourne bien les bons objets)
+- Documenter les filtres disponibles pour chaque endpoint (utile pour le frontend ou Swagger)
+
+À noter :
+- Peut être combiné avec SearchFilter pour conserver les recherches textuelles
+- L’ajout de filterset_fields ne casse rien : c’est rétrocompatible
