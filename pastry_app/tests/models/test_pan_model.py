@@ -1,55 +1,108 @@
-from django.test import TestCase
-from pastry_app.models import Pan
-from pastry_app.tests.utils import normalize_case
+import pytest
 from django.core.exceptions import ValidationError
+from math import isclose
+from pastry_app.models import Pan
+from pastry_app.tests.utils import *
 
-class PanModelTest(TestCase):
-    """Tests unitaires du modèle Pan"""
+model_name = "pans"
 
-    def setUp(self):
-        """Création d’un moule pour tester le modèle"""
-        self.pan = Pan.objects.create(pan_name="Moule rond 20cm", pan_type="ROUND")
+@pytest.mark.django_db
+def test_create_roundpan_db():
+    """ Vérifie la création d'un Pan de type ROUND avec volume calculé """
+    pan = Pan.objects.create(pan_type="ROUND", diameter=16, height=5)
+    assert pan.volume_cm3 is not None
+    assert isclose(pan.volume_cm3, 1005.3, abs_tol=1)
 
-    def test_pan_creation(self):
-        """🔍 Vérifie que l'on peut créer un objet Pan"""
-        self.assertIsInstance(self.pan, Pan)
-        self.assertEqual(self.pan.pan_name, normalize_case("Moule rond 20cm"))
-        self.assertEqual(self.pan.pan_type, "ROUND")
+@pytest.mark.django_db
+def test_create_rectanglepan_db():
+    """ Vérifie la création d'un Pan de type RECTANGLE avec volume calculé """
+    pan = Pan.objects.create(pan_type="RECTANGLE", length=20, width=10, rect_height=4)
+    assert pan.volume_cm3 == 800
 
-    def test_pan_str_method(self):
-        """ Vérifie que `__str__()` retourne bien le `pan_name`"""
-        self.assertEqual(str(self.pan), normalize_case("Moule rond 20cm"))
+@pytest.mark.django_db
+def test_create_custom_pan_cm3_db():
+    """ Vérifie la création d'un Pan de type CUSTOM avec volume saisi en cm3 """
+    pan = Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3")
+    assert pan.volume_cm3 == 1000
 
-    def test_pan_update(self):
-        """ Vérifie que l'on peut modifier un moule"""
-        self.pan.pan_name = "Moule carré 15cm"
-        self.pan.save()
-        self.pan.refresh_from_db()
-        self.assertEqual(self.pan.pan_name, normalize_case("Moule carré 15cm"))
+@pytest.mark.django_db
+def test_create_custom_pan_liters_db():
+    """ Vérifie la conversion correcte du volume L → cm³ """
+    pan = Pan.objects.create(pan_type="CUSTOM", volume_raw=1.4, unit="L")
+    assert isclose(pan.volume_cm3, 1400, abs_tol=0.1)
 
-    def test_pan_deletion(self):
-        """ Vérifie que l'on peut supprimer un moule"""
-        pan_id = self.pan.id
-        self.pan.delete()
-        self.assertFalse(Pan.objects.filter(id=pan_id).exists())
+@pytest.mark.django_db
+def test_generate_default_name_round_db():
+    """ Vérifie que pan_name est généré automatiquement si absent """
+    pan = Pan.objects.create(pan_type="ROUND", diameter=18, height=4)
+    assert pan.pan_name.startswith("cercle")
+    assert "18x4" in pan.pan_name
 
-    def test_pan_name_cannot_be_empty(self):
-        """ Vérifie qu'on ne peut pas créer un moule sans `pan_name`"""
-        with self.assertRaises(Exception):  # Django va lever une exception
-            Pan.objects.create(pan_name=None, pan_type="ROUND")
+@pytest.mark.django_db
+def test_str_pan():
+    """ Vérifie le rendu de la méthode __str__ """
+    pan = Pan.objects.create(pan_type="RECTANGLE", length=20, width=10, rect_height=4)
+    assert str(pan) == f"{pan.pan_name} (RECTANGLE)"
 
-    def test_pan_type_cannot_be_empty(self):
-        """ Vérifie qu'on ne peut pas créer un moule sans `pan_type`"""
-        with self.assertRaises(Exception):
-            Pan.objects.create(pan_name="Moule spécial", pan_type=None)
+@pytest.mark.django_db
+def test_brand_is_optional_and_normalized_db():
+    """ Vérifie que la marque est optionnelle et normalisée """
+    pan = Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_brand="   Debuyer ")
+    assert pan.pan_brand == normalize_case("Debuyer")
 
-    def test_pan_name_must_be_unique(self):
-        """ Vérifie qu'on ne peut pas créer deux moules avec le même `pan_name`"""
-        with self.assertRaises(ValidationError):
-            duplicate_pan = Pan(pan_name="Moule rond 20cm", pan_type="square")
-            duplicate_pan.full_clean() 
+@pytest.mark.django_db
+@pytest.mark.parametrize("invalid_type", ["circle", "SQUARE", "random", 123])
+def test_invalid_pan_type_choices_db(invalid_type):
+    """Vérifie qu’un `pan_type` invalide déclenche une ValidationError"""
+    pan = Pan(pan_type=invalid_type, diameter=10, height=3)
+    with pytest.raises(ValidationError, match="is not a valid choice"):
+        pan.full_clean()
 
-    def test_invalid_pan_type(self):
-        """ Vérifie qu'on ne peut pas attribuer une valeur invalide à `pan_type`"""
-        with self.assertRaises(Exception):
-            Pan.objects.create(pan_name="Moule inconnu", pan_type="TRIANGLE")  # Supposons que "TRIANGLE" est invalide
+@pytest.mark.django_db
+def test_pan_type_required_db():
+    """Vérifie que `pan_type` est requis"""
+    pan = Pan(diameter=16, height=5)
+    with pytest.raises(ValidationError, match="type de moule.*requis"):
+        pan.full_clean()
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("pan_type, field_missing, expected_error", [
+    ("ROUND", {"height": 5}, "diamètre"),
+    ("ROUND", {"diameter": 16}, "hauteur"),
+    ("RECTANGLE", {"width": 10, "rect_height": 4}, "longueur"),
+    ("RECTANGLE", {"length": 20, "rect_height": 4}, "largeur"),
+    ("RECTANGLE", {"length": 20, "width": 10}, "hauteur"),
+    ("CUSTOM", {"unit": "cm3"}, "volume saisi"),
+    ("CUSTOM", {"volume_raw": 500}, "unité du volume"),
+])
+def test_clean_missing_required_fields_db(pan_type, field_missing, expected_error):
+    """Vérifie que les champs obligatoires selon pan_type sont bien requis (logique clean())"""
+    base_fields = {"pan_type": pan_type}
+    base_fields.update(field_missing)
+    pan = Pan(**base_fields)
+    with pytest.raises(ValidationError, match=expected_error):
+        pan.full_clean()
+
+@pytest.mark.django_db
+def test_delete_pan_db():
+    """ Vérifie qu'on peut supprimer un moule """
+    pan = Pan.objects.create(pan_type="CUSTOM", volume_raw=500, unit="cm3")
+    pan_id = pan.id
+    pan.delete()
+    assert not Pan.objects.filter(id=pan_id).exists()
+
+@pytest.mark.django_db
+def test_pan_name_is_unique_db():
+    """Vérifie que `pan_name` est unique, même après normalisation"""
+    Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="Mon Moule")
+    with pytest.raises(ValidationError):
+        pan2 = Pan(pan_type="CUSTOM", volume_raw=800, unit="cm3", pan_name="mon moule")  # casse différente
+        pan2.full_clean()
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("field_name", ["pan_name", "pan_brand"])
+def test_min_length_fields_db(field_name):
+    """Vérifie que `pan_name` et `pan_brand` doivent avoir au moins 2 caractères s’ils sont renseignés"""
+    expected_errors = ["au moins 2 caractères", "at least 2 characters", "This field cannot be blank."]
+    for short_value in ["", " ", "a"]:
+        validate_constraint(Pan, field_name, short_value, expected_errors, pan_type="CUSTOM", volume_raw=1000, unit="cm3")

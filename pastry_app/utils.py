@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 from django.db import models as django_models
-from pastry_app.models import Pan, PanServing, Recipe, RoundPan, SquarePan, CustomPan
+# from pastry_app.models import Pan, Recipe
 
 def update_related_instances(instance, related_data, related_set, related_model, related_serializer, instance_field_name):
     """
@@ -113,10 +113,10 @@ def scale_sub_recipe(sub_recipe, required_quantity):
 
 #     return None  # Aucun volume trouvé
 
-PAN_MODELS = {db_type: globals()[model_type + 'Pan'] for db_type, model_type in Pan.PAN_TYPES}
+# PAN_MODELS = {db_type: globals()[model_type + 'Pan'] for db_type, model_type in Pan.PAN_TYPES}
 
-def get_pan_model(pan_type):
-    return PAN_MODELS.get(pan_type.upper())
+# def get_pan_model(pan_type):
+#     return PAN_MODELS.get(pan_type.upper())
 
 MODEL_TO_URL_MAPPING = {
     "store": "stores",

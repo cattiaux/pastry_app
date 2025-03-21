@@ -30,7 +30,7 @@ class Pan(models.Model):
 
     pan_name = models.CharField(max_length=200, unique=True, blank=True, null=True)
     pan_type = models.CharField(max_length=20, choices=PAN_TYPE_CHOICES)
-    brand = models.CharField(max_length=100, blank=True, null=True)
+    pan_brand = models.CharField(max_length=100, blank=True, null=True)
 
     # Dimensions pour ROUND
     diameter = models.FloatField(validators=[MinValueValidator(0.1)], blank=True, null=True)
@@ -82,13 +82,13 @@ class Pan(models.Model):
         # Normalisation
         if self.pan_name:
             self.pan_name = normalize_case(self.pan_name)
-        if self.brand:
-            self.brand = normalize_case(self.brand)
+        if self.pan_brand:
+            self.pan_brand = normalize_case(self.pan_brand)
 
         # Validations texte
         if self.pan_name and len(self.pan_name) < 2:
             raise ValidationError("Le nom du moule doit contenir au moins 2 caractères.")
-        if self.brand and len(self.brand) < 2:
+        if self.pan_brand and len(self.pan_brand) < 2:
             raise ValidationError("Le nom de la marque doit contenir au moins 2 caractères.")
 
         # Validation métier selon pan_type
@@ -115,89 +115,6 @@ class Pan(models.Model):
             self.pan_name = normalize_case(self.generate_default_name())
         self.volume_cm3_cache = self.volume_cm3
         super().save(*args, **kwargs)
-
-# class Pan(models.Model):
-#     PAN_TYPES = [('ROUND', 'Round'),('SQUARE', 'Square'),('CUSTOM', 'Custom'),]
-#     pan_name = models.CharField(max_length=200, unique=True)
-#     pan_type = models.CharField(max_length=200, choices=PAN_TYPES)
-
-#     class Meta:
-#         ordering = ['pan_name']
-
-#     def __str__(self):
-#         return self.pan_name
-
-#     @property
-#     def volume(self):
-#         if hasattr(self, 'roundpan'):
-#             return self.roundpan.volume  # Récupère le volume de RoundPan
-#         elif hasattr(self, 'squarepan'):
-#             return self.squarepan.volume  # Récupère le volume de SquarePan
-#         elif hasattr(self, 'custompan'):
-#             return self.custompan.volume_cm3  # Récupère le volume en cm3 directement fourni pour CustomPan
-#         return None 
-
-#     def clean(self):
-#         # Vérifie que `pan_type` est bien un des choix valides
-#         valid_types = [ptype[0] for ptype in self.PAN_TYPES]  # Liste des types valides
-#         if self.pan_type not in valid_types:
-#             raise ValidationError(f"Invalid pan_type: {self.pan_type}. Must be one of {valid_types}")
-#         # Vérifier si un autre Pan a déjà ce pan_name
-#         if Pan.objects.filter(pan_name=self.pan_name).exclude(id=self.id).exists():
-#             raise ValidationError(f"Pan with name '{self.pan_name}' already exists.")
-    
-#     def save(self, *args, **kwargs):
-#         self.full_clean() # Vérifie `clean()` + contraintes Django
-#         self.pan_name = self.pan_name.lower() if self.pan_name else None
-#         super().save(*args, **kwargs)
-
-# class RoundPan(Pan):
-#     # pan = models.OneToOneField(Pan, on_delete=models.CASCADE, primary_key=True, related_name='roundpan')
-#     diameter = models.FloatField(validators=[MinValueValidator(0.1)])
-#     height = models.FloatField(validators=[MinValueValidator(0.1)])
-    
-#     class Meta:
-#         ordering = ['pan_ptr']
-#         unique_together = ('pan_ptr', 'diameter', 'height')
-
-#     @property
-#     def volume(self):
-#         radius = self.diameter / 2
-#         return pi * radius * radius * self.height
-
-# class SquarePan(Pan):
-#     length = models.FloatField(validators=[MinValueValidator(0.1)])
-#     width = models.FloatField(validators=[MinValueValidator(0.1)])
-#     height = models.FloatField(validators=[MinValueValidator(0.1)])
-
-#     class Meta:
-#         ordering = ['pan_ptr']
-#         unique_together = ('pan_ptr', 'length', 'width', 'height')
-
-#     @property
-#     def volume(self):
-#         return self.length * self.width * self.height
-    
-# class CustomPan(Pan):
-#     UNIT_CHOICES = [('cm3', 'cm³'), ('L', 'Litres')]
-    
-#     brand = models.CharField(max_length=100, blank=True, null=True)  # Marque du moule (ex: "Silikomart")
-#     volume_raw = models.FloatField(validators=[MinValueValidator(1)])  # Volume fourni par le fabricant en cm³
-#     unit = models.CharField(max_length=3, choices=UNIT_CHOICES, default='cm3')  # Unité (cm³ ou L)
-    
-#     class Meta:
-#         ordering = ['brand', 'pan_ptr']
-#         unique_together = ('pan_ptr', 'brand')  # Chaque moule custom (pan + marque) est unique
-
-#     def __str__(self):
-#         return f"{self.brand} - {self.pan_name} ({self.volume} cm³)"
-
-#     @property
-#     def volume(self):
-#         """Retourne le volume en cm³, quelle que soit l'unité stockée."""
-#         if self.unit == 'L':
-#             return self.volume_raw * 1000  # Conversion L → cm³
-#         return self.volume_raw  # Déjà en cm³
 
 class Category(models.Model):
     """
@@ -916,17 +833,17 @@ class RecipeIngredient(models.Model):
             ingredient.display_name = f"{ingredient.ingredient.ingredient_name} {index}"
             ingredient.save(update_fields=['display_name'])  # Évite un save complet
 
-class PanServing(models.Model):
-    pan = models.ForeignKey(Pan, on_delete=models.CASCADE)
-    servings_min = models.IntegerField(validators=[MinValueValidator(1)])  # Nombre minimum de portions
-    servings_max = models.IntegerField(validators=[MinValueValidator(1)])  # Nombre maximum de portions
-    # recipe_type = models.CharField(max_length=50, choices=RECIPE_TYPES, null=True, blank=True)
+# class PanServing(models.Model):
+#     pan = models.ForeignKey(Pan, on_delete=models.CASCADE)
+#     servings_min = models.IntegerField(validators=[MinValueValidator(1)])  # Nombre minimum de portions
+#     servings_max = models.IntegerField(validators=[MinValueValidator(1)])  # Nombre maximum de portions
+#     # recipe_type = models.CharField(max_length=50, choices=RECIPE_TYPES, null=True, blank=True)
 
-    class Meta:
-        ordering = ['servings_min']
-        # unique_together = ('pan', 'recipe_type')  # Unicité par pan + type de recette
+#     class Meta:
+#         ordering = ['servings_min']
+#         # unique_together = ('pan', 'recipe_type')  # Unicité par pan + type de recette
 
-    def __str__(self):
-        return f"{self.pan.pan_name} - {self.pan.volume} cm³ - {self.servings_min}-{self.servings_max} servings ({self.recipe_type})"
+#     def __str__(self):
+#         return f"{self.pan.pan_name} - {self.pan.volume} cm³ - {self.servings_min}-{self.servings_max} servings ({self.recipe_type})"
     
 
