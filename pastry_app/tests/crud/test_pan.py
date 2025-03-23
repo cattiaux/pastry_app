@@ -8,7 +8,7 @@ model_name = "pans"
 @pytest.fixture
 def pan():
     """Crée un moule personnalisé (CUSTOM)"""
-    return Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="test pan", pan_brand="debuyer")
+    return Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="test pan", pan_brand="debuyer", number_of_pans=3)
 
 @pytest.mark.django_db
 def test_create_pan_api(api_client, base_url):
@@ -47,7 +47,7 @@ def test_patch_update_pan_api(api_client, base_url, pan):
 def test_put_update_pan_api(api_client, base_url, pan):
     """Vérifie qu'on peut remplacer un Pan via PUT"""
     url = base_url(model_name) + f"{pan.id}/"
-    new_data = {"pan_type": "CUSTOM", "volume_raw": 1500, "unit": "cm3", "pan_name": "moule mis à jour"}
+    new_data = {"pan_type": "CUSTOM", "volume_raw": 1500, "unit": "cm3", "pan_name": "moule mis à jour", "number_of_pans": 4}
     response = api_client.put(url, data=new_data, format="json")
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["volume_raw"] == 1500

@@ -126,3 +126,15 @@ def test_pan_type_exclusive_fields_model(pan_type, extra_fields, expected_error)
     pan = Pan(pan_type=pan_type, **base_fields)
     with pytest.raises(ValidationError, match=expected_error):
         pan.full_clean()
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("value", [0, -1])
+def test_number_of_pans_must_be_positive(value):
+    with pytest.raises(ValidationError, match="greater than or equal to 1"):
+        pan = Pan(pan_type="CUSTOM",volume_raw=1000, unit="cm3", number_of_pans=value)
+        pan.full_clean()
+
+@pytest.mark.django_db
+def test_default_number_of_pans():
+    pan = Pan.objects.create(pan_type="CUSTOM", volume_raw=800, unit="cm3")
+    assert pan.number_of_pans == 1

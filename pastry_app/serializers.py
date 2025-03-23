@@ -501,11 +501,12 @@ class PanSerializer(serializers.ModelSerializer):
     pan_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     pan_brand = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     volume_cm3 = serializers.FloatField(read_only=True)  # expose le volume calculé, non modifiable
+    number_of_pans = serializers.IntegerField(min_value=1, required=False, default=1)
 
     class Meta:
         model = Pan
         fields = [
-            "id", "pan_name", "pan_type", "pan_brand",
+            "id", "pan_name", "pan_type", "pan_brand", 'number_of_pans',
             "diameter", "height",
             "length", "width", "rect_height",
             "volume_raw", "unit",

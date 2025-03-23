@@ -1,6 +1,5 @@
 import pytest, json, re
 from rest_framework import status
-from django.contrib.auth.models import User
 from pastry_app.tests.utils import *
 from pastry_app.tests.base_api_test import api_client, base_url
 from pastry_app.models import Pan
@@ -9,7 +8,7 @@ model_name = "pans"
 
 @pytest.fixture
 def pan(db):
-    return Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="Mon Moule")
+    return Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="Mon Moule", number_of_pans=3)
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("field_name", ["pan_type", "unit"])
@@ -172,3 +171,18 @@ def test_volume_cm3_cache_is_returned(api_client, base_url):
     assert response.status_code == 201
     assert "volume_cm3_cache" in response.json()
     assert response.json()["volume_cm3_cache"] == 1400
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("value", [0, -2])
+def test_number_of_pans_validation_api(api_client, base_url, value):
+    data = {"pan_type": "CUSTOM", "volume_raw": 1000, "unit": "cm3", "number_of_pans": value}
+    response = api_client.post(base_url(model_name), data=data, format="json")
+    assert response.status_code == 400
+    assert "number_of_pans" in response.json()
+
+@pytest.mark.django_db
+def test_number_of_pans_default_api(api_client, base_url):
+    data = {"pan_type": "CUSTOM", "volume_raw": 1000, "unit": "cm3"}
+    response = api_client.post(base_url(model_name), data=data, format="json")
+    assert response.status_code == 201
+    assert response.json()["number_of_pans"] == 1

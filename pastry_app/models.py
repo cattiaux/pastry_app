@@ -31,6 +31,7 @@ class Pan(models.Model):
     pan_name = models.CharField(max_length=200, unique=True, blank=True, null=True)
     pan_type = models.CharField(max_length=20, choices=PAN_TYPE_CHOICES)
     pan_brand = models.CharField(max_length=100, blank=True, null=True)
+    number_of_pans = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
 
     # Dimensions pour ROUND
     diameter = models.FloatField(validators=[MinValueValidator(0.1)], blank=True, null=True)
