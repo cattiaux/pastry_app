@@ -536,3 +536,74 @@ Gestion des erreurs spécifiques :
     ◦ Création sans quantity, unit, recipe ou sub_recipe	-> ValidationError (400 Bad Request)
     ◦ Tentative de PATCH sur recipe	                        -> ValidationError (400 Bad Request)
     ◦ Doublon strict de sous-recette	                    -> ValidationError en API uniquement
+
+
+
+### Synthèse des Contraintes pour le Modèle Pan
+
+        CONTRAINTES	                                                        TEST CORRESPONDANT
+Création d’un moule valide (type CUSTOM)	                            -> test_create_pan_api
+pan_type obligatoire	                                                -> test_pan_type_required_db & test_required_fields_pan_api
+pan_type doit avoir une valeur autorisée	                            -> test_invalid_pan_type_choices_db & test_choices_validation_pan_api
+pan_name peut être auto-généré si absent	                            -> test_generate_default_name_round_db
+pan_name doit être unique (case insensitive)	                        -> test_pan_name_is_unique_db & test_unique_constraint_api & test_update_to_duplicate_name_api
+pan_name et pan_brand : longueur min. de 2	                            -> test_min_length_fields_db & test_min_length_fields_api
+pan_name et pan_brand : normalisés via normalize_case()	                -> test_brand_is_optional_and_normalized_db & test_normalized_fields_pan_api
+Création d’un Pan ROUND nécessite diameter + height	                    -> test_missing_required_fields_db & test_clean_validation_errors_pan_api
+Création d’un Pan RECTANGLE nécessite length + width + rect_height	    -> test_missing_required_fields_db & test_clean_validation_errors_pan_api
+Création d’un Pan CUSTOM nécessite volume_raw + unit	                -> test_missing_required_fields_db & test_clean_validation_errors_pan_api
+Champs interdits selon pan_type (cohérence métier)	                    -> test_pan_type_exclusive_fields_model & test_post_exclusive_fields_pan_api & test_patch_exclusive_fields_pan_api
+Champs numériques doivent respecter leur MinValueValidator	            -> test_min_value_constraints_api
+PATCH partiel autorisé sans casse de données	                        -> test_patch_partial_fields_api
+volume_cm3 et volume_cm3_cache : calculés & read-only	                -> test_volume_cm3_cache_is_returned & test_read_only_volume_cm3_api
+Récupération d’un Pan (GET)	                                            -> test_get_pan_detail_api
+Liste des Pans (GET)	                                                -> test_list_pans_api
+Modification partielle (PATCH)	                                        -> test_patch_update_pan_api
+Remplacement total (PUT)	                                            -> test_put_update_pan_api
+Suppression d’un Pan existant	                                        -> test_delete_pan_api & test_delete_pan_db
+Erreur 404 pour Pan inexistant	                                        -> test_get_nonexistent_pan & test_delete_nonexistent_pan
+
+Contraintes Métier :
+1. pan_type
+    ◦ Obligatoire, doit être l’une des valeurs de PAN_TYPE_CHOICES
+    ◦ Contrôle les champs requis et interdits (logique métier cruciale)
+2. Champs requis par type
+    ◦ ROUND : diameter, height
+    ◦ RECTANGLE : length, width, rect_height
+    ◦ CUSTOM : volume_raw, unit
+3. Champs interdits selon type
+    ◦ ROUND ne doit pas avoir : length, width, rect_height, volume_raw
+    ◦ RECTANGLE ne doit pas avoir : diameter, height, volume_raw
+    ◦ CUSTOM ne doit pas avoir de dimensions géométriques
+4. pan_name (nom du moule)
+    ◦ Optionnel à la création → généré automatiquement si absent
+    ◦ Doit être unique (après normalisation)
+    ◦ Doit faire au moins 2 caractères
+5. pan_brand (marque)
+    ◦ Optionnelle
+    ◦ Normalisée si fournie
+    ◦ Doit faire au moins 2 caractères si renseignée
+6. Volume
+    ◦ Calculé automatiquement selon les champs fournis et le pan_type
+    ◦ Exposé en lecture seule via volume_cm3 et volume_cm3_cache
+
+Contraintes Techniques : 
+1. Type de Données
+    ◦ pan_type : CharField, choices=PAN_TYPE_CHOICES, requis
+    ◦ pan_name : CharField, unique, nullable, normalisé
+    ◦ pan_brand : CharField, nullable, normalisé
+    ◦ Dimensions (diameter, height, etc.) : FloatField, nullable, MinValueValidator(0.1)
+    ◦ volume_raw : FloatField, MinValueValidator(1)
+    ◦ unit : CharField, choices=UNIT_CHOICES
+    ◦ volume_cm3_cache : FloatField, calculé automatiquement (enregistré en base)
+    ◦ volume_cm3 : propriété Python, pas en base
+
+Contraintes d’Intégrité :
+1. Cohérence par type
+    ◦ Contrôle strict dans clean() du modèle
+    ◦ Les erreurs métier sont propagées côté API (via validate())
+2. Champs calculés
+    ◦ volume_cm3_cache mis à jour automatiquement à chaque save()
+    ◦ Non modifiable via l’API
+3. Unicité
+    ◦ pan_name est unique (vérification DB + logique de normalisation)
