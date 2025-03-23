@@ -1,7 +1,29 @@
 from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 from django.db import models as django_models
-# from pastry_app.models import Pan, Recipe
+
+def calculate_quantity_multiplier(from_volume_cm3: float, to_volume_cm3: float) -> float:
+    """
+    Calcule le multiplicateur de quantité nécessaire pour passer d’un volume source à un volume cible.
+    """
+    if from_volume_cm3 <= 0:
+        raise ValueError("Le volume source doit être supérieur à 0")
+    return to_volume_cm3 / from_volume_cm3
+
+def apply_multiplier_to_ingredients(recipe, multiplier: float) -> list:
+    """
+    Applique un multiplicateur à tous les ingrédients d'une recette
+    et retourne une nouvelle structure d'ingrédients recalculés.
+    """
+    adapted_ingredients = []
+    for ri in recipe.recipe_ingredients.all():
+        adapted_ingredients.append({
+            "ingredient": ri.ingredient.id,
+            "original_quantity": ri.quantity,
+            "scaled_quantity": round(ri.quantity * multiplier, 2),
+            "unit": ri.unit
+        })
+    return adapted_ingredients
 
 def update_related_instances(instance, related_data, related_set, related_model, related_serializer, instance_field_name):
     """
