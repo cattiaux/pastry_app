@@ -39,6 +39,7 @@ urlpatterns = [
     path('api/ingredients/<int:pk>/delete/', IngredientDeleteView.as_view(), name='ingredient_delete'),
     path('api/recipes/<int:pk>/delete/', RecipeDeleteView.as_view(), name='recipe_delete'),
     path('api/pans/<int:pk>/delete/', PanDeleteView.as_view(), name='pan_delete'),
+    path("recipes/adapt/", RecipeAdaptationAPIView.as_view(), name="adapt-recipe"),
 ]
 
 

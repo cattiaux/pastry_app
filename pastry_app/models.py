@@ -284,55 +284,89 @@ class RecipeLabel(models.Model):
     label = models.ForeignKey("Label", on_delete=models.PROTECT)  # Empêche la suppression d'une catégorie utilisée
 
 class Recipe(models.Model):
+    RECIPE_TYPE_CHOICES = [("BASE", "Recette de base"), ("VARIATION", "Variante"),]
+
+    # Informations principales
     parent_recipe = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="versions")
     recipe_name = models.CharField(max_length=200)
-    chef_name = models.CharField(max_length=200, null=True, blank=True)
-    ingredients = models.ManyToManyField("Ingredient", through='RecipeIngredient', related_name="recipes")
+    chef_name = models.CharField(max_length=100, null=True, blank=True)
+    context_name = models.CharField(max_length=100, null=True, blank=True)
+    source = models.CharField(max_length=255, null=True, blank=True)
+    recipe_type = models.CharField(max_length=20, choices=RECIPE_TYPE_CHOICES, default="BASE")
+    servings = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
+
+    # Relations
     categories = models.ManyToManyField(Category, through="RecipeCategory", related_name="recipes") 
-    default_volume = models.FloatField(null=True, blank=True, validators=[MinValueValidator(0)])
-    default_servings = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
-    avg_density = models.FloatField(null=True, blank=True, validators=[MinValueValidator(0)])
-    pan = models.ForeignKey(Pan, on_delete=models.SET_NULL, null=True, blank=True)
+    labels = models.ManyToManyField(Label, through="RecipeLabel", related_name="recipes")
+    ingredients = models.ManyToManyField("Ingredient", through="RecipeIngredient", related_name="recipes")
+    pan = models.ForeignKey(Pan, null=True, blank=True, on_delete=models.SET_NULL)
+
+    # Contenu
+    description = models.TextField(blank=True, null=True)
     trick = models.TextField(null=True, blank=True)
+    image = models.ImageField(upload_to="recipes/", null=True, blank=True)
+
+    # Tracking
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ('recipe_name', 'chef_name',)
         ordering = ['recipe_name', 'chef_name']
+        constraints = [models.UniqueConstraint(fields=["recipe_name", "chef_name", "context_name"], 
+                                               name="unique_recipe_per_context")]
 
     def __str__(self):
-        return f"{self.recipe_name} de {self.chef_name}"
-
-    def calculate_avg_density(self):
-        """
-        Calcule la densité moyenne d'une recette (g/cm³).
-        """
-        total_weight = sum(ri.quantity for ri in self.recipeingredient_set.all())  # Poids total
-        return total_weight / self.default_volume if self.default_volume and self.default_volume > 0 else None
+        base = f"{self.recipe_name} ({self.chef_name})"
+        if self.context_name:
+            return f"{base} - {self.context_name}"
+        return base
 
     def clean(self):
         """ Vérifications métier avant sauvegarde. """
-        # Normalisation du `recipe_name`
+        # Validation basique
+        if not self.recipe_name:
+            raise ValidationError("Le nom de la recette est obligatoire.")
+
+        # Normalisation
         self.recipe_name = normalize_case(self.recipe_name)
-        # Normalisation du `chef_name`
         self.chef_name = normalize_case(self.chef_name)
 
+        # Boucle directe
         if self.parent_recipe and self.parent_recipe == self:
             raise ValidationError("Une recette ne peut pas être sa propre version précédente.")
-        
-        # Vérifie qu'une recette contient au moins un ingrédient.
+
+        # --- Boucle indirecte (cycle) ---
+        def has_cyclic_parent(instance):
+            current = instance.parent_recipe
+            while current:
+                if current == instance:
+                    return True
+                current = current.parent_recipe
+            return False
+
+        if has_cyclic_parent(self):
+            raise ValidationError("Cycle détecté dans les versions de recette.")
+    
+        # Pas possible de valider contenu tant que non sauvegardée
         if not self.id:  # Si la recette n'existe pas encore en base, on ne peut pas vérifier
             return
-        if not self.ingredients.exists():
-            raise ValidationError("Une recette doit contenir au moins un ingrédient.")
+
+        # Une recette doit avoir au moins un ingrédient OU une sous-recette
+        has_ingredients = self.recipe_ingredients.exists()
+        has_subrecipes = self.subrecipes.exists()
+        if not (has_ingredients or has_subrecipes):
+            raise ValidationError("Une recette doit contenir au moins un ingrédient ou une sous-recette.")
+
+        # Une recette doit avoir au moins une étape OU une sous-recette
+        has_steps = self.steps.exists()
+        if not (has_steps or has_subrecipes):
+            raise ValidationError("Une recette doit contenir au moins une étape ou une sous-recette.")
     
     def save(self, *args, **kwargs):
-        """Vérifie les contraintes et met à jour `avg_density` avant la sauvegarde."""
-        self.clean() 
-
-        if self.default_volume and self.default_volume > 0:
-            self.avg_density = self.calculate_avg_density()
+        self.full_clean()
+        if self.parent_recipe and not self.context_name:
+            self.context_name = f"Variante de {self.parent_recipe.recipe_name}"
         super().save(*args, **kwargs)
 
 class RecipeStep(models.Model):
@@ -843,18 +877,3 @@ class RecipeIngredient(models.Model):
         for index, ingredient in enumerate(recipe_ingredients, start=1):
             ingredient.display_name = f"{ingredient.ingredient.ingredient_name} {index}"
             ingredient.save(update_fields=['display_name'])  # Évite un save complet
-
-# class PanServing(models.Model):
-#     pan = models.ForeignKey(Pan, on_delete=models.CASCADE)
-#     servings_min = models.IntegerField(validators=[MinValueValidator(1)])  # Nombre minimum de portions
-#     servings_max = models.IntegerField(validators=[MinValueValidator(1)])  # Nombre maximum de portions
-#     # recipe_type = models.CharField(max_length=50, choices=RECIPE_TYPES, null=True, blank=True)
-
-#     class Meta:
-#         ordering = ['servings_min']
-#         # unique_together = ('pan', 'recipe_type')  # Unicité par pan + type de recette
-
-#     def __str__(self):
-#         return f"{self.pan.pan_name} - {self.pan.volume} cm³ - {self.servings_min}-{self.servings_max} servings ({self.recipe_type})"
-    
-

@@ -1,5 +1,6 @@
 # views.py
 from rest_framework import viewsets, generics, status
+from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
@@ -8,7 +9,9 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
 from django.db.models import ProtectedError
 from django_filters.rest_framework import DjangoFilterBackend
-from pastry_app.tests.utils import normalize_case
+from django.shortcuts import get_object_or_404
+from .tests.utils import normalize_case
+from .utils import (calculate_quantity_multiplier, apply_multiplier_to_ingredients)
 from .models import *
 from .serializers import *
 
@@ -327,3 +330,36 @@ class PanViewSet(viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
 
         return Response(serializer.data)
+    
+class RecipeAdaptationAPIView(APIView):
+    """
+    API permettant d’adapter les quantités d’une recette en fonction d’un moule cible.
+    """
+
+    def post(self, request, *args, **kwargs):
+        recipe_id = request.data.get("recipe_id")
+        target_pan_id = request.data.get("target_pan_id")
+
+        if not recipe_id or not target_pan_id:
+            return Response({"error": "recipe_id et target_pan_id sont requis"}, status=status.HTTP_400_BAD_REQUEST)
+
+        recipe = get_object_or_404(Recipe, id=recipe_id)
+        target_pan = get_object_or_404(Pan, id=target_pan_id)
+
+        if not recipe.pan or not recipe.pan.volume_cm3_cache:
+            return Response({"error": "La recette n’a pas de moule d’origine défini ou volume inconnu."}, status=400)
+
+        if not target_pan.volume_cm3_cache:
+            return Response({"error": "Le volume du moule cible est inconnu."}, status=400)
+
+        try:
+            multiplier = calculate_quantity_multiplier(recipe.pan.volume_cm3_cache, target_pan.volume_cm3_cache)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+
+        adapted_ingredients = apply_multiplier_to_ingredients(recipe, multiplier)
+
+        return Response({
+            "multiplier": round(multiplier, 3),
+            "adapted_ingredients": adapted_ingredients
+        })

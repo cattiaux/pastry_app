@@ -218,3 +218,6 @@ Bénéfice :
 Développer une fonction qui, en se basant sur les volumes des moules source et cible, calcule automatiquement le multiplicateur de quantité.
 
 ### Calcul automatique du multiplicateur de quantité en fonction de la quantité d'un ingrédient spécifique 
+
+### Ecrire des tests API pour la route POST /recipes/adapt/
+
