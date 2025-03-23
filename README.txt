@@ -212,3 +212,9 @@ Bénéfice :
 - Meilleure UX pour adapter les recettes
 - Système intelligent de correspondance entre recette et matériel utilisateur
 - Base technique réutilisable pour d'autres fonctionnalités (calcul de portions, adaptation dynamique)
+
+
+### Calcul automatique du multiplicateur de quantité en fonction du moule : 
+Développer une fonction qui, en se basant sur les volumes des moules source et cible, calcule automatiquement le multiplicateur de quantité.
+
+### Calcul automatique du multiplicateur de quantité en fonction de la quantité d'un ingrédient spécifique 
