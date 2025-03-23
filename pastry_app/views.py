@@ -3,9 +3,10 @@ from rest_framework import viewsets, generics, status
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
+from rest_framework.exceptions import ValidationError as DRFValidationError
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
 from django.db.models import ProtectedError
-from django.core.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 from pastry_app.tests.utils import normalize_case
 from .models import *
@@ -264,7 +265,7 @@ class RecipeStepViewSet(viewsets.ModelViewSet):
 
         try:
             instance.delete()
-        except ValidationError as e:
+        except DjangoValidationError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -280,7 +281,7 @@ class RecipeIngredientViewSet(viewsets.ModelViewSet):
         try:
             instance.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
-        except ValidationError as e:
+        except DjangoValidationError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class SubRecipeViewSet(viewsets.ModelViewSet):
@@ -294,11 +295,35 @@ class SubRecipeViewSet(viewsets.ModelViewSet):
         try:
             instance.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
-        except ValidationError as e:
+        except DjangoValidationError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class PanViewSet(viewsets.ModelViewSet):
     queryset = Pan.objects.all().order_by('pan_name')
     serializer_class = PanSerializer
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['pan_type', 'brand']  # autorise le filtre ?pan_type=ROUND&brand=DeBuyer
+    filterset_fields = ['pan_type', 'pan_brand']  # autorise le filtre ?pan_type=ROUND&pan_brand=DeBuyer
+    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            self.perform_create(serializer)
+        except (DjangoValidationError, DRFValidationError) as e:
+            return Response({"detail": e.messages if hasattr(e, 'messages') else str(e)},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        try:
+            self.perform_update(serializer)
+        except (DjangoValidationError, DRFValidationError) as e:
+            return Response({"detail": e.messages if hasattr(e, 'messages') else str(e)},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(serializer.data)

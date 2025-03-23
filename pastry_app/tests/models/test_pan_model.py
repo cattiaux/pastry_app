@@ -75,7 +75,7 @@ def test_pan_type_required_db():
     ("CUSTOM", {"unit": "cm3"}, "volume saisi"),
     ("CUSTOM", {"volume_raw": 500}, "unité du volume"),
 ])
-def test_clean_missing_required_fields_db(pan_type, field_missing, expected_error):
+def test_missing_required_fields_db(pan_type, field_missing, expected_error):
     """Vérifie que les champs obligatoires selon pan_type sont bien requis (logique clean())"""
     base_fields = {"pan_type": pan_type}
     base_fields.update(field_missing)
@@ -106,3 +106,23 @@ def test_min_length_fields_db(field_name):
     expected_errors = ["au moins 2 caractères", "at least 2 characters", "This field cannot be blank."]
     for short_value in ["", " ", "a"]:
         validate_constraint(Pan, field_name, short_value, expected_errors, pan_type="CUSTOM", volume_raw=1000, unit="cm3")
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("pan_type, extra_fields, expected_error", [
+    ("ROUND", {"volume_raw": 1000}, "ne doit pas contenir de.*volume"),
+    ("ROUND", {"length": 10}, "rectangulaires"),
+    ("RECTANGLE", {"diameter": 10}, "ne doit pas contenir de.*rondes"),
+    ("RECTANGLE", {"volume_raw": 500}, "volume personnalisé"),
+    ("CUSTOM", {"diameter": 16}, "ne doit pas contenir de dimensions"),
+    ("CUSTOM", {"length": 20}, "ne doit pas contenir de dimensions"),
+])
+def test_pan_type_exclusive_fields_model(pan_type, extra_fields, expected_error):
+    """Vérifie qu’un Pan ne peut pas avoir des champs d'autres types (validation clean)"""
+    base_fields = {"ROUND": {"diameter": 16, "height": 5}, 
+                   "RECTANGLE": {"length": 10, "width": 5, "rect_height": 3}, 
+                   "CUSTOM": {"volume_raw": 1000, "unit": "cm3"}
+                   }[pan_type].copy()
+    base_fields.update(extra_fields)
+    pan = Pan(pan_type=pan_type, **base_fields)
+    with pytest.raises(ValidationError, match=expected_error):
+        pan.full_clean()

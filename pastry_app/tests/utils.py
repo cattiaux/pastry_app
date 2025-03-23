@@ -102,6 +102,7 @@ def validate_unique_constraint_api(api_client, base_url, model_name, field_name,
 
     # Tentative de création du doublon (DOIT ÉCHOUER)
     response2 = api_client.post(url, data=valid_data, format="json")
+    print(response2.json())
     assert response2.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
     return response2
 

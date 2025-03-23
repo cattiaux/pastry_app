@@ -43,7 +43,7 @@ class Pan(models.Model):
 
     # Volume manuel pour les CUSTOM
     volume_raw = models.FloatField(validators=[MinValueValidator(1)], blank=True, null=True)
-    unit = models.CharField(max_length=4, choices=UNIT_CHOICES, default='cm3')
+    unit = models.CharField(max_length=4, choices=UNIT_CHOICES, blank=True, null=True)
 
     # Cache du volume (mis à jour à chaque save)
     volume_cm3_cache = models.FloatField(null=True, blank=True, editable=False)
@@ -95,17 +95,27 @@ class Pan(models.Model):
         if not self.pan_type:
             raise ValidationError("Le type de moule est requis.")
 
+        # Champs obligatoires selon pan_type
         if self.pan_type == 'ROUND':
             if not self.diameter or not self.height:
                 raise ValidationError("Un moule rond doit avoir un diamètre et une hauteur.")
+            if any([self.length, self.width, self.rect_height, self.volume_raw]):
+                raise ValidationError("Un moule rond ne doit pas contenir de dimensions rectangulaires ou de volume personnalisé.")
+
         elif self.pan_type == 'RECTANGLE':
             if not self.length or not self.width or not self.rect_height:
                 raise ValidationError("Un moule rectangulaire doit avoir une longueur, une largeur et une hauteur.")
+            if any([self.diameter, self.height, self.volume_raw]):
+                raise ValidationError("Un moule rectangulaire ne doit pas contenir de dimensions rondes ou de volume personnalisé.")
+
         elif self.pan_type == 'CUSTOM':
             if not self.volume_raw:
                 raise ValidationError("Un moule personnalisé doit avoir un volume saisi.")
             if not self.unit:
                 raise ValidationError("L'unité du volume est requise pour les moules personnalisés.")
+            if any([self.diameter, self.height, self.length, self.width, self.rect_height]):
+                raise ValidationError("Un moule personnalisé ne doit pas contenir de dimensions rondes ou rectangulaires.")
+
         else:
             raise ValidationError(f"Type de moule inconnu : {self.pan_type}")
 

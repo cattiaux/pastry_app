@@ -499,13 +499,13 @@ class RecipeSerializer(serializers.ModelSerializer):
 
 class PanSerializer(serializers.ModelSerializer):
     pan_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    brand = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    pan_brand = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     volume_cm3 = serializers.FloatField(read_only=True)  # expose le volume calculé, non modifiable
 
     class Meta:
         model = Pan
         fields = [
-            "id", "pan_name", "pan_type", "brand",
+            "id", "pan_name", "pan_type", "pan_brand",
             "diameter", "height",
             "length", "width", "rect_height",
             "volume_raw", "unit",
@@ -517,9 +517,25 @@ class PanSerializer(serializers.ModelSerializer):
         data = data.copy()
         if "pan_name" in data:
             data["pan_name"] = normalize_case(data["pan_name"])
-        if "brand" in data:
-            data["brand"] = normalize_case(data["brand"])
+        if "pan_brand" in data:
+            data["pan_brand"] = normalize_case(data["pan_brand"])
         return super().to_internal_value(data)
+
+    def validate_pan_name(self, value):
+        value = normalize_case(value)
+        pan_id = self.instance.id if self.instance else None
+        if Pan.objects.exclude(id=pan_id).filter(pan_name__iexact=value).exists():
+            raise serializers.ValidationError("Un moule avec ce nom existe déjà.")
+        
+        if value and len(value) < 2:
+            raise serializers.ValidationError("Le nom du moule doit contenir au moins 2 caractères.")
+
+        return value
+
+    def validate_pan_brand(self, value):
+        if value and len(value) < 2:
+            raise serializers.ValidationError("Le nom de la marque doit contenir au moins 2 caractères.")
+        return value
 
     def validate(self, data):
         pan_type = data.get("pan_type", getattr(self.instance, "pan_type", None))
