@@ -35,13 +35,23 @@ def test_list_pans_api(api_client, base_url, pan):
     assert len(response.json()) >= 2
 
 @pytest.mark.django_db
-def test_update_pan_api(api_client, base_url, pan):
+def test_patch_update_pan_api(api_client, base_url, pan):
     """Vérifie qu'on peut modifier un `Pan`"""
     update_data = {"pan_brand": "matfer"}
     url = base_url(model_name) + f"{pan.id}/"
     response = api_client.patch(url, data=update_data, format="json")
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["pan_brand"] == "matfer"
+
+@pytest.mark.django_db
+def test_put_update_pan_api(api_client, base_url, pan):
+    """Vérifie qu'on peut remplacer un Pan via PUT"""
+    url = base_url(model_name) + f"{pan.id}/"
+    new_data = {"pan_type": "CUSTOM", "volume_raw": 1500, "unit": "cm3", "pan_name": "moule mis à jour"}
+    response = api_client.put(url, data=new_data, format="json")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["volume_raw"] == 1500
+    assert response.json()["pan_name"] == "moule mis à jour"
 
 @pytest.mark.django_db
 def test_delete_pan_api(api_client, base_url, pan):

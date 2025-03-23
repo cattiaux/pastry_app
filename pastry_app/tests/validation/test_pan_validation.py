@@ -163,3 +163,12 @@ def test_patch_partial_fields_api(api_client, base_url):
     assert response.status_code == 200
     assert response.json()["pan_brand"] == normalize_case("Debuyer")
     assert response.json()["pan_name"] == normalize_case("Test Pan")  # Non modifié
+
+@pytest.mark.django_db
+def test_volume_cm3_cache_is_returned(api_client, base_url):
+    """Vérifie que le champ `volume_cm3_cache` est bien présent et exact dans la réponse API"""
+    data = {"pan_type": "CUSTOM", "volume_raw": 1.4, "unit": "L", "pan_name": "volume test"}
+    response = api_client.post(base_url(model_name), data=data, format="json")
+    assert response.status_code == 201
+    assert "volume_cm3_cache" in response.json()
+    assert response.json()["volume_cm3_cache"] == 1400
