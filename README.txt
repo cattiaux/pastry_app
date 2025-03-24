@@ -236,3 +236,5 @@ nous devons leur offrir la possibilité de créer une **version adaptée**, sans
 
 Objectif :
 Ne jamais dupliquer inutilement les recettes en base mais permettre un système fluide d’adaptation personnalisée (à la manière de “forks” intelligents).
+
+### Ajout des allergènes dans une recette. Penser à la structure de données pour ça.
