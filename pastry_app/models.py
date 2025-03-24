@@ -293,7 +293,8 @@ class Recipe(models.Model):
     context_name = models.CharField(max_length=100, null=True, blank=True)
     source = models.CharField(max_length=255, null=True, blank=True)
     recipe_type = models.CharField(max_length=20, choices=RECIPE_TYPE_CHOICES, default="BASE")
-    servings = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
+    servings_min = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
+    servings_max = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
 
     # Relations
     categories = models.ManyToManyField(Category, through="RecipeCategory", related_name="recipes") 
@@ -322,17 +323,60 @@ class Recipe(models.Model):
             return f"{base} - {self.context_name}"
         return base
 
+    @property
+    def servings_avg(self):
+        if self.servings_min and self.servings_max:
+            return (self.servings_min + self.servings_max) / 2
+        if self.servings_min:
+            return self.servings_min
+        if self.servings_max:
+            return self.servings_max
+        return None
+
+    def _auto_fill_servings_from_pan(self):
+        if self.pan and self.pan.quantity:
+            if not self.servings_min:
+                self.servings_min = self.pan.quantity
+            if not self.servings_max:
+                self.servings_max = self.pan.quantity
+
+    def _validate_servings_range(self):
+        if self.servings_min and self.servings_max and self.servings_min > self.servings_max:
+            raise ValidationError("Le nombre de portions minimum ne peut pas être supérieur au maximum.")
+    
     def clean(self):
         """ Vérifications métier avant sauvegarde. """
         # Validation basique
+        if not self.recipe_name or len(self.recipe_name.strip()) < 3:
+            raise ValidationError("Le nom de la recette doit contenir au moins 3 caractères.")
+        if not self.chef_name or len(self.chef_name.strip()) < 3:
+            raise ValidationError("Le nom du chef doit contenir au moins 3 caractères.")
         if not self.recipe_name:
             raise ValidationError("Le nom de la recette est obligatoire.")
+        if self.servings is not None and self.servings < 1:
+            raise ValidationError("Le nombre de portions doit être strictement supérieur à 0.")
+        if self.description and len(self.description.strip()) < 10:
+            raise ValidationError("La description doit contenir au moins 10 caractères.")
+        if self.trick and len(self.trick.strip()) < 10:
+            raise ValidationError("L’astuce (trick) doit contenir au moins 10 caractères.")
+        if self.context_name and len(self.context_name.strip()) < 3:
+            raise ValidationError("Le contexte doit contenir au moins 3 caractères.")
+        if self.source and len(self.source.strip()) < 3:
+            raise ValidationError("La source doit contenir au moins 3 caractères.")
+        self._validate_servings_range()
+        self._auto_fill_servings_from_pan()
 
         # Normalisation
         self.recipe_name = normalize_case(self.recipe_name)
         self.chef_name = normalize_case(self.chef_name)
 
-        # Boucle directe
+        # Si un seul servings fourni, l’autre est copié automatiquement
+        if self.servings_min and not self.servings_max:
+            self.servings_max = self.servings_min
+        if self.servings_max and not self.servings_min:
+            self.servings_min = self.servings_max
+
+        # Anti boucle directe
         if self.parent_recipe and self.parent_recipe == self:
             raise ValidationError("Une recette ne peut pas être sa propre version précédente.")
 

@@ -5,7 +5,6 @@ from django.utils.timezone import now
 from .models import *
 from .constants import UNIT_CHOICES
 from pastry_app.tests.utils import normalize_case
-# from .utils import update_related_instances
 
 class StoreSerializer(serializers.ModelSerializer):
     """ Sérialise les magasins où sont vendus les ingrédients. """
@@ -437,65 +436,169 @@ class SubRecipeSerializer(serializers.ModelSerializer):
         return data
 
 class RecipeSerializer(serializers.ModelSerializer):
-    ingredients = RecipeIngredientSerializer(source='recipeingredient_set', many=True)
-    sub_recipes = SubRecipeSerializer(source='subrecipe_set', many=True)
-    steps = RecipeStepSerializer(source='recipestep_set', many=True)
-    pan = serializers.PrimaryKeyRelatedField(queryset=Pan.objects.all(), allow_null=True)
+    # Champs simples
+    recipe_name = serializers.CharField()
+    chef_name = serializers.CharField()
+    context_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    source = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    trick = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    image = serializers.ImageField(required=False, allow_null=True)
+    servings_min = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    servings_max = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+
+    # Relations simples
+    pan = serializers.PrimaryKeyRelatedField(queryset=Pan.objects.all(), allow_null=True, required=False)
+    parent_recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), allow_null=True, required=False)
+    categories = serializers.PrimaryKeyRelatedField(many=True, queryset=Recipe.categories.rel.model.objects.all(), required=False)
+    labels = serializers.PrimaryKeyRelatedField(many=True, queryset=Recipe.labels.rel.model.objects.all(), required=False)
+    ingredients = RecipeIngredientSerializer(many=True, required=False)
+    steps = RecipeStepSerializer(many=True, required=False)
+    sub_recipes = SubRecipeSerializer(many=True, required=False)
 
     class Meta:
         model = Recipe
-        fields = ['recipe_name', 'chef', 'ingredients', 'steps', 'sub_recipes', 'default_volume', 'default_servings', 'pan']
-    
-    # def validate_pan(self, value):
-    #     if isinstance(value, Pan):
-    #         value = value.id
-    #     if not (Pan.objects.filter(id=value).exists() or RoundPan.objects.filter(id=value).exists() or SquarePan.objects.filter(id=value).exists()):
-    #         raise serializers.ValidationError("Invalid pan ID.")
-    #     return value
+        fields = ["id", 
+                  "recipe_name", "chef_name", "context_name", 
+                  "source", "recipe_type", "parent_recipe", 
+                  "servings", "description", "trick", "image", 
+                  "pan", "categories", "labels", "ingredients", "steps", "sub_recipes", 
+                  "created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at"]    
 
-    # def create(self, validated_data):
-    #     ingredients_data = validated_data.pop('recipeingredient_set')
-    #     steps_data = validated_data.pop('recipestep_set', [])
-    #     sub_recipes_data = validated_data.pop('subrecipe_set', [])
-    #     pan_id = validated_data.pop('pan', None)
-    #     if pan_id is not None:
-    #         validated_data['pan'] = Pan.objects.get(id=pan_id)
-    #     recipe = Recipe.objects.create(**validated_data)
+    def to_internal_value(self, data):
+        data = data.copy()
+        if "recipe_name" in data:
+            data["recipe_name"] = normalize_case(data["recipe_name"])
+        if "chef_name" in data:
+            data["chef_name"] = normalize_case(data["chef_name"])
+        return super().to_internal_value(data)
 
-    #     for ingredient_data in ingredients_data:
-    #         ingredient_data['ingredient'] = ingredient_data['ingredient'].id
-    #         ingredient_serializer = RecipeIngredientSerializer(data=ingredient_data)
-    #         if ingredient_serializer.is_valid():
-    #             RecipeIngredient.objects.create(recipe=recipe, **ingredient_serializer.validated_data)
-    #         else:
-    #             raise serializers.ValidationError(ingredient_serializer.errors)
+    def validate_recipe_name(self, value):
+        if len(value.strip()) < 3:
+            raise serializers.ValidationError("Le nom de la recette doit contenir au moins 3 caractères.")
+        return value
 
-    #     for step_data in steps_data:
-    #         RecipeStep.objects.create(recipe=recipe, **step_data)
+    def validate_chef_name(self, value):
+        if len(value.strip()) < 3:
+            raise serializers.ValidationError("Le nom du chef doit contenir au moins 3 caractères.")
+        return value
 
-    #     for sub_recipe_data in sub_recipes_data:
-    #         SubRecipe.objects.create(recipe=recipe, **sub_recipe_data)
+    def validate_description(self, value):
+        if value and len(value.strip()) < 10:
+            raise serializers.ValidationError("Merci de renseigner une description plus complète.")
+        return value
 
-    #     return recipe
+    def validate_trick(self, value):
+        if value and len(value.strip()) < 5:
+            raise serializers.ValidationError("Merci de renseigner une astuce plus détaillée.")
+        return value
 
-    # def update(self, instance, validated_data):
-    #     ingredients_data = validated_data.pop('recipeingredient_set', [])
-    #     steps_data = validated_data.pop('recipestep_set', [])
-    #     sub_recipes_data = validated_data.pop('subrecipe_set', [])
+    def validate_context_name(self, value):
+        if value and len(value.strip()) < 3:
+            raise serializers.ValidationError("Le contexte doit contenir au moins 3 caractères.")
+        return value
 
-    #     instance.recipe_name = validated_data.get('recipe_name', instance.recipe_name)
-    #     instance.chef = validated_data.get('chef', instance.chef)
-    #     instance.default_volume = validated_data.get('default_volume', instance.default_volume)
-    #     instance.default_servings = validated_data.get('default_servings', instance.default_servings)
-    #     pan_id = validated_data.get('pan', instance.pan.id if instance.pan else None)
-    #     instance.pan = Pan.objects.get(id=pan_id) if pan_id else None
-    #     instance.save()
+    def validate_source(self, value):
+        if value and len(value.strip()) < 3:
+            raise serializers.ValidationError("La source doit contenir au moins 3 caractères.")
+        return value
 
-    #     update_related_instances(instance, ingredients_data, 'recipeingredient_set', RecipeIngredient, RecipeIngredientSerializer, "recipe")
-    #     update_related_instances(instance, steps_data, 'recipestep_set', RecipeStep, RecipeStepSerializer, "recipe")
-    #     update_related_instances(instance, sub_recipes_data, 'subrecipe_set', SubRecipe, SubRecipeSerializer, "recipe")
+    def validate(self, data):
+        parent = data.get("parent_recipe")
+        rtype = data.get("recipe_type", getattr(self.instance, "recipe_type", "BASE"))
 
-    #     return instance
+        if parent and parent == self.instance:
+            raise serializers.ValidationError("Une recette ne peut pas être sa propre version précédente.")
+
+        if parent and rtype != "VARIATION":
+            raise serializers.ValidationError("Une recette avec un parent doit être de type VARIATION.")
+        if rtype == "VARIATION" and not parent:
+            raise serializers.ValidationError("Une recette de type VARIATION doit avoir une parent_recipe.")
+
+        min_val = data.get("servings_min")
+        max_val = data.get("servings_max")
+        if min_val and max_val and min_val > max_val:
+            raise serializers.ValidationError("Le nombre de portions minimum ne peut pas être supérieur au maximum.")
+
+        # Vérification du contenu minimum (à la création uniquement)
+        if not self.instance:
+            ingredients = data.get("ingredients", [])
+            sub_recipes = data.get("sub_recipes", [])
+            steps = data.get("steps", [])
+
+            if not (ingredients or sub_recipes):
+                raise serializers.ValidationError("Une recette doit contenir au moins un ingrédient ou une sous-recette.")
+            if not (steps or sub_recipes):
+                raise serializers.ValidationError("Une recette doit contenir au moins une étape ou une sous-recette.")
+
+        # Boucle indirecte
+        def has_cyclic_parent(instance, new_parent):
+            current = new_parent
+            while current:
+                if current == instance:
+                    return True
+                current = current.parent_recipe
+            return False
+
+        if parent and self.instance and has_cyclic_parent(self.instance, parent):
+            raise serializers.ValidationError("Cycle détecté dans les versions de recette.")
+
+        if parent and rtype != "VARIATION":
+            raise serializers.ValidationError("Une recette avec une parent_recipe doit être de type VARIATION.")
+        if rtype == "VARIATION" and not parent:
+            raise serializers.ValidationError("Une recette de type VARIATION doit avoir une parent_recipe.")
+
+        return data
+
+    def create(self, validated_data):
+        ingredients_data = validated_data.pop("ingredients", [])
+        steps_data = validated_data.pop("steps", [])
+        subrecipes_data = validated_data.pop("sub_recipes", [])
+        categories = validated_data.pop("categories", [])
+        labels = validated_data.pop("labels", [])
+
+        recipe = Recipe.objects.create(**validated_data)
+        recipe.categories.set(categories)
+        recipe.labels.set(labels)
+
+        for ingredient in ingredients_data:
+            RecipeIngredient.objects.create(recipe=recipe, **ingredient)
+        for step in steps_data:
+            RecipeStep.objects.create(recipe=recipe, **step)
+        for sub in subrecipes_data:
+            SubRecipe.objects.create(recipe=recipe, **sub)
+
+        return recipe
+
+    def update(self, instance, validated_data):
+        ingredients_data = validated_data.pop("ingredients", [])
+        steps_data = validated_data.pop("steps", [])
+        subrecipes_data = validated_data.pop("sub_recipes", [])
+        categories = validated_data.pop("categories", None)
+        labels = validated_data.pop("labels", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if categories is not None:
+            instance.categories.set(categories)
+        if labels is not None:
+            instance.labels.set(labels)
+
+        instance.ingredients.all().delete()
+        instance.steps.all().delete()
+        instance.subrecipes.all().delete()
+
+        for ingredient in ingredients_data:
+            RecipeIngredient.objects.create(recipe=instance, **ingredient)
+        for step in steps_data:
+            RecipeStep.objects.create(recipe=instance, **step)
+        for sub in subrecipes_data:
+            SubRecipe.objects.create(recipe=instance, **sub)
+
+        return instance
 
 class PanSerializer(serializers.ModelSerializer):
     pan_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)

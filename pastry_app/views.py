@@ -129,8 +129,15 @@ class IngredientPriceHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ["ingredient__ingredient_name"]
     
 class RecipeViewSet(viewsets.ModelViewSet):
-    queryset = Recipe.objects.all()
+    queryset = Recipe.objects.all().prefetch_related(
+        "categories", "labels", "ingredients", "steps", "subrecipes"
+    ).select_related("pan", "parent_recipe")
     serializer_class = RecipeSerializer
+    permission_classes = [AllowAny]
+
+    filter_backends = [SearchFilter, DjangoFilterBackend]
+    search_fields = ["recipe_name", "chef_name", "context_name"]
+    filterset_fields = ["recipe_type", "chef_name", "categories", "labels", "pan"]
 
     def destroy(self, request, *args, **kwargs):
         """ Empêche la suppression d'une recette utilisée comme sous-recette """
