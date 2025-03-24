@@ -31,7 +31,7 @@ class Pan(models.Model):
     pan_name = models.CharField(max_length=200, unique=True, blank=True, null=True)
     pan_type = models.CharField(max_length=20, choices=PAN_TYPE_CHOICES)
     pan_brand = models.CharField(max_length=100, blank=True, null=True)
-    number_of_pans = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
+    units_in_mold = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
 
     # Dimensions pour ROUND
     diameter = models.FloatField(validators=[MinValueValidator(0.1)], blank=True, null=True)
@@ -44,6 +44,7 @@ class Pan(models.Model):
 
     # Volume manuel pour les CUSTOM
     volume_raw = models.FloatField(validators=[MinValueValidator(1)], blank=True, null=True)
+    is_total_volume = models.BooleanField(default=False, help_text="True si volume_raw est le volume total (toutes empreintes confondues), False si c'est le volume unitaire.")
     unit = models.CharField(max_length=4, choices=UNIT_CHOICES, blank=True, null=True)
 
     # Cache du volume (mis à jour à chaque save)
@@ -65,7 +66,10 @@ class Pan(models.Model):
         elif self.pan_type == 'RECTANGLE':
             return self.length * self.width * self.rect_height
         elif self.pan_type == 'CUSTOM':
-            return self.volume_raw * 1000 if self.unit == 'L' else self.volume_raw
+            volume = self.volume_raw * 1000 if self.unit == 'L' else self.volume_raw
+            if not self.is_total_volume and self.units_in_mold:
+                volume *= self.units_in_mold
+            return volume
         return None
 
     def generate_default_name(self):
@@ -295,6 +299,8 @@ class Recipe(models.Model):
     recipe_type = models.CharField(max_length=20, choices=RECIPE_TYPE_CHOICES, default="BASE")
     servings_min = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
     servings_max = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
+    pan_quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)], 
+                                               help_text="Nombre d'exemplaires de ce moule utilisés dans cette recette (ex: 6 cercles individuels).")
 
     # Relations
     categories = models.ManyToManyField(Category, through="RecipeCategory", related_name="recipes") 
@@ -334,11 +340,26 @@ class Recipe(models.Model):
         return None
 
     def _auto_fill_servings_from_pan(self):
-        if self.pan and self.pan.quantity:
-            if not self.servings_min:
-                self.servings_min = self.pan.quantity
-            if not self.servings_max:
-                self.servings_max = self.pan.quantity
+        """Tente de deviner le nombre de portions si un pan est présent mais pas les servings renseignés."""
+        if not self.pan:
+            return
+
+        if self.servings_min and not self.servings_max:
+            self.servings_max = self.servings_min
+        elif self.servings_max and not self.servings_min:
+            self.servings_min = self.servings_max
+        elif not self.servings_min and not self.servings_max:
+            # Si aucun des deux n'est renseigné, on utilise le nombre de cavités du moule utilisé
+            if self.pan.units_in_mold and self.pan_quantity:
+                # cas : 1 cercle individuel utilisé 5 fois => 5 portions
+                self.servings_min = self.pan.units_in_mold * self.pan_quantity
+                self.servings_max = self.servings_min
+            elif self.pan.units_in_mold:
+                self.servings_min = self.pan.units_in_mold
+                self.servings_max = self.pan.units_in_mold
+            elif self.pan_quantity:
+                self.servings_min = self.pan_quantity
+                self.servings_max = self.pan_quantity
 
     def _validate_servings_range(self):
         if self.servings_min and self.servings_max and self.servings_min > self.servings_max:

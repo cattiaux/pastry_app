@@ -490,7 +490,7 @@ class RecipeSerializer(serializers.ModelSerializer):
         return value
 
     def validate_trick(self, value):
-        if value and len(value.strip()) < 5:
+        if value and len(value.strip()) < 10:
             raise serializers.ValidationError("Merci de renseigner une astuce plus détaillée.")
         return value
 
