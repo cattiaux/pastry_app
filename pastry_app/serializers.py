@@ -604,12 +604,12 @@ class PanSerializer(serializers.ModelSerializer):
     pan_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     pan_brand = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     volume_cm3 = serializers.FloatField(read_only=True)  # expose le volume calculé, non modifiable
-    number_of_pans = serializers.IntegerField(min_value=1, required=False, default=1)
+    units_in_mold = serializers.IntegerField(min_value=1, required=False, default=1)
 
     class Meta:
         model = Pan
         fields = [
-            "id", "pan_name", "pan_type", "pan_brand", 'number_of_pans',
+            "id", "pan_name", "pan_type", "pan_brand", 'units_in_mold',
             "diameter", "height",
             "length", "width", "rect_height",
             "volume_raw", "unit",
@@ -649,15 +649,27 @@ class PanSerializer(serializers.ModelSerializer):
             for field in ["diameter", "height"]:
                 if not data.get(field) and not getattr(self.instance, field, None):
                     raise serializers.ValidationError({field: "Ce champ est requis pour un moule rond."})
+            for forbidden in ["length", "width", "rect_height", "volume_raw", "unit"]:
+                if data.get(forbidden) is not None:
+                    raise serializers.ValidationError({forbidden: "Ce champ n'est pas autorisé pour un moule rond."})
+
         elif pan_type == "RECTANGLE":
             for field in ["length", "width", "rect_height"]:
                 if not data.get(field) and not getattr(self.instance, field, None):
                     raise serializers.ValidationError({field: "Ce champ est requis pour un moule rectangulaire."})
+            for forbidden in ["diameter", "height", "volume_raw", "unit"]:
+                if data.get(forbidden) is not None:
+                    raise serializers.ValidationError({forbidden: "Ce champ n'est pas autorisé pour un moule rectangulaire."})
+
         elif pan_type == "CUSTOM":
             if not data.get("volume_raw") and not getattr(self.instance, "volume_raw", None):
                 raise serializers.ValidationError({"volume_raw": "Volume requis pour un moule personnalisé."})
             if not data.get("unit") and not getattr(self.instance, "unit", None):
                 raise serializers.ValidationError({"unit": "Unité requise pour un moule personnalisé."})
+            for forbidden in ["diameter", "height", "length", "width", "rect_height"]:
+                if data.get(forbidden) is not None:
+                    raise serializers.ValidationError({forbidden: "Ce champ n'est pas autorisé pour un moule personnalisé."})
+
         else:
             raise serializers.ValidationError({"pan_type": "Type de moule invalide."})
 

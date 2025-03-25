@@ -5,12 +5,12 @@ from pastry_app.tests.base_api_test import api_client, base_url
 from pastry_app.models import Pan
 
 model_name = "pans"
+pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def pan(db):
-    return Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="Mon Moule", number_of_pans=3)
+    return Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="Mon Moule", units_in_mold=3)
 
-@pytest.mark.django_db
 @pytest.mark.parametrize("field_name", ["pan_type", "unit"])
 def test_choices_validation_pan_api(api_client, base_url, field_name):
     """Vérifie que seuls les choix valides sont acceptés pour certains champs"""
@@ -21,7 +21,6 @@ def test_choices_validation_pan_api(api_client, base_url, field_name):
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert field_name in response.json()
 
-@pytest.mark.django_db
 @pytest.mark.parametrize("field_name", ["pan_type", "volume_raw", "unit"])
 def test_required_fields_pan_api(api_client, base_url, field_name):
     """Vérifie que les champs obligatoires sont bien requis selon le type"""
@@ -30,14 +29,12 @@ def test_required_fields_pan_api(api_client, base_url, field_name):
     base_data.pop(field_name)
     validate_constraint_api(api_client, base_url, model_name, field_name, expected_errors, **base_data)
 
-@pytest.mark.django_db
 def test_unique_constraint_api(api_client, base_url):
     """Vérifie que le champ `pan_name` est unique via l'API (même après normalisation)"""
     valid_data = {"pan_type": "CUSTOM", "volume_raw": 800, "unit": "cm3", "pan_name": "mon moule"}
     response = validate_unique_constraint_api(api_client, base_url, model_name, "pan_name", create_initiate=False, **valid_data)
     assert "pan_name" in response.json()
 
-@pytest.mark.django_db
 @pytest.mark.parametrize("field_name, raw_value", [
     ("pan_name", "  Mon Moule  "),
     ("pan_brand", "  DEBUYER  ")
@@ -51,7 +48,6 @@ def test_normalized_fields_pan_api(api_client, base_url, field_name, raw_value):
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()[field_name] == normalize_case(raw_value)
 
-@pytest.mark.django_db
 @pytest.mark.parametrize("field_name", ["pan_name", "pan_brand"])
 def test_min_length_fields_api(api_client, base_url, field_name):
     url = base_url(model_name)
@@ -61,7 +57,6 @@ def test_min_length_fields_api(api_client, base_url, field_name):
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert field_name in response.json()
 
-@pytest.mark.django_db
 @pytest.mark.parametrize("invalid_combo, expected_error", [
     ({"pan_type": "ROUND", "height": 4}, "requis pour un moule rond"),
     ({"pan_type": "ROUND", "diameter": 16}, "requis pour un moule rond"),
@@ -78,7 +73,6 @@ def test_clean_validation_errors_pan_api(api_client, base_url, invalid_combo, ex
     flat_messages = " ".join([msg for messages in response.json().values() for msg in messages])
     assert expected_error.lower() in flat_messages.lower()
 
-@pytest.mark.django_db
 def test_update_to_duplicate_name_api(api_client, base_url):
     """Vérifie qu'on ne peut PAS modifier un Pan pour lui attribuer un nom déjà existant"""
     pan1 = Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="Original")
@@ -88,7 +82,6 @@ def test_update_to_duplicate_name_api(api_client, base_url):
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "pan_name" in response.json()
 
-@pytest.mark.django_db
 def test_read_only_volume_cm3_api(api_client, base_url):
     url = base_url(model_name)
     data = {"pan_type": "CUSTOM", "volume_raw": 1000, "unit": "cm3", "volume_cm3": 9999} # tentative d'écrasement
@@ -97,7 +90,6 @@ def test_read_only_volume_cm3_api(api_client, base_url):
     assert response.json()["volume_cm3"] != 9999
     assert response.json()["volume_cm3"] == 1000
 
-@pytest.mark.django_db
 @pytest.mark.parametrize("pan_type, field_name, invalid_value", [
     ("ROUND", "diameter", 0),
     ("ROUND", "height", 0),
@@ -123,11 +115,10 @@ def test_min_value_constraints_api(api_client, base_url, pan_type, field_name, i
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert field_name in response.json()
 
-@pytest.mark.django_db
 @pytest.mark.parametrize("pan_type, extra_fields, expected_error", [
-    ("ROUND", {"volume_raw": 1000}, "ne doit pas contenir de.*volume"),
-    ("RECTANGLE", {"diameter": 10}, "dimensions rondes"),
-    ("CUSTOM", {"length": 20}, "ne doit pas contenir de dimensions rondes ou rectangulaires"),
+    ("ROUND", {"volume_raw": 1000}, "Ce champ n'est pas autorisé pour un moule rond."),
+    ("RECTANGLE", {"diameter": 10}, "Ce champ n'est pas autorisé pour un moule rectangulaire."),
+    ("CUSTOM", {"length": 20}, "Ce champ n'est pas autorisé pour un moule personnalisé."),
 ])
 def test_post_exclusive_fields_pan_api(api_client, base_url, pan_type, extra_fields, expected_error):
     """Vérifie que l’API rejette les données incohérentes entre type et champs utilisés"""
@@ -140,19 +131,18 @@ def test_post_exclusive_fields_pan_api(api_client, base_url, pan_type, extra_fie
     valid_base["pan_type"] = pan_type
     response = api_client.post(url, data=json.dumps(valid_base), content_type="application/json")
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert re.search(expected_error.lower(), json.dumps(response.json()).lower())
+    flat_messages = " ".join(msg for field_errors in response.json().values() for msg in field_errors)
+    assert expected_error.lower() in flat_messages.lower()
 
-@pytest.mark.django_db
 def test_patch_exclusive_fields_pan_api(api_client, base_url):
     """Vérifie qu’on ne peut pas PATCH un Pan pour lui ajouter un champ incohérent avec son type"""
     pan = Pan.objects.create(pan_type="ROUND", diameter=16, height=5)
     url = base_url(model_name) + f"{pan.id}/"
     patch_data = {"volume_raw": 1000}  # volume pas autorisé pour ROUND
-    response = api_client.patch(url, data=json.dumps(patch_data), content_type="application/json")
+    response = api_client.patch(url, data=patch_data, format="json")
     assert response.status_code == 400
     assert "volume" in json.dumps(response.json()).lower()
 
-@pytest.mark.django_db
 def test_patch_partial_fields_api(api_client, base_url):
     """Vérifie qu’un PATCH partiel est accepté et ne casse pas les champs non fournis"""
     pan = Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="Test Pan")
@@ -163,7 +153,6 @@ def test_patch_partial_fields_api(api_client, base_url):
     assert response.json()["pan_brand"] == normalize_case("Debuyer")
     assert response.json()["pan_name"] == normalize_case("Test Pan")  # Non modifié
 
-@pytest.mark.django_db
 def test_volume_cm3_cache_is_returned(api_client, base_url):
     """Vérifie que le champ `volume_cm3_cache` est bien présent et exact dans la réponse API"""
     data = {"pan_type": "CUSTOM", "volume_raw": 1.4, "unit": "L", "pan_name": "volume test"}
@@ -172,17 +161,31 @@ def test_volume_cm3_cache_is_returned(api_client, base_url):
     assert "volume_cm3_cache" in response.json()
     assert response.json()["volume_cm3_cache"] == 1400
 
-@pytest.mark.django_db
 @pytest.mark.parametrize("value", [0, -2])
-def test_number_of_pans_validation_api(api_client, base_url, value):
-    data = {"pan_type": "CUSTOM", "volume_raw": 1000, "unit": "cm3", "number_of_pans": value}
+def test_units_in_mold_validation_api(api_client, base_url, value):
+    data = {"pan_type": "CUSTOM", "volume_raw": 1000, "unit": "cm3", "units_in_mold": value}
     response = api_client.post(base_url(model_name), data=data, format="json")
     assert response.status_code == 400
-    assert "number_of_pans" in response.json()
+    assert "units_in_mold" in response.json()
 
-@pytest.mark.django_db
-def test_number_of_pans_default_api(api_client, base_url):
+def test_units_in_mold_default_api(api_client, base_url):
     data = {"pan_type": "CUSTOM", "volume_raw": 1000, "unit": "cm3"}
     response = api_client.post(base_url(model_name), data=data, format="json")
     assert response.status_code == 201
-    assert response.json()["number_of_pans"] == 1
+    assert response.json()["units_in_mold"] == 1
+
+def test_api_auto_removes_fields_when_type_changes(api_client, base_url):
+    """Vérifie que les champs incompatibles avec un type sont ignorés automatiquement (API)"""
+    url = base_url(model_name)
+    data = {"pan_type": "CUSTOM", "volume_raw": 1000, "unit": "cm3", "pan_name": "Test custom"}
+    response = api_client.post(url, data=json.dumps(data), content_type="application/json")
+    assert response.status_code == 201
+
+    pan_data = response.json()
+    assert pan_data["pan_type"] == "CUSTOM"
+    # Vérifie que les champs en trop ne sont pas présents ou sont null
+    assert pan_data["diameter"] is None
+    assert pan_data["height"] is None
+    assert pan_data["length"] is None
+    assert pan_data["width"] is None
+    assert pan_data["rect_height"] is None

@@ -90,6 +90,27 @@ class Pan(models.Model):
         if self.pan_brand:
             self.pan_brand = normalize_case(self.pan_brand)
 
+        # Nettoyage des champs incohérents selon le type
+        if self.pan_type == 'ROUND':
+            self.length = None
+            self.width = None
+            self.rect_height = None
+            self.volume_raw = None
+            self.unit = None
+
+        elif self.pan_type == 'RECTANGLE':
+            self.diameter = None
+            self.height = None
+            self.volume_raw = None
+            self.unit = None
+
+        elif self.pan_type == 'CUSTOM':
+            self.diameter = None
+            self.height = None
+            self.length = None
+            self.width = None
+            self.rect_height = None
+
         # Validations texte
         if self.pan_name and len(self.pan_name) < 2:
             raise ValidationError("Le nom du moule doit contenir au moins 2 caractères.")
@@ -374,8 +395,7 @@ class Recipe(models.Model):
             raise ValidationError("Le nom du chef doit contenir au moins 3 caractères.")
         if not self.recipe_name:
             raise ValidationError("Le nom de la recette est obligatoire.")
-        if self.servings is not None and self.servings < 1:
-            raise ValidationError("Le nombre de portions doit être strictement supérieur à 0.")
+
         if self.description and len(self.description.strip()) < 10:
             raise ValidationError("La description doit contenir au moins 10 caractères.")
         if self.trick and len(self.trick.strip()) < 10:
@@ -384,12 +404,25 @@ class Recipe(models.Model):
             raise ValidationError("Le contexte doit contenir au moins 3 caractères.")
         if self.source and len(self.source.strip()) < 3:
             raise ValidationError("La source doit contenir au moins 3 caractères.")
+        
+        # Servings doivent être positifs si renseignés
+        if self.servings_min is not None and self.servings_min < 1:
+            raise ValidationError("Le nombre minimal de portions doit être supérieur à 0.")
+        if self.servings_max is not None and self.servings_max < 1:
+            raise ValidationError("Le nombre maximal de portions doit être supérieur à 0.")
+        if self.servings_min and self.servings_max and self.servings_min > self.servings_max:
+            raise ValidationError("Le nombre minimal de portions ne peut pas être supérieur au nombre maximal.")
+
         self._validate_servings_range()
         self._auto_fill_servings_from_pan()
 
         # Normalisation
         self.recipe_name = normalize_case(self.recipe_name)
         self.chef_name = normalize_case(self.chef_name)
+        if self.context_name:
+            self.context_name = normalize_case(self.context_name)
+        if self.source:
+            self.source = normalize_case(self.source)
 
         # Si un seul servings fourni, l’autre est copié automatiquement
         if self.servings_min and not self.servings_max:
@@ -417,16 +450,15 @@ class Recipe(models.Model):
         if not self.id:  # Si la recette n'existe pas encore en base, on ne peut pas vérifier
             return
 
-        # Une recette doit avoir au moins un ingrédient OU une sous-recette
+        # Une recette doit avoir au moins (un ingrédient OU une sous-recette) ET au moins une étape 
         has_ingredients = self.recipe_ingredients.exists()
-        has_subrecipes = self.subrecipes.exists()
+        has_subrecipes = self.main_recipes.exists()
+        has_steps = self.steps.exists()
         if not (has_ingredients or has_subrecipes):
             raise ValidationError("Une recette doit contenir au moins un ingrédient ou une sous-recette.")
-
-        # Une recette doit avoir au moins une étape OU une sous-recette
-        has_steps = self.steps.exists()
-        if not (has_steps or has_subrecipes):
-            raise ValidationError("Une recette doit contenir au moins une étape ou une sous-recette.")
+        # Une recette doit avoir au moins une étape
+        if not has_steps:
+            raise ValidationError("Une recette doit contenir au moins une étape.")
     
     def save(self, *args, **kwargs):
         self.full_clean()
