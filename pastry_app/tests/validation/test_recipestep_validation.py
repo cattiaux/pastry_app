@@ -11,7 +11,7 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def recipe():
     """Crée une recette par défaut pour tester les RecipeStep."""
-    return Recipe.objects.create(recipe_name="Tarte aux fraises")
+    return Recipe.objects.create(recipe_name="Tarte aux fraises", chef_name="Martin")
 
 @pytest.fixture
 def recipestep(recipe):

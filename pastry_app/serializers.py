@@ -357,7 +357,7 @@ class RecipeStepSerializer(serializers.ModelSerializer):
     class Meta:
         model = RecipeStep
         fields = ['id', 'recipe', 'step_number', 'instruction', 'trick']
-        extra_kwargs = {"recipe": {"read_only": True},}  # Une fois l'étape ajoutée, elle ne peut pas être déplacée
+        # extra_kwargs = {"recipe": {"read_only": True},}  # Une fois l'étape ajoutée, elle ne peut pas être déplacée
 
     def validate_instruction(self, value):
         """ Vérifie que l'instruction contient au moins 5 caractères. """
@@ -365,18 +365,19 @@ class RecipeStepSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("L'instruction doit contenir au moins 5 caractères.")
         return value
 
-    def validate_step_number(self, value):
-        """ Vérifie que `step_number` est bien consécutif. """
-        if value is None:  # Éviter la comparaison `None > int`
-            return value 
-        
-        recipe = self.initial_data.get("recipe")  # Récupérer la recette envoyée
-        if recipe:
-            last_step = RecipeStep.objects.filter(recipe=recipe).aggregate(Max("step_number"))["step_number__max"]
-            if last_step is not None and value > last_step + 1:
-                raise serializers.ValidationError("Step numbers must be consecutive.")
-        return value
+    def validate(self, data):
+        """Vérifie que `step_number` est consécutif."""
+        recipe = data.get("recipe")
+        step_number = data.get("step_number")
 
+        if recipe and step_number is not None:
+            last_step = RecipeStep.objects.filter(recipe=recipe).aggregate(Max("step_number"))["step_number__max"]
+            if last_step is not None and step_number > last_step + 1:
+                raise serializers.ValidationError({
+                    "step_number": "Step numbers must be consecutive."
+                })
+        return data
+    
     def create(self, validated_data):
         """ Gère la création d'un `RecipeStep` en attribuant `step_number` automatiquement si nécessaire. """
         recipe = validated_data.get("recipe")
@@ -461,7 +462,7 @@ class RecipeSerializer(serializers.ModelSerializer):
         fields = ["id", 
                   "recipe_name", "chef_name", "context_name", 
                   "source", "recipe_type", "parent_recipe", 
-                  "servings", "description", "trick", "image", 
+                  "servings_min", "servings_max", "description", "trick", "image", 
                   "pan", "categories", "labels", "ingredients", "steps", "sub_recipes", 
                   "created_at", "updated_at"]
         read_only_fields = ["created_at", "updated_at"]    
@@ -486,12 +487,12 @@ class RecipeSerializer(serializers.ModelSerializer):
 
     def validate_description(self, value):
         if value and len(value.strip()) < 10:
-            raise serializers.ValidationError("Merci de renseigner une description plus complète.")
+            raise serializers.ValidationError("doit contenir au moins 10 caractères.")
         return value
 
     def validate_trick(self, value):
         if value and len(value.strip()) < 10:
-            raise serializers.ValidationError("Merci de renseigner une astuce plus détaillée.")
+            raise serializers.ValidationError("doit contenir au moins 10 caractères.")
         return value
 
     def validate_context_name(self, value):
