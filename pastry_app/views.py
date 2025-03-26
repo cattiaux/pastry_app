@@ -130,8 +130,8 @@ class IngredientPriceHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     
 class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Recipe.objects.all().prefetch_related(
-        "categories", "labels", "ingredients", "steps", "subrecipes"
-    ).select_related("pan", "parent_recipe")
+        "categories", "labels", "recipe_ingredients", "steps", "main_recipes"
+        ).select_related("pan", "parent_recipe")
     serializer_class = RecipeSerializer
     permission_classes = [AllowAny]
 

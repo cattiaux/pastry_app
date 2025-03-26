@@ -2,9 +2,11 @@ from rest_framework import serializers
 from django.db import IntegrityError
 from django.db.models import Max
 from django.utils.timezone import now
+from django.db.models.signals import pre_delete
 from .models import *
 from .constants import UNIT_CHOICES
 from pastry_app.tests.utils import normalize_case
+from pastry_app.models import prevent_deleting_last_step
 
 class StoreSerializer(serializers.ModelSerializer):
     """ Sérialise les magasins où sont vendus les ingrédients. """
@@ -321,14 +323,21 @@ class IngredientSerializer(serializers.ModelSerializer):
         return representation
 
 class RecipeIngredientSerializer(serializers.ModelSerializer):
-    recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all())
+    recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), required=False)
     ingredient = serializers.PrimaryKeyRelatedField(queryset=Ingredient.objects.all())
     unit = serializers.ChoiceField(choices=UNIT_CHOICES)
+    display_name = serializers.CharField(read_only=True)
 
     class Meta:
         model = RecipeIngredient
         fields = ['id', 'recipe', 'ingredient', 'quantity', 'unit', 'display_name']
         extra_kwargs = {"recipe": {"read_only": True},}  # Une fois l'ingrédient ajouté à une recette, il ne peut pas être déplacé
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Si le serializer est nested (contexte parent serializer), on retire recipe
+        if self.context.get("is_nested", False):
+            self.fields.pop("recipe")
 
     def validate_quantity(self, value):
         """ Vérifie que la quantité est strictement positive. """
@@ -352,12 +361,18 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
         return data
     
 class RecipeStepSerializer(serializers.ModelSerializer):
+    recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), required=False)
     step_number = serializers.IntegerField(default=None, min_value=1)
 
     class Meta:
         model = RecipeStep
         fields = ['id', 'recipe', 'step_number', 'instruction', 'trick']
-        # extra_kwargs = {"recipe": {"read_only": True},}  # Une fois l'étape ajoutée, elle ne peut pas être déplacée
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Si le serializer est nested (contexte parent serializer), on retire recipe
+        if self.context.get("is_nested", False):
+            self.fields.pop("recipe")
 
     def validate_instruction(self, value):
         """ Vérifie que l'instruction contient au moins 5 caractères. """
@@ -397,13 +412,19 @@ class RecipeStepSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 class SubRecipeSerializer(serializers.ModelSerializer):
-    recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all())
+    recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), required=False)
     sub_recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all())
 
     class Meta:
         model = SubRecipe
         fields = ["id", "recipe", "sub_recipe", "quantity", "unit"]
         extra_kwargs = {"recipe": {"read_only": True},}  # La recette principale ne peut pas être modifiée
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Si le serializer est nested (contexte parent serializer), on retire recipe
+        if self.context.get("is_nested", False):
+            self.fields.pop("recipe")
 
     def validate_sub_recipe(self, value):
         """ Vérifie qu'une recette ne peut pas être sa propre sous-recette """
@@ -453,9 +474,9 @@ class RecipeSerializer(serializers.ModelSerializer):
     parent_recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), allow_null=True, required=False)
     categories = serializers.PrimaryKeyRelatedField(many=True, queryset=Recipe.categories.rel.model.objects.all(), required=False)
     labels = serializers.PrimaryKeyRelatedField(many=True, queryset=Recipe.labels.rel.model.objects.all(), required=False)
-    ingredients = RecipeIngredientSerializer(many=True, required=False)
-    steps = RecipeStepSerializer(many=True, required=False)
-    sub_recipes = SubRecipeSerializer(many=True, required=False)
+    ingredients = RecipeIngredientSerializer(many=True, required=False, context={"is_nested": True}, source="recipe_ingredients")
+    steps = RecipeStepSerializer(many=True, required=False, context={"is_nested": True})
+    sub_recipes = SubRecipeSerializer(many=True, required=False, context={"is_nested": True}, source="main_recipes")
 
     class Meta:
         model = Recipe
@@ -511,7 +532,6 @@ class RecipeSerializer(serializers.ModelSerializer):
 
         if parent and parent == self.instance:
             raise serializers.ValidationError("Une recette ne peut pas être sa propre version précédente.")
-
         if parent and rtype != "VARIATION":
             raise serializers.ValidationError("Une recette avec un parent doit être de type VARIATION.")
         if rtype == "VARIATION" and not parent:
@@ -522,10 +542,21 @@ class RecipeSerializer(serializers.ModelSerializer):
         if min_val and max_val and min_val > max_val:
             raise serializers.ValidationError("Le nombre de portions minimum ne peut pas être supérieur au maximum.")
 
+        # Validation d’unicité logique (soft-match insensible à la casse)
+        # Fusion champ par champ pour obtenir l'état final du triplet unique
+        name = normalize_case(data.get("recipe_name") or (self.instance and self.instance.recipe_name))
+        chef = normalize_case(data.get("chef_name") or (self.instance and self.instance.chef_name))
+        context = normalize_case(data.get("context_name") or (self.instance and self.instance.context_name))
+        recipe_id = self.instance.id if self.instance else None
+
+        # Si une autre recette a les mêmes valeurs → erreur
+        if Recipe.objects.exclude(id=recipe_id).filter(recipe_name__iexact=name, chef_name__iexact=chef, context_name__iexact=context).exists():
+            raise serializers.ValidationError("Une recette avec ce nom, ce chef et ce contexte existe déjà.")
+        
         # Vérification du contenu minimum (à la création uniquement)
         if not self.instance:
-            ingredients = data.get("ingredients", [])
-            sub_recipes = data.get("sub_recipes", [])
+            ingredients = data.get("recipe_ingredients", [])
+            sub_recipes = data.get("main_recipes", [])
             steps = data.get("steps", [])
 
             if not (ingredients or sub_recipes):
@@ -553,51 +584,81 @@ class RecipeSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        ingredients_data = validated_data.pop("ingredients", [])
+        # Extraction des sous-objets
+        ingredients_data = validated_data.pop("recipe_ingredients", [])
         steps_data = validated_data.pop("steps", [])
-        subrecipes_data = validated_data.pop("sub_recipes", [])
+        subrecipes_data = validated_data.pop("main_recipes", [])
         categories = validated_data.pop("categories", [])
         labels = validated_data.pop("labels", [])
 
+        # Création de la recette
         recipe = Recipe.objects.create(**validated_data)
         recipe.categories.set(categories)
         recipe.labels.set(labels)
 
-        for ingredient in ingredients_data:
-            RecipeIngredient.objects.create(recipe=recipe, **ingredient)
-        for step in steps_data:
-            RecipeStep.objects.create(recipe=recipe, **step)
-        for sub in subrecipes_data:
-            SubRecipe.objects.create(recipe=recipe, **sub)
+        # Création des ingrédients
+        RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=recipe, **ingredient) for ingredient in ingredients_data])
+        # Création des étapes
+        RecipeStep.objects.bulk_create([RecipeStep(recipe=recipe, **step) for step in steps_data])
+        # Création des sous-recettes via modèle intermédiaire
+        SubRecipe.objects.bulk_create([SubRecipe(recipe=recipe, **sub) for sub in subrecipes_data])
 
         return recipe
 
     def update(self, instance, validated_data):
-        ingredients_data = validated_data.pop("ingredients", [])
+        request = self.context.get("request")
+        is_partial = request.method == "PATCH" if request else False
+
+        # 1. Récupération des sous-objets et M2M fournis dans la requête
+        ingredients_data = validated_data.pop("recipe_ingredients", [])
         steps_data = validated_data.pop("steps", [])
-        subrecipes_data = validated_data.pop("sub_recipes", [])
+        subrecipes_data = validated_data.pop("main_recipes", [])
         categories = validated_data.pop("categories", None)
         labels = validated_data.pop("labels", None)
 
+        # 2. Mise à jour des champs simples
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
+        # 3. Mise à jour des M2M si fourni
         if categories is not None:
             instance.categories.set(categories)
         if labels is not None:
             instance.labels.set(labels)
 
-        instance.ingredients.all().delete()
-        instance.steps.all().delete()
-        instance.subrecipes.all().delete()
+        # 4. Remplacement total (PUT) ou partiel (PATCH)
+        if not is_partial:
+            # Vérification métier avant suppression
+            if not ingredients_data and not subrecipes_data:
+                raise serializers.ValidationError("Une recette doit contenir au moins un ingrédient ou une sous-recette.")
+            if not steps_data and not subrecipes_data:
+                raise serializers.ValidationError("Une recette doit contenir au moins une étape ou une sous-recette.")
 
-        for ingredient in ingredients_data:
-            RecipeIngredient.objects.create(recipe=instance, **ingredient)
-        for step in steps_data:
-            RecipeStep.objects.create(recipe=instance, **step)
-        for sub in subrecipes_data:
-            SubRecipe.objects.create(recipe=instance, **sub)
+            # Suppression totale
+            instance.recipe_ingredients.all().delete()
+            instance.main_recipes.all().delete()
+            pre_delete.disconnect(prevent_deleting_last_step, sender=RecipeStep)  # Déconnexion temporaire du signal
+            instance.steps.all().delete()
+            pre_delete.connect(prevent_deleting_last_step, sender=RecipeStep)  # Reconnexion du signal
+
+            # Re-création
+            RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=instance, **ingredient) for ingredient in ingredients_data])
+            RecipeStep.objects.bulk_create([RecipeStep(recipe=instance, **step) for step in steps_data])
+            SubRecipe.objects.bulk_create([SubRecipe(recipe=instance, **sub) for sub in subrecipes_data])
+        else:
+            # PATCH — supprimer uniquement ce qui est fourni
+            if ingredients_data:
+                instance.recipe_ingredients.all().delete()
+                RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=instance, **ingredient) for ingredient in ingredients_data])
+            if steps_data:
+                pre_delete.disconnect(prevent_deleting_last_step, sender=RecipeStep)  # Déconnexion temporaire du signal
+                instance.steps.all().delete()
+                pre_delete.connect(prevent_deleting_last_step, sender=RecipeStep)  # Reconnexion du signal
+                RecipeStep.objects.bulk_create([RecipeStep(recipe=instance, **step) for step in steps_data])
+            if subrecipes_data:
+                instance.main_recipes.all().delete()
+                SubRecipe.objects.bulk_create([SubRecipe(recipe=instance, **sub) for sub in subrecipes_data])
 
         return instance
 

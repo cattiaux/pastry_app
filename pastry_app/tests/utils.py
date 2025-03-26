@@ -30,7 +30,6 @@ def validate_constraint_api(api_client, base_url, model_name, field_name, expect
     """
     url = base_url(model_name)  # Récupérer l'URL de création de l'objet
     response = api_client.post(url, valid_data, format="json")  # Envoyer la requête POST
-    print(response.json())
     assert response.status_code == status.HTTP_400_BAD_REQUEST, f"Attendu 400, obtenu {response.status_code} : {response.json()}" # Vérifier que l'API renvoie bien une erreur 400
     assert field_name in response.json(), f"L'erreur pour `{field_name}` n'a pas été trouvée dans la réponse : {response.json()}" # Vérifier que l'erreur est bien retournée sur le bon champ
     
@@ -102,7 +101,6 @@ def validate_unique_constraint_api(api_client, base_url, model_name, field_name,
 
     # Tentative de création du doublon (DOIT ÉCHOUER)
     response2 = api_client.post(url, data=valid_data, format="json")
-    print(response2.json())
     assert response2.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
     return response2
 
@@ -145,7 +143,6 @@ def validate_update_to_duplicate_api(api_client, base_url, model_name, valid_dat
     assert response2.status_code == status.HTTP_201_CREATED
 
     obj_id = response2.json()["id"]  # ID du second objet
-
     # Tenter de mettre à jour `obj2` avec les valeurs de `obj1`
     response3 = api_client.patch(f"{url}{obj_id}/", valid_data1, format="json")
     assert response3.status_code == status.HTTP_400_BAD_REQUEST  # Vérifier que la mise à jour est rejetée
