@@ -9,8 +9,8 @@ model_name = "sub_recipes"
 @pytest.fixture
 def subrecipe():
     """ Crée une sous-recette d'une recette"""
-    recipe1 = Recipe.objects.create(recipe_name="Tarte aux pommes")
-    recipe2 = Recipe.objects.create(recipe_name="Crème pâtissière")
+    recipe1 = Recipe.objects.create(recipe_name="Tarte aux pommes", chef_name="Martin")
+    recipe2 = Recipe.objects.create(recipe_name="Crème pâtissière", chef_name="Martin")
     return SubRecipe.objects.create(recipe=recipe1, sub_recipe=recipe2, quantity=200, unit="g")
 
 @pytest.mark.django_db
@@ -36,7 +36,7 @@ def test_get_subrecipe_api(api_client, base_url, subrecipe):
 @pytest.mark.django_db
 def test_list_subrecipe_api(api_client, base_url, subrecipe):
     """ Vérifie qu'on peut récupérer la liste des `RecipeStep`. """
-    new_recipe = Recipe.objects.create(recipe_name="Praliné noisettes")
+    new_recipe = Recipe.objects.create(recipe_name="Praliné noisettes", chef_name="Martin")
     new_subrecipe2 = SubRecipe.objects.create(recipe=subrecipe.recipe, sub_recipe=new_recipe, quantity=200, unit="g")
     url = base_url(model_name) + f"{subrecipe.id}/"
     response = api_client.get(url)
@@ -46,7 +46,7 @@ def test_list_subrecipe_api(api_client, base_url, subrecipe):
 @pytest.mark.django_db
 def test_update_subrecipe_api(api_client, base_url, subrecipe):
     """ Vérifie qu'on peut modifier `sub_recipe`, `quantity` et `unit` d'une `SubRecipe` """
-    new_sub_recipe = Recipe.objects.create(recipe_name="Crème chantilly")
+    new_sub_recipe = Recipe.objects.create(recipe_name="Crème chantilly", chef_name="Martin")
     update_data = {"sub_recipe": new_sub_recipe.id, "quantity": 500, "unit": "kg"}
     url = base_url(model_name) + f"{subrecipe.id}/"
     response = api_client.patch(url, data=update_data, format="json")

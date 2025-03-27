@@ -22,19 +22,6 @@ def recipe(pan):
     RecipeStep.objects.create(recipe=recipe, step_number=1, instruction="Mélanger la farine et le sucre.")
     return recipe
 
-# @pytest.fixture
-# def recipe_factory(pan):
-#     def make_recipe(**kwargs):
-#         defaults = {"recipe_name": "Recette Test", "chef_name": "Chef Test", "recipe_type": "BASE", 
-#                     "servings_min": 4, "servings_max": 6, "pan": pan}
-#         defaults.update(kwargs)
-#         recipe = Recipe.objects.create(**defaults)
-#         ingredient = Ingredient.objects.create(ingredient_name="Test Ingredient")  # Ajout systématique d’un ingrédient
-#         RecipeIngredient.objects.create(recipe=recipe, ingredient=ingredient, quantity=100, unit="g")
-#         RecipeStep.objects.create(recipe=recipe, step_number=1, instruction="Mélanger la farine et le sucre.")  # Ajout d’une étape
-#         return recipe
-#     return make_recipe
-
 # --- Tests de validation modèle ---
 
 def test_recipe_creation_db(recipe):
@@ -51,13 +38,6 @@ def test_recipe_update_db(recipe):
 
 def test_recipe_str_method(recipe):
     assert str(recipe) == normalize_case("Recette Démo (Chef Démo)")
-
-# def test_unique_constraint_recipe_db(recipe_factory):
-#     """Vérifie qu'on ne peut pas créer deux recettes avec le même nom, chef, contexte et source."""
-#     recipe_factory(recipe_name="Cake Vanille", chef_name="Pierre Hermé", context_name="Entremet Signature", source="Livre 2022")
-#     with pytest.raises(Exception) as exc_info:
-#         recipe_factory(recipe_name="Cake Vanille", chef_name="Pierre Hermé", context_name="Entremet Signature", source="Livre 2022")
-#     assert "unique_recipe_identification" in str(exc_info.value)
 
 def test_unique_constraint_recipe_db(recipe, pan):
     """Vérifie qu'on ne peut pas créer deux recettes avec le même nom, chef, contexte et source."""

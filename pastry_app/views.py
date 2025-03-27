@@ -269,21 +269,47 @@ class RecipeStepViewSet(viewsets.ModelViewSet):
     queryset = RecipeStep.objects.all()
     serializer_class = RecipeStepSerializer
 
+    def get_queryset(self):
+        recipe_pk = self.kwargs.get("recipe_pk")
+        if recipe_pk:
+            return RecipeStep.objects.filter(recipe_id=recipe_pk)
+        return RecipeStep.objects.all()
+
+    def perform_create(self, serializer):
+        recipe_pk = self.kwargs.get("recipe_pk")
+        if recipe_pk:
+            recipe = get_object_or_404(Recipe, pk=recipe_pk)
+            serializer.save(recipe=recipe)
+        else:
+            serializer.save()
+    
     def destroy(self, request, *args, **kwargs):
-        """ Empêche la suppression du dernier `RecipeStep` et réorganise les numéros d'étapes après suppression. """
+        """ Empêche la suppression de la dernière `RecipeStep` d'une recette. """
         instance = self.get_object()
+        recipe = instance.recipe
+        if recipe.steps.count() <= 1:
+            return Response({"detail": "Une recette doit contenir au moins une étape."}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            instance.delete()
-        except DjangoValidationError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return super().destroy(request, *args, **kwargs)
 
 class RecipeIngredientViewSet(viewsets.ModelViewSet):
     """ API CRUD pour la gestion des ingrédients dans les recettes. """
     queryset = RecipeIngredient.objects.all()
     serializer_class = RecipeIngredientSerializer
+
+    def get_queryset(self):
+        recipe_pk = self.kwargs.get("recipe_pk")
+        if recipe_pk:
+            return RecipeIngredient.objects.filter(recipe_id=recipe_pk)
+        return RecipeIngredient.objects.all()
+
+    def perform_create(self, serializer):
+        recipe_pk = self.kwargs.get("recipe_pk")
+        if recipe_pk:
+            recipe = get_object_or_404(Recipe, pk=recipe_pk)
+            serializer.save(recipe=recipe)
+        else:
+            serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         """ Empêche la suppression du dernier ingrédient en capturant `ValidationError`. """
@@ -298,6 +324,20 @@ class SubRecipeViewSet(viewsets.ModelViewSet):
     """ API CRUD pour gérer les sous-recettes """
     queryset = SubRecipe.objects.all()
     serializer_class = SubRecipeSerializer
+
+    def get_queryset(self):
+        recipe_pk = self.kwargs.get("recipe_pk")
+        if recipe_pk:
+            return SubRecipe.objects.filter(recipe_id=recipe_pk)
+        return SubRecipe.objects.all()
+
+    def perform_create(self, serializer):
+        recipe_pk = self.kwargs.get("recipe_pk")
+        if recipe_pk:
+            recipe = get_object_or_404(Recipe, pk=recipe_pk)
+            serializer.save(recipe=recipe)
+        else:
+            serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         """ Empêche la suppression si la recette est utilisée ailleurs """

@@ -14,10 +14,10 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.contrib import admin
 from django.urls import path, include
 from pastry_app.views import *
-from rest_framework.routers import DefaultRouter
-from django.contrib import admin
+from rest_framework_nested.routers import DefaultRouter, NestedDefaultRouter
 
 router = DefaultRouter()
 router.register(r'recipes', RecipeViewSet)
@@ -32,9 +32,20 @@ router.register(r'categories', CategoryViewSet)
 router.register(r'labels', LabelViewSet) 
 router.register(r'stores', StoreViewSet) 
 
+# Router imbriqué
+recipes_router = NestedDefaultRouter(router, r"recipes", lookup="recipe")
+recipes_router.register(r"steps", RecipeStepViewSet, basename="recipe-steps")
+ingredients_router = NestedDefaultRouter(router, r"recipes", lookup="recipe")
+ingredients_router.register(r"ingredients", RecipeIngredientViewSet, basename="recipe-ingredients")
+subrecipes_router = NestedDefaultRouter(router, r"recipes", lookup="recipe")
+subrecipes_router.register(r"sub-recipes", SubRecipeViewSet, basename="recipe-subrecipes")
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),
+    path('api/', include(recipes_router.urls)),
+    path('api/', include(ingredients_router.urls)),
+    path('api/', include(subrecipes_router.urls)),
     path('categories/<int:pk>/delete-subcategories/', CategoryViewSet.as_view({"delete": "delete_subcategories"}), name="delete_subcategories"),
     path('api/ingredients/<int:pk>/delete/', IngredientDeleteView.as_view(), name='ingredient_delete'),
     path('api/recipes/<int:pk>/delete/', RecipeDeleteView.as_view(), name='recipe_delete'),

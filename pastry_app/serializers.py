@@ -2,11 +2,9 @@ from rest_framework import serializers
 from django.db import IntegrityError
 from django.db.models import Max
 from django.utils.timezone import now
-from django.db.models.signals import pre_delete
 from .models import *
 from .constants import UNIT_CHOICES
 from pastry_app.tests.utils import normalize_case
-from pastry_app.models import prevent_deleting_last_step
 
 class StoreSerializer(serializers.ModelSerializer):
     """ Sérialise les magasins où sont vendus les ingrédients. """
@@ -590,7 +588,7 @@ class RecipeSerializer(serializers.ModelSerializer):
         subrecipes_data = validated_data.pop("main_recipes", [])
         categories = validated_data.pop("categories", [])
         labels = validated_data.pop("labels", [])
-
+        
         # Création de la recette
         recipe = Recipe.objects.create(**validated_data)
         recipe.categories.set(categories)
@@ -628,7 +626,7 @@ class RecipeSerializer(serializers.ModelSerializer):
             instance.labels.set(labels)
 
         # 4. Remplacement total (PUT) ou partiel (PATCH)
-        if not is_partial:
+        if not is_partial:  # PUT : remplacement total des blocs 
             # Vérification métier avant suppression
             if not ingredients_data and not subrecipes_data:
                 raise serializers.ValidationError("Une recette doit contenir au moins un ingrédient ou une sous-recette.")
@@ -638,9 +636,9 @@ class RecipeSerializer(serializers.ModelSerializer):
             # Suppression totale
             instance.recipe_ingredients.all().delete()
             instance.main_recipes.all().delete()
-            pre_delete.disconnect(prevent_deleting_last_step, sender=RecipeStep)  # Déconnexion temporaire du signal
+            # pre_delete.disconnect(prevent_deleting_last_step, sender=RecipeStep)  # Déconnexion temporaire du signal
             instance.steps.all().delete()
-            pre_delete.connect(prevent_deleting_last_step, sender=RecipeStep)  # Reconnexion du signal
+            # pre_delete.connect(prevent_deleting_last_step, sender=RecipeStep)  # Reconnexion du signal
 
             # Re-création
             RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=instance, **ingredient) for ingredient in ingredients_data])
@@ -648,15 +646,17 @@ class RecipeSerializer(serializers.ModelSerializer):
             SubRecipe.objects.bulk_create([SubRecipe(recipe=instance, **sub) for sub in subrecipes_data])
         else:
             # PATCH — supprimer uniquement ce qui est fourni
-            if ingredients_data:
+            if "recipe_ingredients" in self.initial_data:                
                 instance.recipe_ingredients.all().delete()
                 RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=instance, **ingredient) for ingredient in ingredients_data])
-            if steps_data:
-                pre_delete.disconnect(prevent_deleting_last_step, sender=RecipeStep)  # Déconnexion temporaire du signal
+            if "steps" in self.initial_data:
+                if not steps_data and not instance.main_recipes.exists():
+                    raise serializers.ValidationError("Une recette doit avoir au moins une étape ou une sous-recette.")
+                # pre_delete.disconnect(prevent_deleting_last_step, sender=RecipeStep)  # Déconnexion temporaire du signal
                 instance.steps.all().delete()
-                pre_delete.connect(prevent_deleting_last_step, sender=RecipeStep)  # Reconnexion du signal
+                # pre_delete.connect(prevent_deleting_last_step, sender=RecipeStep)  # Reconnexion du signal
                 RecipeStep.objects.bulk_create([RecipeStep(recipe=instance, **step) for step in steps_data])
-            if subrecipes_data:
+            if "main_recipes" in self.initial_data:
                 instance.main_recipes.all().delete()
                 SubRecipe.objects.bulk_create([SubRecipe(recipe=instance, **sub) for sub in subrecipes_data])
 

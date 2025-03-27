@@ -10,7 +10,7 @@ model_name = "recipe_ingredients"
 @pytest.fixture
 def recipe(db):
     """ Crée une recette de test """
-    return Recipe.objects.create(recipe_name="Tarte aux pommes")
+    return Recipe.objects.create(recipe_name="Tarte aux pommes", chef_name="Martin")
 
 @pytest.fixture
 def ingredient(db):

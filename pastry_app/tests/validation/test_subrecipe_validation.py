@@ -10,8 +10,8 @@ model_name = "sub_recipes"
 @pytest.fixture
 def subrecipe():
     """ Crée une sous-recette d'une recette"""
-    recipe1 = Recipe.objects.create(recipe_name="Tarte aux pommes")
-    recipe2 = Recipe.objects.create(recipe_name="Crème pâtissière")
+    recipe1 = Recipe.objects.create(recipe_name="Tarte aux pommes", chef_name="Martin")
+    recipe2 = Recipe.objects.create(recipe_name="Crème pâtissière", chef_name="Martin")
     return SubRecipe.objects.create(recipe=recipe1, sub_recipe=recipe2, quantity=200, unit="g")
 
 @pytest.mark.parametrize("field_name", ["quantity", "unit"])
@@ -69,7 +69,7 @@ def test_cannot_delete_recipe_used_as_subrecipe_api(api_client, base_url, subrec
 def test_cannot_patch_recipe_field_in_subrecipe_api(api_client, base_url, subrecipe):
     """ Vérifie que `recipe` est `read_only` et ne peut pas être modifié via `PATCH` """
     url = base_url(model_name) + f"{subrecipe.id}/"
-    new_recipe = Recipe.objects.create(recipe_name="Tarte aux pommes 2")
+    new_recipe = Recipe.objects.create(recipe_name="Tarte aux pommes 2", chef_name="Martin")
     response = api_client.patch(url, data={"recipe": new_recipe.id}, format="json")
     assert response.status_code == status.HTTP_400_BAD_REQUEST 
     assert "recipe" in response.json()  # Vérifie que l'erreur concerne bien `recipe`

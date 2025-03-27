@@ -6,7 +6,7 @@ from pastry_app.tests.utils import *
 @pytest.fixture()
 def recipe_ingredient(db):
     """ Crée une recette et un ingrédient pour les tests """
-    recipe = Recipe.objects.create(recipe_name="Tarte aux pommes")
+    recipe = Recipe.objects.create(recipe_name="Tarte aux pommes", chef_name = "Martin")
     ingredient = Ingredient.objects.create(ingredient_name="Sucre")
     return RecipeIngredient.objects.create(recipe=recipe, ingredient=ingredient, quantity=100.0, unit="g")
 

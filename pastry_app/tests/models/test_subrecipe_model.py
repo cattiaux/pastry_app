@@ -7,8 +7,8 @@ from pastry_app.tests.utils import validate_constraint
 @pytest.fixture
 def subrecipe():
     """ Crée une sous-recette d'une recette"""
-    recipe1 = Recipe.objects.create(recipe_name="Tarte aux pommes")
-    recipe2 = Recipe.objects.create(recipe_name="Crème pâtissière")
+    recipe1 = Recipe.objects.create(recipe_name="Tarte aux pommes", chef_name="Martin")
+    recipe2 = Recipe.objects.create(recipe_name="Crème pâtissière", chef_name="Martin")
     return SubRecipe.objects.create(recipe=recipe1, sub_recipe=recipe2, quantity=200, unit="g")
 
 @pytest.mark.django_db
@@ -81,7 +81,7 @@ def test_unit_must_be_valid_subrecipe_db(subrecipe):
 def test_cannot_add_recipe_as_its_own_subrecipe():
     """ Vérifie qu’une recette ne peut pas être sa propre sous-recette """
     with pytest.raises(ValidationError, match="Une recette ne peut pas être sa propre sous-recette."):
-        recipe = Recipe.objects.create(recipe_name="Tarte aux pommes")
+        recipe = Recipe.objects.create(recipe_name="Tarte aux pommes", chef_name="Martin")
         subrecipe = SubRecipe(recipe=recipe, sub_recipe=recipe, quantity=100, unit="g")
         subrecipe.full_clean()
 
@@ -94,6 +94,6 @@ def test_cannot_delete_recipe_used_as_subrecipe(subrecipe):
 @pytest.mark.django_db
 def test_cannot_update_recipe_field_in_subrecipe(subrecipe):
     """ Vérifie que `recipe` ne peut pas être modifié après création """
-    subrecipe.recipe = Recipe.objects.create(recipe_name="Crème pâtissière 2")  # Essaye de modifier la recette principale
+    subrecipe.recipe = Recipe.objects.create(recipe_name="Crème pâtissière 2", chef_name="Martin")  # Essaye de modifier la recette principale
     with pytest.raises(ValidationError, match="Recipe cannot be changed after creation."):
         subrecipe.full_clean()

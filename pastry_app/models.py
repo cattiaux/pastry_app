@@ -4,8 +4,6 @@ from django.core.validators import MinValueValidator
 from django.utils.timezone import now
 from django.core.exceptions import ValidationError
 from django.db.models import UniqueConstraint
-from django.db.models.signals import pre_delete
-from django.dispatch import receiver
 from pastry_app.tests.utils import normalize_case
 from .constants import UNIT_CHOICES
 
@@ -520,13 +518,6 @@ class RecipeStep(models.Model):
     def save(self, *args, **kwargs):
         self.clean() 
         super().save(*args, **kwargs)
-
-# Ajout du signal pour bloquer la suppression du dernier RecipeStep d’une recette
-@receiver(pre_delete, sender=RecipeStep)
-def prevent_deleting_last_step(sender, instance, **kwargs):
-    """Empêche la suppression du dernier RecipeStep d’une recette."""
-    if instance.recipe.steps.count() == 1:
-        raise ValidationError("Une recette doit avoir au moins une étape.")
 
 class SubRecipe(models.Model):
     recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='main_recipes')

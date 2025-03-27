@@ -79,8 +79,9 @@ def test_cannot_delete_last_recipestep_api(api_client, base_url, recipestep):
     """ Vérifie qu'on ne peut pas supprimer le dernier `RecipeStep` d'une recette """
     url = base_url(model_name)
     delete_response = api_client.delete(f"{url}{recipestep.id}/")
+    print(delete_response.json())
     assert delete_response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "A recipe must have at least one step." in delete_response.json()["error"]
+    assert "Une recette doit contenir au moins une étape." in delete_response.json()["detail"]
 
 def test_step_number_must_be_strictly_increasing_api(api_client, base_url, recipestep):
     """Vérifie que `step_number` doit être strictement croissant via l’API."""
