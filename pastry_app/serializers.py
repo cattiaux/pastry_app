@@ -506,8 +506,10 @@ class SubRecipeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"sub_recipe": "Une recette ne peut pas être sa propre sous-recette."})
 
         # Empêcher la modification du champ `recipe` après création
-        if self.instance and "recipe" in data and self.instance.recipe.id != recipe:
-            raise serializers.ValidationError({"recipe": "Recipe cannot be changed after creation."})
+        if self.instance and "recipe" in self.initial_data:
+            incoming_recipe_id = data.get("recipe")
+            if incoming_recipe_id and self.instance.recipe.id != incoming_recipe_id:  # On lève l’erreur que si le client fournit explicitement une valeur différente pour recipe
+                raise serializers.ValidationError({"recipe": "Recipe cannot be changed after creation."})
 
         return data
 

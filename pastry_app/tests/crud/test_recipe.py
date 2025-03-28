@@ -129,3 +129,99 @@ def test_delete_nested_step_api(api_client, base_url, base_recipe_data):
     delete_url = f"{base_url(model_name)}{recipe['id']}/steps/{step_id}/"
     response = api_client.delete(delete_url)
     assert response.status_code == status.HTTP_204_NO_CONTENT
+
+# --- Tests API CRUD imbriqués : RecipeIngredient via /recipes/<recipe_id>/ingredients/ ---
+
+def test_list_nested_ingredients_api(api_client, base_url, base_recipe_data):
+    recipe = api_client.post(base_url(model_name), data=base_recipe_data, format="json").data
+    url = f"{base_url(model_name)}{recipe['id']}/ingredients/"
+    response = api_client.get(url)
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.json()[0]["quantity"] == 300
+
+def test_create_nested_ingredient_api(api_client, base_url, base_recipe_data):
+    recipe = api_client.post(base_url(model_name), data=base_recipe_data, format="json").data
+    url = f"{base_url(model_name)}{recipe['id']}/ingredients/"
+    ingredient_id = Ingredient.objects.get(ingredient_name="Pommes").id
+    new_ingredient = {"ingredient": ingredient_id, "quantity": 150, "unit": "g"}
+    response = api_client.post(url, data=new_ingredient, format="json")
+    assert response.status_code == 201
+    assert response.data["quantity"] == 150
+
+def test_update_nested_ingredient_api(api_client, base_url, base_recipe_data):
+    recipe = api_client.post(base_url(model_name), data=base_recipe_data, format="json").data
+    ing_id = recipe["ingredients"][0]["id"]
+    url = f"{base_url(model_name)}{recipe['id']}/ingredients/{ing_id}/"
+    patch = {"quantity": 400}
+    response = api_client.patch(url, data=patch, format="json")
+    assert response.status_code == 200
+    assert response.data["quantity"] == 400
+
+def test_delete_nested_ingredient_api(api_client, base_url, base_recipe_data):
+    """Vérifie qu’on peut supprimer un ingrédient via /recipes/<id>/ingredients/<id>/"""
+    # Crée une recette avec un ingrédient
+    recipe = api_client.post(base_url("recipes"), data=base_recipe_data, format="json").data
+
+    # Ajoute un deuxième ingrédient pour autoriser la suppression
+    ingredient_payload = {
+        "ingredient": base_recipe_data["ingredients"][0]["ingredient"],
+        "quantity": 100,
+        "unit": "g"
+    }
+    ing_create_url = f"{base_url('recipes')}{recipe['id']}/ingredients/"
+    api_client.post(ing_create_url, data=ingredient_payload, format="json")
+
+    # Supprime le premier ingrédient
+    ing_id = recipe["ingredients"][0]["id"]
+    ing_delete_url = f"{base_url('recipes')}{recipe['id']}/ingredients/{ing_id}/"
+    response = api_client.delete(ing_delete_url)
+    assert response.status_code == 204
+
+# --- Tests API CRUD imbriqués : SubRecipe via /recipes/<recipe_id>/sub-recipes/ ---
+
+def test_create_nested_subrecipe_api(api_client, base_url, base_recipe_data):
+    recipe_base = api_client.post(base_url(model_name), data=base_recipe_data, format="json").data
+
+    # Crée une recette source qui sera utilisée comme sous-recette
+    sub_data = base_recipe_data.copy()
+    sub_data["recipe_name"] = "Sous-recette"
+    recipe_sub = api_client.post(base_url(model_name), data=sub_data, format="json").data
+
+    url = f"{base_url(model_name)}{recipe_base['id']}/sub-recipes/"
+    sub_recipe_payload = {"sub_recipe": recipe_sub["id"], "quantity": 2.0, "unit": "g"}
+    response = api_client.post(url, data=sub_recipe_payload, format="json")
+    assert response.status_code == 201
+    assert response.data["quantity"] == 2.0
+
+def test_update_nested_subrecipe_api(api_client, base_url, base_recipe_data):
+    # Création recette et sous-recette
+    recipe_base = api_client.post(base_url(model_name), data=base_recipe_data, format="json").data
+    sub_data = base_recipe_data.copy()
+    sub_data["recipe_name"] = "Sous-recette"
+    recipe_sub = api_client.post(base_url(model_name), data=sub_data, format="json").data
+
+    # Ajout
+    url = f"{base_url(model_name)}{recipe_base['id']}/sub-recipes/"
+    sub_recipe_payload = {"sub_recipe": recipe_sub["id"], "quantity": 2.0, "unit": "g"}
+    sub = api_client.post(url, data=sub_recipe_payload, format="json").data
+
+    # Patch
+    patch_url = f"{url}{sub['id']}/"
+    response = api_client.patch(patch_url, {"quantity": 3.0})
+    print(response.json())
+    assert response.status_code == 200
+    assert response.data["quantity"] == 3.0
+
+def test_delete_nested_subrecipe_api(api_client, base_url, base_recipe_data):
+    recipe_base = api_client.post(base_url(model_name), data=base_recipe_data, format="json").data
+    sub_data = base_recipe_data.copy()
+    sub_data["recipe_name"] = "Sous-recette"
+    recipe_sub = api_client.post(base_url(model_name), data=sub_data, format="json").data
+
+    sub_url = f"{base_url(model_name)}{recipe_base['id']}/sub-recipes/"
+    sub = api_client.post(sub_url, {"sub_recipe": recipe_sub["id"], "quantity": 1.0, "unit": "g"}).data
+
+    response = api_client.delete(f"{sub_url}{sub['id']}/")
+    assert response.status_code == 204
+
