@@ -359,18 +359,37 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
         return data
     
 class RecipeStepSerializer(serializers.ModelSerializer):
-    recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), required=False)
+    recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all())
     step_number = serializers.IntegerField(default=None, min_value=1)
 
     class Meta:
         model = RecipeStep
         fields = ['id', 'recipe', 'step_number', 'instruction', 'trick']
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Si le serializer est nested (contexte parent serializer), on retire recipe
+    def get_fields(self):
+        """Rend recipe optionnel via URL imbriquée."""
+        fields = super().get_fields()
+
+        # Cas de contexte parent serializer → suppression complète du champ
         if self.context.get("is_nested", False):
-            self.fields.pop("recipe")
+            fields.pop("recipe", None)
+        # Cas endpoint imbriqué (ex: /recipes/<id>/steps/)
+        elif "view" in self.context:
+            view = self.context["view"]
+            if hasattr(view, "kwargs") and "recipe_pk" in view.kwargs:
+                fields["recipe"].required = False
+
+        return fields
+
+    def run_validation(self, data=serializers.empty):
+        """Injecte recipe depuis l’URL."""
+        view = self.context.get("view")
+        if view and hasattr(view, "kwargs") and "recipe_pk" in view.kwargs:
+            data = data.copy()
+            data["recipe"] = view.kwargs["recipe_pk"]
+
+        result = super().run_validation(data)
+        return result
 
     def validate_instruction(self, value):
         """ Vérifie que l'instruction contient au moins 5 caractères. """
@@ -386,18 +405,17 @@ class RecipeStepSerializer(serializers.ModelSerializer):
         if recipe and step_number is not None:
             last_step = RecipeStep.objects.filter(recipe=recipe).aggregate(Max("step_number"))["step_number__max"]
             if last_step is not None and step_number > last_step + 1:
-                raise serializers.ValidationError({
-                    "step_number": "Step numbers must be consecutive."
-                })
+                raise serializers.ValidationError({"step_number": "Step numbers must be consecutive."})
+
         return data
     
     def create(self, validated_data):
         """ Gère la création d'un `RecipeStep` en attribuant `step_number` automatiquement si nécessaire. """
-        recipe = validated_data.get("recipe")
         # Auto-incrément de `step_number` si non fourni ou None
         if validated_data.get("step_number") is None:
-            max_step = RecipeStep.objects.filter(recipe=recipe).aggregate(Max("step_number"))["step_number__max"]
+            max_step = RecipeStep.objects.filter(recipe=validated_data.get("recipe")).aggregate(Max("step_number"))["step_number__max"]
             validated_data["step_number"] = 1 if max_step is None else max_step + 1
+
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
@@ -485,6 +503,12 @@ class RecipeSerializer(serializers.ModelSerializer):
                   "pan", "categories", "labels", "ingredients", "steps", "sub_recipes", 
                   "created_at", "updated_at"]
         read_only_fields = ["created_at", "updated_at"]    
+
+    def __init__(self, *args, **kwargs):
+        """Supprime recipe en mode nested."""
+        super().__init__(*args, **kwargs)
+        if "steps" in self.fields:
+            self.fields["steps"].child.context.update({"is_nested": True})
 
     def to_internal_value(self, data):
         data = data.copy()

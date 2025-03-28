@@ -277,12 +277,13 @@ class RecipeStepViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         recipe_pk = self.kwargs.get("recipe_pk")
+        # injecte recipe uniquement si recipe_pk est présent dans l’URL.
         if recipe_pk:
             recipe = get_object_or_404(Recipe, pk=recipe_pk)
             serializer.save(recipe=recipe)
         else:
             serializer.save()
-    
+
     def destroy(self, request, *args, **kwargs):
         """ Empêche la suppression de la dernière `RecipeStep` d'une recette. """
         instance = self.get_object()

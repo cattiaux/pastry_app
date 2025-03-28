@@ -85,3 +85,47 @@ def test_get_nonexistent_recipe(api_client, base_url):
 def test_delete_nonexistent_recipe(api_client, base_url):
     response = api_client.delete(base_url(model_name) + "9999/")
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+# --- Tests API CRUD imbriqués : RecipeStep via /recipes/<id>/steps/ ---
+
+def test_list_nested_steps_api(api_client, base_url, base_recipe_data):
+    """ Vérifie qu'on peut lister les étapes via /recipes/<id>/steps/ """
+    recipe = api_client.post(base_url(model_name), data=base_recipe_data, format="json").data
+    url = f"{base_url(model_name)}{recipe['id']}/steps/"
+    response = api_client.get(url)
+    assert response.status_code == status.HTTP_200_OK
+    assert len(response.json()) == 1
+    assert response.json()[0]["instruction"] == "Préchauffer le four."
+
+def test_create_nested_step_api(api_client, base_url, base_recipe_data):
+    """ Vérifie qu'on peut créer une étape via /recipes/<id>/steps/ """
+    recipe = api_client.post(base_url(model_name), data=base_recipe_data, format="json").data
+    url = f"{base_url(model_name)}{recipe['id']}/steps/"
+    new_step = {"step_number": 2, "instruction": "Ajouter les pommes."}
+    response = api_client.post(url, data=new_step, format="json")
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.data["instruction"] == "Ajouter les pommes."
+
+def test_update_nested_step_api(api_client, base_url, base_recipe_data):
+    """ Vérifie qu'on peut modifier une étape via /recipes/<id>/steps/<id>/ """
+    recipe = api_client.post(base_url(model_name), data=base_recipe_data, format="json").data
+    step_id = recipe["steps"][0]["id"]
+    url = f"{base_url(model_name)}{recipe['id']}/steps/{step_id}/"
+    patch = {"instruction": "Préchauffer le four à 180°C."}
+    response = api_client.patch(url, data=patch, format="json")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["instruction"] == "Préchauffer le four à 180°C."
+
+def test_delete_nested_step_api(api_client, base_url, base_recipe_data):
+    """ Vérifie qu'on peut supprimer une étape via /recipes/<id>/steps/<id>/ """
+    recipe = api_client.post(base_url(model_name), data=base_recipe_data, format="json").data
+
+    # Ajout d'une deuxième étape pour autoriser la suppression d'une
+    step_create_url = f"{base_url(model_name)}{recipe['id']}/steps/"
+    second_step = {"step_number": 2, "instruction": "Ajouter les pommes."}
+    api_client.post(step_create_url, data=second_step, format="json")
+
+    step_id = recipe["steps"][0]["id"]
+    delete_url = f"{base_url(model_name)}{recipe['id']}/steps/{step_id}/"
+    response = api_client.delete(delete_url)
+    assert response.status_code == status.HTTP_204_NO_CONTENT
