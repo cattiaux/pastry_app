@@ -607,3 +607,26 @@ Contraintes d’Intégrité :
     ◦ Non modifiable via l’API
 3. Unicité
     ◦ pan_name est unique (vérification DB + logique de normalisation)
+
+
+
+### Gestion avancée des RecipeSteps (nested serializer)
+
+Objectif :
+Permettre la création et mise à jour de RecipeStep dans un contexte imbriqué (/recipes/<id>/steps/) sans dépendre de signaux, 
+tout en maintenant les contraintes métier (ex : ne pas supprimer le dernier step d'une recette).
+
+Fonctionnement du RecipeStepSerializer :
+1. Champ recipe requis par défaut : Par défaut, toute instance de RecipeStep doit être liée à une recette (sécurité maximale).
+2. Neutralisation dynamique dans get_fields() : Rend le champ optionnel uniquement dans le contexte d'une vue imbriquée (/recipes/<id>/steps/).
+3. Injection explicite dans run_validation() : Si recipe n’est pas fourni, on l’extrait depuis l’URL via view.kwargs.
+   Cela permet d'utiliser des nested routes sans dupliquer la logique de relation.
+4. Mise à jour update() dans RecipeSerializer
+5. Validation métier dans RecipeStep.delete() : Empêche la suppression isolée du dernier step, mais l’autorise dans un processus de mise à jour complet.
+
+Résultat : 
+- Suppression du signal pre_delete obsolète
+- Comportement métier 100 % respecté
+- API RESTful claire et maintenable
+- Aucune régression en cas de suppression ou update complexe
+
