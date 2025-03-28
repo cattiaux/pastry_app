@@ -660,9 +660,7 @@ class RecipeSerializer(serializers.ModelSerializer):
             # Suppression totale
             instance.recipe_ingredients.all().delete()
             instance.main_recipes.all().delete()
-            # pre_delete.disconnect(prevent_deleting_last_step, sender=RecipeStep)  # Déconnexion temporaire du signal
             instance.steps.all().delete()
-            # pre_delete.connect(prevent_deleting_last_step, sender=RecipeStep)  # Reconnexion du signal
 
             # Re-création
             RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=instance, **ingredient) for ingredient in ingredients_data])
@@ -676,9 +674,7 @@ class RecipeSerializer(serializers.ModelSerializer):
             if "steps" in self.initial_data:
                 if not steps_data and not instance.main_recipes.exists():
                     raise serializers.ValidationError("Une recette doit avoir au moins une étape ou une sous-recette.")
-                # pre_delete.disconnect(prevent_deleting_last_step, sender=RecipeStep)  # Déconnexion temporaire du signal
                 instance.steps.all().delete()
-                # pre_delete.connect(prevent_deleting_last_step, sender=RecipeStep)  # Reconnexion du signal
                 RecipeStep.objects.bulk_create([RecipeStep(recipe=instance, **step) for step in steps_data])
             if "main_recipes" in self.initial_data:
                 instance.main_recipes.all().delete()
