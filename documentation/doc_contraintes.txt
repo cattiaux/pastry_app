@@ -627,24 +627,10 @@ tout en maintenant les contraintes métier (ex : ne pas supprimer le dernier ste
 
 Comportement des Serializers associés :
 1. get_fields()
-- Rend le champ recipe optionnel uniquement si la requête est faite via un endpoint imbriqué.
+- Rend le champ recipe optionnel uniquement si la requête est faite via un endpoint imbriqué (ex : (/recipes/<id>/steps/)).
 - Supprime complètement le champ recipe si le serializer est utilisé dans un contexte "nested" (par un autre serializer).
 2. run_validation()
 - Injecte automatiquement la recipe à partir des paramètres de l’URL (ex. recipe_pk) si elle n’est pas présente dans le payload.
+  Cela permet d'utiliser des nested routes sans dupliquer la logique de relation.
 3. extra_kwargs
 - Définit recipe comme read_only pour éviter toute modification postérieure (sécurité métier).
-
-Fonctionnement du RecipeStepSerializer :
-1. Champ recipe requis par défaut : Par défaut, toute instance de RecipeStep doit être liée à une recette (sécurité maximale).
-2. Neutralisation dynamique dans get_fields() : Rend le champ optionnel uniquement dans le contexte d'une vue imbriquée (/recipes/<id>/steps/).
-3. Injection explicite dans run_validation() : Si recipe n’est pas fourni, on l’extrait depuis l’URL via view.kwargs.
-   Cela permet d'utiliser des nested routes sans dupliquer la logique de relation.
-4. Mise à jour update() dans RecipeSerializer
-5. Validation métier dans RecipeStep.delete() : Empêche la suppression isolée du dernier step, mais l’autorise dans un processus de mise à jour complet.
-
-Résultat : 
-- Suppression du signal pre_delete obsolète
-- Comportement métier 100 % respecté
-- API RESTful claire et maintenable
-- Aucune régression en cas de suppression ou update complexe
-
