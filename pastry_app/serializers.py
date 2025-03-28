@@ -331,11 +331,30 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
         fields = ['id', 'recipe', 'ingredient', 'quantity', 'unit', 'display_name']
         extra_kwargs = {"recipe": {"read_only": True},}  # Une fois l'ingrédient ajouté à une recette, il ne peut pas être déplacé
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Si le serializer est nested (contexte parent serializer), on retire recipe
+    def get_fields(self):
+        """Rend recipe optionnel via URL imbriquée."""
+        fields = super().get_fields()
+
+        # Cas de contexte parent serializer → suppression complète du champ
         if self.context.get("is_nested", False):
-            self.fields.pop("recipe")
+            fields.pop("recipe", None)
+        # Cas endpoint imbriqué (ex: /recipes/<id>/steps/)
+        elif "view" in self.context:
+            view = self.context["view"]
+            if hasattr(view, "kwargs") and "recipe_pk" in view.kwargs:
+                fields["recipe"].required = False
+
+        return fields
+
+    def run_validation(self, data=serializers.empty):
+        """Injecte recipe depuis l’URL."""
+        view = self.context.get("view")
+        if view and hasattr(view, "kwargs") and "recipe_pk" in view.kwargs:
+            data = data.copy()
+            data["recipe"] = view.kwargs["recipe_pk"]
+
+        result = super().run_validation(data)
+        return result
 
     def validate_quantity(self, value):
         """ Vérifie que la quantité est strictement positive. """
@@ -436,11 +455,30 @@ class SubRecipeSerializer(serializers.ModelSerializer):
         fields = ["id", "recipe", "sub_recipe", "quantity", "unit"]
         extra_kwargs = {"recipe": {"read_only": True},}  # La recette principale ne peut pas être modifiée
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Si le serializer est nested (contexte parent serializer), on retire recipe
+    def get_fields(self):
+        """Rend recipe optionnel via URL imbriquée."""
+        fields = super().get_fields()
+
+        # Cas de contexte parent serializer → suppression complète du champ
         if self.context.get("is_nested", False):
-            self.fields.pop("recipe")
+            fields.pop("recipe", None)
+        # Cas endpoint imbriqué (ex: /recipes/<id>/steps/)
+        elif "view" in self.context:
+            view = self.context["view"]
+            if hasattr(view, "kwargs") and "recipe_pk" in view.kwargs:
+                fields["recipe"].required = False
+
+        return fields
+
+    def run_validation(self, data=serializers.empty):
+        """Injecte recipe depuis l’URL."""
+        view = self.context.get("view")
+        if view and hasattr(view, "kwargs") and "recipe_pk" in view.kwargs:
+            data = data.copy()
+            data["recipe"] = view.kwargs["recipe_pk"]
+
+        result = super().run_validation(data)
+        return result
 
     def validate_sub_recipe(self, value):
         """ Vérifie qu'une recette ne peut pas être sa propre sous-recette """
@@ -509,6 +547,10 @@ class RecipeSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         if "steps" in self.fields:
             self.fields["steps"].child.context.update({"is_nested": True})
+        if "recipe_ingredients" in self.fields:
+            self.fields["recipe_ingredients"].child.context.update({"is_nested": True})
+        if "main_recipes" in self.fields:
+            self.fields["main_recipes"].child.context.update({"is_nested": True})
 
     def to_internal_value(self, data):
         data = data.copy()

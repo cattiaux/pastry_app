@@ -610,11 +610,29 @@ Contraintes d’Intégrité :
 
 
 
-### Gestion avancée des RecipeSteps (nested serializer)
+### Gestion des Endpoints Imbriqués pour les Sous-éléments de Recette
+Modèles concernés : RecipeIngredient, SubRecipe, RecipeStep
+
+Principe : 
+- Ces modèles sont liés à Recipe via une ForeignKey. 
+- Pour une meilleure cohérence et UX dans l’API, ces ressources sont gérées via des endpoints imbriqués :
+    Ex. :
+            POST /recipes/<recipe_id>/ingredients/
+            POST /recipes/<recipe_id>/sub-recipes/
+            POST /recipes/<recipe_id>/steps/
 
 Objectif :
-Permettre la création et mise à jour de RecipeStep dans un contexte imbriqué (/recipes/<id>/steps/) sans dépendre de signaux, 
+Permettre la création et mise à jour de RecipeStep, SubRecipe et RecipeIngredient dans un contexte imbriqué (/recipes/<id>/steps/) sans dépendre de signaux, 
 tout en maintenant les contraintes métier (ex : ne pas supprimer le dernier step d'une recette).
+
+Comportement des Serializers associés :
+1. get_fields()
+- Rend le champ recipe optionnel uniquement si la requête est faite via un endpoint imbriqué.
+- Supprime complètement le champ recipe si le serializer est utilisé dans un contexte "nested" (par un autre serializer).
+2. run_validation()
+- Injecte automatiquement la recipe à partir des paramètres de l’URL (ex. recipe_pk) si elle n’est pas présente dans le payload.
+3. extra_kwargs
+- Définit recipe comme read_only pour éviter toute modification postérieure (sécurité métier).
 
 Fonctionnement du RecipeStepSerializer :
 1. Champ recipe requis par défaut : Par défaut, toute instance de RecipeStep doit être liée à une recette (sécurité maximale).
