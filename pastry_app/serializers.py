@@ -675,56 +675,112 @@ class RecipeSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         is_partial = request.method == "PATCH" if request else False
 
-        # 1. Récupération des sous-objets et M2M fournis dans la requête
+        # --- Gestion des sous-objets
         ingredients_data = validated_data.pop("recipe_ingredients", [])
         steps_data = validated_data.pop("steps", [])
         subrecipes_data = validated_data.pop("main_recipes", [])
         categories = validated_data.pop("categories", None)
         labels = validated_data.pop("labels", None)
 
-        # 2. Mise à jour des champs simples
+        # --- Validation stricte en PATCH : pas de sous-objets autorisés ici
+        if is_partial:
+            forbidden_fields = {
+                "recipe_ingredients": "Utilisez /recipes/<id>/ingredients/",
+                "steps": "Utilisez /recipes/<id>/steps/",
+                "main_recipes": "Utilisez /recipes/<id>/sub-recipes/"
+            }
+            for field in forbidden_fields:
+                if field in self.initial_data:
+                    raise serializers.ValidationError({field: forbidden_fields[field]})
+
+        # --- Mise à jour des champs simples
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
-        # 3. Mise à jour des M2M si fourni
+        # --- M2M
         if categories is not None:
             instance.categories.set(categories)
         if labels is not None:
             instance.labels.set(labels)
 
-        # 4. Remplacement total (PUT) ou partiel (PATCH)
-        if not is_partial:  # PUT : remplacement total des blocs 
-            # Vérification métier avant suppression
+        # --- Si PUT : suppression + recréation des sous-objets
+        if not is_partial:
             if not ingredients_data and not subrecipes_data:
                 raise serializers.ValidationError("Une recette doit contenir au moins un ingrédient ou une sous-recette.")
             if not steps_data and not subrecipes_data:
                 raise serializers.ValidationError("Une recette doit contenir au moins une étape ou une sous-recette.")
 
-            # Suppression totale
             instance.recipe_ingredients.all().delete()
-            instance.main_recipes.all().delete()
             instance.steps.all().delete()
+            instance.main_recipes.all().delete()
 
-            # Re-création
-            RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=instance, **ingredient) for ingredient in ingredients_data])
-            RecipeStep.objects.bulk_create([RecipeStep(recipe=instance, **step) for step in steps_data])
-            SubRecipe.objects.bulk_create([SubRecipe(recipe=instance, **sub) for sub in subrecipes_data])
-        else:
-            # PATCH — supprimer uniquement ce qui est fourni
-            if "recipe_ingredients" in self.initial_data:                
-                instance.recipe_ingredients.all().delete()
-                RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=instance, **ingredient) for ingredient in ingredients_data])
-            if "steps" in self.initial_data:
-                if not steps_data and not instance.main_recipes.exists():
-                    raise serializers.ValidationError("Une recette doit avoir au moins une étape ou une sous-recette.")
-                instance.steps.all().delete()
-                RecipeStep.objects.bulk_create([RecipeStep(recipe=instance, **step) for step in steps_data])
-            if "main_recipes" in self.initial_data:
-                instance.main_recipes.all().delete()
-                SubRecipe.objects.bulk_create([SubRecipe(recipe=instance, **sub) for sub in subrecipes_data])
+            RecipeIngredient.objects.bulk_create([
+                RecipeIngredient(recipe=instance, **data) for data in ingredients_data
+            ])
+            RecipeStep.objects.bulk_create([
+                RecipeStep(recipe=instance, **data) for data in steps_data
+            ])
+            SubRecipe.objects.bulk_create([
+                SubRecipe(recipe=instance, **data) for data in subrecipes_data
+            ])
 
         return instance
+
+    # def update(self, instance, validated_data):
+    #     request = self.context.get("request")
+    #     is_partial = request.method == "PATCH" if request else False
+
+    #     # 1. Récupération des sous-objets et M2M fournis dans la requête
+    #     ingredients_data = validated_data.pop("recipe_ingredients", [])
+    #     steps_data = validated_data.pop("steps", [])
+    #     subrecipes_data = validated_data.pop("main_recipes", None)
+    #     categories = validated_data.pop("categories", None)
+    #     labels = validated_data.pop("labels", None)
+
+    #     # 2. Mise à jour des champs simples
+    #     for attr, value in validated_data.items():
+    #         setattr(instance, attr, value)
+    #     instance.save()
+
+    #     # 3. Mise à jour des M2M si fourni
+    #     if categories is not None:
+    #         instance.categories.set(categories)
+    #     if labels is not None:
+    #         instance.labels.set(labels)
+
+    #     # 4. Remplacement total (PUT) ou partiel (PATCH)
+    #     if not is_partial:  # PUT : remplacement total des blocs 
+    #         # Vérification métier avant suppression
+    #         if not ingredients_data and not subrecipes_data:
+    #             raise serializers.ValidationError("Une recette doit contenir au moins un ingrédient ou une sous-recette.")
+    #         if not steps_data and not subrecipes_data:
+    #             raise serializers.ValidationError("Une recette doit contenir au moins une étape ou une sous-recette.")
+
+    #         # Suppression totale
+    #         instance.recipe_ingredients.all().delete()
+    #         instance.main_recipes.all().delete()
+    #         instance.steps.all().delete()
+
+    #         # Re-création
+    #         RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=instance, **ingredient) for ingredient in ingredients_data])
+    #         RecipeStep.objects.bulk_create([RecipeStep(recipe=instance, **step) for step in steps_data])
+    #         SubRecipe.objects.bulk_create([SubRecipe(recipe=instance, **sub) for sub in subrecipes_data])
+    #     else:
+    #         # PATCH — supprimer uniquement ce qui est fourni
+    #         if "recipe_ingredients" in self.initial_data:                
+    #             instance.recipe_ingredients.all().delete()
+    #             RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=instance, **ingredient) for ingredient in ingredients_data])
+    #         if "steps" in self.initial_data:
+    #             if not steps_data and not instance.main_recipes.exists():
+    #                 raise serializers.ValidationError("Une recette doit avoir au moins une étape ou une sous-recette.")
+    #             instance.steps.all().delete()
+    #             RecipeStep.objects.bulk_create([RecipeStep(recipe=instance, **step) for step in steps_data])
+    #         if "main_recipes" in self.initial_data:
+    #             instance.main_recipes.all().delete()
+    #             SubRecipe.objects.bulk_create([SubRecipe(recipe=instance, **sub) for sub in subrecipes_data])
+
+    #     return instance
 
 class PanSerializer(serializers.ModelSerializer):
     pan_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
