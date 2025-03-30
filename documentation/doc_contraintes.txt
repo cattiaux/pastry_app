@@ -610,6 +610,67 @@ Contraintes d’Intégrité :
 
 
 
+### Synthèse des Contraintes pour le Modèle Recipe
+
+            CONTRAINTES	                                                                    TEST CORRESPONDANT
+Création d’une recette valide                                   	            → test_create_recipe_api
+recipe_name, chef_name, recipe_type obligatoires	                            → test_required_fields_recipe_db & test_required_fields_recipe_api
+Unicité du couple (recipe_name, chef_name, context_name)	                    → test_unique_constraint_recipe_db & test_unique_constraint_recipe_api
+Nom et nom du chef normalisés (normalize_case)	                                → test_normalized_fields_recipe_db & test_normalized_fields_recipe_api
+Contrainte de longueur minimale sur description, trick, context_name, source	→ test_min_length_fields_recipe_db & test_min_length_fields_recipe_api
+Champs description, trick, context_name, source optionnels	                    → test_optional_fields_recipe_api
+servings_min et servings_max doivent être ≥ 1	                                → test_servings_must_be_positive_recipe_db & test_servings_must_be_positive_recipe_api
+servings_min ≤ servings_max	                                                    → test_servings_min_max_coherence_recipe_db & test_servings_min_max_coherence_recipe_api
+Auto-remplissage : servings_min = servings_max si un seul fourni	            → test_auto_copy_servings_recipe_db
+servings auto-générés depuis le Pan (et pan_quantity)	                        → test_auto_fill_servings_from_pan_db, test_servings_are_scaled_by_pan_quantity
+context_name auto-rempli depuis parent_recipe si manquant	                    → test_context_is_auto_filled_if_missing
+pan facultatif	                                                                → test_pan_is_optional_recipe_db
+Pas de boucle sur soi-même comme parent	                                        → test_parent_recipe_cannot_be_itself_db & test_cannot_be_own_parent
+Cycle indirect interdit	                                                        → test_cycle_detection_db & test_cycle_detection_indirect
+Si recipe_type = VARIATION, parent_recipe obligatoire	                        → test_variation_requires_parent
+Si parent_recipe est défini, recipe_type doit être VARIATION	                → test_parent_requires_variation_type
+Une recette doit avoir au moins un ingrédient ou une sous-recette	            → test_recipe_requires_ingredient_or_subrecipe & test_recipe_without_ingredients_and_subrecipes_is_invalid
+Une recette doit avoir au moins une étape	                                    → test_recipe_requires_step & test_recipe_without_steps_is_invalid
+PATCH ne peut pas contenir des steps	                                        → test_patch_with_steps_is_rejected
+PATCH ne modifie pas le contenu imbriqué (sub_recipe, steps)	                → test_patch_step_does_not_affect_recipe, test_patch_subrecipe_does_not_affect_parent, test_patch_description_does_not_remove_steps
+Suppression impossible si recette utilisée comme sous-recette	                → test_delete_recipe_used_as_subrecipe
+CRUD complet API et nested OK	                                                → test_create_nested_ingredient_api, test_delete_nested_step_api, etc.
+
+Contraintes Métier :
+1. Champs obligatoires
+    ◦ recipe_name, chef_name, recipe_type toujours requis
+    ◦ Si recipe_type == VARIATION, alors parent_recipe requis
+2. Relations de contenu
+    ◦ Minimum requis : un ingrédient ou sous-recette ET au moins une étape
+    ◦ Les sous-recettes ne doivent pas former de cycle
+3. Servings
+    ◦ Champs servings_min et servings_max doivent être ≥ 1
+    ◦ Si l’un est absent, l’autre est copié
+    ◦ Peuvent être automatiquement remplis via Pan.units_in_mold * pan_quantity
+4. Parent Recipe & context
+    ◦ Le context_name est suggéré automatiquement si la recette est une variation
+    ◦ Une recette ne peut pas être sa propre parent
+    ◦ Les cycles indirects sont détectés et interdits
+5. Traduction utilisateur
+    ◦ Champs normalisés automatiquement (recipe_name, chef_name, etc.)
+    ◦ Champs description, trick, source, context_name sont optionnels mais contrôlés si présents
+
+Contraintes Techniques :
+1. Types de Données
+    ◦ servings_min & servings_max : PositiveIntegerField(null=True)
+    ◦ recipe_type : CharField(choices=RECIPE_TYPE_CHOICES)
+    ◦ parent_recipe : FK nullable vers Recipe (auto-référentielle)
+2. Intégrité & Normalisation
+    ◦ clean() centralise toutes les règles métier
+    ◦ Unicité sur le couple (recipe_name, chef_name, context_name)
+    ◦ Champs normalisés avec normalize_case()
+3. Champs calculés ou dérivés
+    ◦ Auto-remplissage contextuel de context_name et servings
+4. Suppression protégée
+    ◦ Impossible de supprimer une recette si elle est utilisée comme sous-recette (on_delete=PROTECT sur SubRecipe)
+
+
+
 ### Gestion des Endpoints Imbriqués pour les Sous-éléments de Recette
 Modèles concernés : RecipeIngredient, SubRecipe, RecipeStep
 
