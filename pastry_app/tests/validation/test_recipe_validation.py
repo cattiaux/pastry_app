@@ -147,3 +147,40 @@ def test_recipe_requires_step(api_client, base_url):
     response = api_client.post(base_url(model_name), data, format="json")
     assert response.status_code == 400
     assert "au moins une étape" in str(response.data).lower()
+
+def test_patch_with_steps_is_rejected(api_client, base_url):
+    data = base_recipe_data()
+    recipe = api_client.post(base_url(model_name), data=data, format="json").data
+    update = {"steps": [{"step_number": 1, "instruction": "Modifié"}]}
+    response = api_client.patch(f"{base_url(model_name)}{recipe['id']}/", data=update, format="json")
+    assert response.status_code == 400
+    assert "steps" in str(response.data).lower()
+
+def test_patch_subrecipe_does_not_affect_parent(api_client, base_url):
+    data = base_recipe_data()
+    recipe = api_client.post(base_url(model_name), data=data, format="json").data
+    patch = {"description": "Nouvelle description"}
+    response = api_client.patch(f"{base_url(model_name)}{recipe['id']}/", data=patch, format="json")
+    assert response.status_code == 200
+    assert response.data["description"] == "Nouvelle description"
+
+def test_patch_description_does_not_remove_steps(api_client, base_url):
+    data = base_recipe_data()
+    recipe = api_client.post(base_url(model_name), data=data, format="json").data
+    patch = {"description": "test d'une description"}
+    response = api_client.patch(f"{base_url(model_name)}{recipe['id']}/", patch, format="json")
+    print(response.json())
+    assert response.status_code == 200
+    detail = api_client.get(f"{base_url(model_name)}{recipe['id']}/").json()
+    assert len(detail["steps"]) == 1
+
+def test_patch_step_does_not_affect_recipe(api_client, base_url):
+    data = base_recipe_data()
+    recipe = api_client.post(base_url(model_name), data=data, format="json").data
+    step_id = recipe["steps"][0]["id"]
+    patch = {"instruction": "Instruction modifiée"}
+    url = f"{base_url(model_name)}{recipe['id']}/steps/{step_id}/"
+    response = api_client.patch(url, patch, format="json")
+    assert response.status_code == 200
+    recipe_check = api_client.get(f"{base_url(model_name)}{recipe['id']}/").json()
+    assert recipe_check["steps"][0]["instruction"] == "Instruction modifiée"
