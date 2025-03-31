@@ -11,21 +11,9 @@ from django.db.models import ProtectedError
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from .tests.utils import normalize_case
-from .utils import (calculate_quantity_multiplier, apply_multiplier_to_ingredients)
+from .utils import (calculate_quantity_multiplier, apply_multiplier_to_ingredients, adapt_recipe_pan_to_pan)
 from .models import *
 from .serializers import *
-
-class PanDeleteView(generics.DestroyAPIView):
-    queryset = Pan.objects.all()
-    serializer_class = PanSerializer
-
-class IngredientDeleteView(generics.DestroyAPIView):
-    queryset = Ingredient.objects.all()
-    serializer_class = IngredientSerializer
-
-class RecipeDeleteView(generics.DestroyAPIView):
-    queryset = Recipe.objects.all()
-    serializer_class = RecipeSerializer
 
 class StoreViewSet(viewsets.ModelViewSet):
     """ API CRUD pour gérer les magasins. """
@@ -381,33 +369,45 @@ class PanViewSet(viewsets.ModelViewSet):
     
 class RecipeAdaptationAPIView(APIView):
     """
-    API permettant d’adapter les quantités d’une recette en fonction d’un moule cible.
+    API permettant d'adapter une recette à un nouveau contexte :
+    - Cas d'usage 1 : adapter une recette à un autre moule (source_pan → target_pan)
+
+    L'utilisateur fournit :
+    - L'ID de la recette d'origine
+    - L'ID du moule d'origine (sécurité)
+    - L'ID du moule cible (nouveau moule utilisateur)
+
+    La réponse retourne :
+    - Les volumes source et cible
+    - Le multiplicateur calculé
+    - Les quantités recalculées des ingrédients
+    - Une estimation du nombre de portions (à partir du volume cible)
     """
 
     def post(self, request, *args, **kwargs):
+        # Extraction des paramètres du corps de la requête
         recipe_id = request.data.get("recipe_id")
+        source_pan_id = request.data.get("source_pan_id")
         target_pan_id = request.data.get("target_pan_id")
 
-        if not recipe_id or not target_pan_id:
-            return Response({"error": "recipe_id et target_pan_id sont requis"}, status=status.HTTP_400_BAD_REQUEST)
-
+        if not recipe_id or not source_pan_id or not target_pan_id:
+            return Response({"error": "recipe_id, source_pan_id et target_pan_id sont requis"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Chargement de la recette
         recipe = get_object_or_404(Recipe, id=recipe_id)
+
+        # Vérification que le moule d’origine fourni est bien celui de la recette
+        if not recipe.pan or recipe.pan.id != int(source_pan_id):
+            return Response({"error": "Le moule d’origine ne correspond pas à celui associé à la recette."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Chargement du moule cible
         target_pan = get_object_or_404(Pan, id=target_pan_id)
 
-        if not recipe.pan or not recipe.pan.volume_cm3_cache:
-            return Response({"error": "La recette n’a pas de moule d’origine défini ou volume inconnu."}, status=400)
-
-        if not target_pan.volume_cm3_cache:
-            return Response({"error": "Le volume du moule cible est inconnu."}, status=400)
-
+        # Calcul de l’adaptation
         try:
-            multiplier = calculate_quantity_multiplier(recipe.pan.volume_cm3_cache, target_pan.volume_cm3_cache)
-        except ValueError as e:
-            return Response({"error": str(e)}, status=400)
+            data = adapt_recipe_pan_to_pan(recipe, target_pan)
+        except Exception as e:
+            return Response({"error": f"Erreur lors de l’adaptation : {str(e)}"},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        adapted_ingredients = apply_multiplier_to_ingredients(recipe, multiplier)
-
-        return Response({
-            "multiplier": round(multiplier, 3),
-            "adapted_ingredients": adapted_ingredients
-        })
+        return Response(data, status=status.HTTP_200_OK)

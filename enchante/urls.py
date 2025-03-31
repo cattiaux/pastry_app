@@ -47,9 +47,6 @@ urlpatterns = [
     path('api/', include(ingredients_router.urls)),
     path('api/', include(subrecipes_router.urls)),
     path('categories/<int:pk>/delete-subcategories/', CategoryViewSet.as_view({"delete": "delete_subcategories"}), name="delete_subcategories"),
-    path('api/ingredients/<int:pk>/delete/', IngredientDeleteView.as_view(), name='ingredient_delete'),
-    path('api/recipes/<int:pk>/delete/', RecipeDeleteView.as_view(), name='recipe_delete'),
-    path('api/pans/<int:pk>/delete/', PanDeleteView.as_view(), name='pan_delete'),
     path("recipes/adapt/", RecipeAdaptationAPIView.as_view(), name="adapt-recipe"),
 ]
 

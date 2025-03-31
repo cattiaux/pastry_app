@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 from django.db import models as django_models
+from .models import Recipe, Pan
 
 def calculate_quantity_multiplier(from_volume_cm3: float, to_volume_cm3: float) -> float:
     """
@@ -25,43 +26,6 @@ def apply_multiplier_to_ingredients(recipe, multiplier: float) -> list:
         })
     return adapted_ingredients
 
-def update_related_instances(instance, related_data, related_set, related_model, related_serializer, instance_field_name):
-    """
-    This function updates related instances of a given instance.
-
-    Parameters:
-    - instance: The instance whose related instances are to be updated.
-    - related_data: The validated data for the related instances.
-    - related_set: The name of the related set on the instance.
-    - related_model: The model class of the related instances.
-    - related_serializer: The serializer class for the related instances.
-    - instance_field_name: The name of the field on the related model that refers to the instance.
-    """
-    # Get the ids of the related instances to update or create
-    update_ids = [data.get('id') for data in related_data if data.get('id') is not None]
-
-    # Delete related instances that are not included in the update_ids
-    for related_instance in getattr(instance, related_set).all():
-        if related_instance.id not in update_ids:
-            related_instance.delete()
-
-    # Update existing related instances and create new ones
-    for data in related_data:
-        data_id = data.get('id', None)
-        if data_id:
-            related_instance = get_object_or_404(related_model, id=data_id, **{instance_field_name: instance})
-            # Ensure the related field is a primary key, not a model instance
-            for field, value in data.items():
-                if isinstance(value, django_models.Model):
-                    data[field] = value.id
-            serializer = related_serializer(data=data, instance=related_instance)
-            if serializer.is_valid():
-                serializer.save()
-            else:
-                raise serializers.ValidationError(serializer.errors)
-        else:
-            related_model.objects.create(**{instance_field_name: instance}, **data)
-
 def scale_sub_recipe(sub_recipe, required_quantity):
     # Get the default quantity of the sub-recipe
     default_quantity = sub_recipe.quantity
@@ -73,6 +37,70 @@ def scale_sub_recipe(sub_recipe, required_quantity):
     for recipe_ingredient in sub_recipe.recipeingredient_set.all():
         recipe_ingredient.quantity *= scaling_factor
         recipe_ingredient.save()
+
+def get_servings_interval(volume_cm3: float) -> tuple[int, int, int]:
+    """
+    Calcule un intervalle réaliste de portions (min, médiane, max) basé sur le volume.
+    Hypothèse : 150ml = portion standard
+    """
+    if volume_cm3 <= 0:
+        raise ValueError("Volume invalide pour estimer les portions.")
+
+    median = round(volume_cm3 / 150)  # Basé sur 150 ml/portion
+
+    # Écarter selon la taille
+    if median <= 2:
+        min_servings = max(1, median)
+        max_servings = median
+    elif median <= 11:
+        min_servings = median - 1
+        max_servings = median + 1
+    else:
+        min_servings = median - 1
+        max_servings = median + 2 
+
+    return min_servings, median, max_servings
+
+def adapt_recipe_pan_to_pan(recipe: Recipe, target_pan: Pan) -> dict:
+    """
+    Adapte les quantités d'une recette à un nouveau moule cible.
+
+    Étapes :
+    - Vérifie que les volumes sont disponibles
+    - Calcule le multiplicateur de volume
+    - Applique le multiplicateur aux ingrédients
+    - Estime un intervalle réaliste de portions selon le volume cible
+
+    Retour :
+    - recipe_id
+    - volumes source / cible
+    - multiplicateur
+    - intervalle de portions estimées
+    - liste des ingrédients adaptés
+    """
+    if not recipe.pan or not recipe.pan.volume_cm3_cache:
+        raise ValueError("Le moule de la recette n’a pas de volume défini.")
+
+    if not target_pan.volume_cm3_cache:
+        raise ValueError("Le moule cible n’a pas de volume défini.")
+
+    volume_source = recipe.pan.volume_cm3_cache
+    volume_target = target_pan.volume_cm3_cache
+    multiplier = calculate_quantity_multiplier(volume_source, volume_target)
+    adapted_ingredients = apply_multiplier_to_ingredients(recipe, multiplier)
+    servings_min, servings_median, servings_max = get_servings_interval(volume_target)
+
+    return {
+        "recipe_id": recipe.id,
+        "source_volume": round(volume_source, 2),
+        "target_volume": round(volume_target, 2),
+        "multiplier": round(multiplier, 3),
+        "estimated_servings": servings_median,
+        "estimated_servings_min": servings_min,
+        "estimated_servings_max": servings_max,
+        "ingredients": adapted_ingredients
+    }
+
 
 # def estimate_servings(pan):
 #     # Get the two entries in the reference table with the closest volumes
@@ -139,6 +167,43 @@ def scale_sub_recipe(sub_recipe, required_quantity):
 
 # def get_pan_model(pan_type):
 #     return PAN_MODELS.get(pan_type.upper())
+
+def update_related_instances(instance, related_data, related_set, related_model, related_serializer, instance_field_name):
+    """
+    This function updates related instances of a given instance.
+
+    Parameters:
+    - instance: The instance whose related instances are to be updated.
+    - related_data: The validated data for the related instances.
+    - related_set: The name of the related set on the instance.
+    - related_model: The model class of the related instances.
+    - related_serializer: The serializer class for the related instances.
+    - instance_field_name: The name of the field on the related model that refers to the instance.
+    """
+    # Get the ids of the related instances to update or create
+    update_ids = [data.get('id') for data in related_data if data.get('id') is not None]
+
+    # Delete related instances that are not included in the update_ids
+    for related_instance in getattr(instance, related_set).all():
+        if related_instance.id not in update_ids:
+            related_instance.delete()
+
+    # Update existing related instances and create new ones
+    for data in related_data:
+        data_id = data.get('id', None)
+        if data_id:
+            related_instance = get_object_or_404(related_model, id=data_id, **{instance_field_name: instance})
+            # Ensure the related field is a primary key, not a model instance
+            for field, value in data.items():
+                if isinstance(value, django_models.Model):
+                    data[field] = value.id
+            serializer = related_serializer(data=data, instance=related_instance)
+            if serializer.is_valid():
+                serializer.save()
+            else:
+                raise serializers.ValidationError(serializer.errors)
+        else:
+            related_model.objects.create(**{instance_field_name: instance}, **data)
 
 MODEL_TO_URL_MAPPING = {
     "store": "stores",

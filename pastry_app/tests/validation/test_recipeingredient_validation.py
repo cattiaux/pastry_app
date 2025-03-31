@@ -6,6 +6,7 @@ from pastry_app.tests.utils import *
 
 # Définir model_name pour les tests de RecipeIngredient
 model_name = "recipe_ingredients"
+pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def recipe(db):
@@ -23,7 +24,6 @@ def recipe_ingredient(recipe, ingredient):
     return RecipeIngredient.objects.create(recipe=recipe, ingredient=ingredient, quantity=100.0, unit="g")
 
 @pytest.mark.parametrize("field_name", ["quantity", "unit"])
-@pytest.mark.django_db
 def test_required_fields_recipeingredient_api(api_client, base_url, recipe, ingredient, field_name):
     """ Vérifie que les champs obligatoires sont bien requis via l'API """
     expected_errors = ["This field is required.", "This field may not be null."]
@@ -32,7 +32,6 @@ def test_required_fields_recipeingredient_api(api_client, base_url, recipe, ingr
     validate_constraint_api(api_client, base_url, model_name, field_name, expected_errors, **valid_data)
 
 @pytest.mark.parametrize("invalid_quantity", [0, -50])
-@pytest.mark.django_db
 def test_quantity_must_be_positive_api(api_client, base_url, recipe, ingredient, invalid_quantity):
     """ Vérifie que la quantité doit être strictement positive via l'API """
     expected_errors = ["Ensure this value is greater than or equal to 0.","Quantity must be a positive number."]
@@ -40,14 +39,12 @@ def test_quantity_must_be_positive_api(api_client, base_url, recipe, ingredient,
     validate_constraint_api(api_client, base_url, model_name, "quantity", expected_errors, **valid_data)
 
 @pytest.mark.parametrize("invalid_unit", ["invalid", "XYZ"])
-@pytest.mark.django_db
 def test_unit_must_be_valid_choice_api(api_client, base_url, recipe, ingredient, invalid_unit):
     """ Vérifie qu'une unité invalide génère une erreur via l'API """
     expected_errors = ["is not a valid choice."]
     valid_data = {"recipe": recipe.id, "ingredient": ingredient.id, "quantity": 100, "unit": invalid_unit}
     validate_constraint_api(api_client, base_url, model_name, "unit", expected_errors, **valid_data)
 
-@pytest.mark.django_db
 def test_suffix_increment_on_duplicate_ingredient(api_client, base_url, recipe_ingredient):
     """ Vérifie que l'API ajoute bien un suffixe incrémental si un ingrédient est ajouté plusieurs fois """
     url = base_url(model_name)
@@ -64,7 +61,6 @@ def test_suffix_increment_on_duplicate_ingredient(api_client, base_url, recipe_i
     assert response3.status_code == status.HTTP_201_CREATED
     assert response3.json()["display_name"] == "sucre 3"
 
-@pytest.mark.django_db
 def test_suffix_increment_and_reassignment_on_deletion_api(api_client, base_url, recipe_ingredient):
     """ Vérifie que la suppression d'un `RecipeIngredient` réattribue bien les suffixes """
     url = base_url(model_name)
@@ -93,7 +89,6 @@ def test_suffix_increment_and_reassignment_on_deletion_api(api_client, base_url,
     assert response_get_3.status_code == status.HTTP_200_OK
     assert response_get_3.json()["display_name"] == "sucre 2"
 
-@pytest.mark.django_db
 def test_cannot_delete_last_recipeingredient_api(api_client, base_url, recipe_ingredient):
     """ Vérifie qu'on ne peut pas supprimer le dernier `RecipeIngredient` d'une recette """
     url = base_url(model_name)
