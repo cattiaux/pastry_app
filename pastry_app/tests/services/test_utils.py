@@ -8,6 +8,8 @@ import importlib
 import pastry_app.views
 importlib.reload(pastry_app.views)
 
+pytestmark = pytest.mark.django_db
+
 ### fixtures 
 
 @pytest.fixture
@@ -25,7 +27,6 @@ def recipe(db):
 
 ### Test services 
 
-@pytest.mark.django_db
 def test_adapt_recipe_pan_to_pan_creates_correct_multiplier(recipe, target_pan):
     """
     Vérifie que les ingrédients sont bien adaptés avec le bon multiplicateur
@@ -55,7 +56,6 @@ def test_adapt_recipe_pan_to_pan_creates_correct_multiplier(recipe, target_pan):
     assert adapted_ingredient["original_quantity"] == original_quantity
     assert abs(adapted_ingredient["scaled_quantity"] - round(original_quantity * multiplier, 2)) < 0.1
 
-@pytest.mark.django_db
 def test_adapt_recipe_servings_to_volume(recipe):
     """
     Vérifie que la recette est bien adaptée à un nombre de portions cible (volume calculé).
@@ -83,7 +83,6 @@ def test_adapt_recipe_servings_to_volume(recipe):
         assert pan["servings_min"] <= target_servings <= pan["servings_max"]
         assert volume_target * 0.95 <= pan["volume_cm3_cache"] <= volume_target * 1.05
 
-@pytest.mark.django_db
 def test_adapt_recipe_servings_to_servings(recipe):
     """
     Vérifie que la recette est bien adaptée d’un nombre de portions d’origine
@@ -112,7 +111,6 @@ def test_adapt_recipe_servings_to_servings(recipe):
 
 ### Test d’intégration de l’endpoint POST /recipes/adapt/
 
-@pytest.mark.django_db
 def test_recipe_adaptation_api_pan_to_pan(api_client, recipe, target_pan):
     """
     Vérifie que l’API adapte correctement une recette d’un moule source vers un moule cible,
@@ -142,7 +140,32 @@ def test_recipe_adaptation_api_pan_to_pan(api_client, recipe, target_pan):
     assert abs(ingredient["scaled_quantity"] - round(200 * multiplier, 2)) < 0.1
     assert ingredient["unit"] == "g"
 
-@pytest.mark.django_db
+def test_recipe_adaptation_api_servings_to_pan(api_client, recipe, target_pan):
+    """
+    Vérifie que l’API adapte une recette vers un moule cible
+    en se basant sur un nombre de portions initial (Cas 2).
+    """
+    initial_servings = 6
+    volume_source = initial_servings * 150
+    volume_target = target_pan.volume_cm3_cache
+    multiplier = volume_target / volume_source
+
+    url = reverse("adapt-recipe")
+    response = api_client.post(url, {"recipe_id": recipe.id, "initial_servings": initial_servings, "target_pan_id": target_pan.id}, format="json")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert abs(data["source_volume"] - volume_source) < 0.1
+    assert abs(data["target_volume"] - volume_target) < 0.1
+    assert abs(data["multiplier"] - multiplier) < 0.01
+
+    # Vérifie les servings estimés et la suggestion de pans
+    assert "estimated_servings" in data
+    assert "suggested_pans" in data
+    assert isinstance(data["suggested_pans"], list)
+    for pan in data["suggested_pans"]:
+        assert volume_target * 0.95 <= pan["volume_cm3_cache"] <= volume_target * 1.05
+
 def test_recipe_adaptation_api_servings_to_volume(api_client, recipe):
     """
     Vérifie que l’API adapte une recette à un nombre de portions cible,
@@ -172,7 +195,6 @@ def test_recipe_adaptation_api_servings_to_volume(api_client, recipe):
     for pan in data["suggested_pans"]:
         assert volume_target * 0.95 <= pan["volume_cm3_cache"] <= volume_target * 1.05
 
-@pytest.mark.django_db
 def test_recipe_adaptation_api_prioritizes_source_pan(api_client, recipe, target_pan):
     """
     Vérifie que l'API donne la priorité à l'adaptation pan → pan si source_pan_id est fourni,
@@ -201,7 +223,6 @@ def test_recipe_adaptation_api_prioritizes_source_pan(api_client, recipe, target
     assert "suggested_pans" not in data
     assert data["source_volume"] != 42 * 150  # Surtout pas le volume basé sur initial_servings * 150
 
-@pytest.mark.django_db
 def test_recipe_adaptation_api_servings_to_servings(api_client, recipe):
     """
     Vérifie que l’API adapte une recette basée sur un nombre de portions d’origine
