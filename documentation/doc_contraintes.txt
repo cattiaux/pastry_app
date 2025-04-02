@@ -695,3 +695,71 @@ Comportement des Serializers associés :
   Cela permet d'utiliser des nested routes sans dupliquer la logique de relation.
 3. extra_kwargs
 - Définit recipe comme read_only pour éviter toute modification postérieure (sécurité métier).
+
+
+### Description des paramètres d’entrée de /recipes/adapt/
+Cette API permet d'adapter une recette existante à un nouveau contexte, selon deux logiques :
+
+Cas 1 – Adaptation d’un moule vers un autre moule :
+Requiert : recipe_id, source_pan_id, target_pan_id
+L’adaptation est basée sur les volumes des deux moules
+
+Cas 2 – Adaptation à un moule cible en connaissant les portions d’origine :
+Requiert : recipe_id, initial_servings, target_pan_id
+L’adaptation estime le volume d’origine à partir du nombre de portions (1 portion ≈ 150ml)
+
+Priorité en cas de données mixtes :
+Si à la fois source_pan_id et initial_servings sont fournis, l’API donne priorité à source_pan_id.
+Cela garantit une adaptation plus précise basée sur les volumes réels des moules.
+Le champ initial_servings est ignoré dans ce cas.
+
+Exemple :
+{
+  "recipe_id": 42,
+  "source_pan_id": 5,
+  "initial_servings": 6,
+  "target_pan_id": 8
+}
+Ici interprété comme une adaptation de pan → pan (Cas 1)
+
+
+####### Mise à jour d'une recette (PATCH vs PUT)
+
+### PATCH /recipes/<id>/
+
+Pour modifier uniquement des champs simples (nom, chef, nombre de portions, etc.).
+
+- Vous **ne pouvez pas** modifier les ingrédients, étapes ou sous-recettes via ce endpoint.
+- Pour cela, utilisez les endpoints imbriqués ci-dessous.
+
+---
+
+### Endpoints imbriqués à utiliser :
+
+#### Ingrédients
+- `POST /recipes/<id>/ingredients/` → Ajouter un ingrédient
+- `PATCH /recipes/<id>/ingredients/<id>/` → Modifier un ingrédient
+- `DELETE /recipes/<id>/ingredients/<id>/` → Supprimer un ingrédient
+
+#### Étapes
+- `POST /recipes/<id>/steps/`
+- `PATCH /recipes/<id>/steps/<id>/`
+- `DELETE /recipes/<id>/steps/<id>/`
+
+#### Sous-recettes
+- `POST /recipes/<id>/sub-recipes/`
+- `PATCH /recipes/<id>/sub-recipes/<id>/`
+- `DELETE /recipes/<id>/sub-recipes/<id>/`
+
+---
+
+### PUT /recipes/<id>/
+
+Utilisez ce endpoint uniquement si vous souhaitez **remplacer entièrement** tous les blocs :
+- Ingrédients
+- Étapes
+- Sous-recettes
+
+**Attention** : tout ce qui n’est pas envoyé sera supprimé.
+
+---

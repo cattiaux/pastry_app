@@ -38,69 +38,128 @@ def scale_sub_recipe(sub_recipe, required_quantity):
         recipe_ingredient.quantity *= scaling_factor
         recipe_ingredient.save()
 
-def get_servings_interval(volume_cm3: float) -> tuple[int, int, int]:
+def get_servings_interval(volume_cm3: float) -> dict:
     """
-    Calcule un intervalle réaliste de portions (min, médiane, max) basé sur le volume.
+    Calcule un intervalle réaliste de portions (min, standard, max) basé sur le volume.
     Hypothèse : 150ml = portion standard
     """
     if volume_cm3 <= 0:
         raise ValueError("Volume invalide pour estimer les portions.")
 
-    median = round(volume_cm3 / 150)  # Basé sur 150 ml/portion
+    standard = round(volume_cm3 / 150)
 
-    # Écarter selon la taille
-    if median <= 2:
-        min_servings = max(1, median)
-        max_servings = median
-    elif median <= 11:
-        min_servings = median - 1
-        max_servings = median + 1
+    if standard <= 2:
+        min_servings = max(1, standard)
+        max_servings = standard
+    elif standard <= 11:
+        min_servings = standard - 1
+        max_servings = standard + 1
     else:
-        min_servings = median - 1
-        max_servings = median + 2 
+        min_servings = standard - 1
+        max_servings = standard + 2
 
-    return min_servings, median, max_servings
+    return {"standard": standard, "min": min_servings, "max": max_servings}
 
-def adapt_recipe_pan_to_pan(recipe: Recipe, target_pan: Pan) -> dict:
+def servings_to_volume(servings_min: int, servings_max: int = None) -> float:
     """
-    Adapte les quantités d'une recette à un nouveau moule cible.
-
-    Étapes :
-    - Vérifie que les volumes sont disponibles
-    - Calcule le multiplicateur de volume
-    - Applique le multiplicateur aux ingrédients
-    - Estime un intervalle réaliste de portions selon le volume cible
-
-    Retour :
-    - recipe_id
-    - volumes source / cible
-    - multiplicateur
-    - intervalle de portions estimées
-    - liste des ingrédients adaptés
+    Calcule un volume estimé en ml à partir d’un nombre de portions.
+    Si servings_max est donné, utilise la moyenne.
     """
-    if not recipe.pan or not recipe.pan.volume_cm3_cache:
-        raise ValueError("Le moule de la recette n’a pas de volume défini.")
+    if servings_max:
+        servings = (servings_min + servings_max) / 2
+    else:
+        servings = servings_min
 
-    if not target_pan.volume_cm3_cache:
-        raise ValueError("Le moule cible n’a pas de volume défini.")
+    return servings * 150
 
-    volume_source = recipe.pan.volume_cm3_cache
-    volume_target = target_pan.volume_cm3_cache
+def get_suggested_pans(volume_target: float) -> list[dict]:
+    """
+    Retourne les moules dont le volume est dans une plage de ±5% autour du volume cible.
+    Inclut une estimation des portions pour chaque moule.
+    """
+    suggested = []
+    for pan in Pan.objects.filter(
+        volume_cm3_cache__gte=volume_target * 0.95,
+        volume_cm3_cache__lte=volume_target * 1.05
+    ):
+        servings_info = get_servings_interval(pan.volume_cm3_cache)
+        suggested.append({"id": pan.id, "pan_name": pan.pan_name, "volume_cm3_cache": pan.volume_cm3_cache, 
+                          "servings_min": servings_info["min"], "servings_max": servings_info["max"]})
+
+    return suggested
+
+def adapt_recipe_with_target_volume(recipe: Recipe, volume_target: float, volume_source: float = None) -> dict:
+    """
+    Fonction centrale d’adaptation d’une recette vers un volume cible donné.
+    Utilisable avec un volume provenant d’un moule ou d’un nombre de portions.
+
+    - Calcule le multiplicateur à partir du volume source (soit moule soit fourni manuellement)
+    - Applique ce multiplicateur aux ingrédients
+    - Estime un intervalle réaliste de portions sur le volume cible
+    """
+    if volume_source is None:
+        if not recipe.pan or not recipe.pan.volume_cm3_cache:
+            raise ValueError("Le moule d’origine de la recette est manquant ou invalide.")
+        volume_source = recipe.pan.volume_cm3_cache
+
     multiplier = calculate_quantity_multiplier(volume_source, volume_target)
     adapted_ingredients = apply_multiplier_to_ingredients(recipe, multiplier)
-    servings_min, servings_median, servings_max = get_servings_interval(volume_target)
+    servings_info = get_servings_interval(volume_target)
 
     return {
         "recipe_id": recipe.id,
-        "source_volume": round(volume_source, 2),
-        "target_volume": round(volume_target, 2),
-        "multiplier": round(multiplier, 3),
-        "estimated_servings": servings_median,
-        "estimated_servings_min": servings_min,
-        "estimated_servings_max": servings_max,
-        "ingredients": adapted_ingredients
+        "source_volume": volume_source,
+        "target_volume": volume_target,
+        "multiplier": multiplier,
+        "ingredients": adapted_ingredients,
+        "estimated_servings": servings_info["standard"],
+        "estimated_servings_min": servings_info["min"],
+        "estimated_servings_max": servings_info["max"]
     }
 
+def adapt_recipe_pan_to_pan(recipe: Recipe, target_pan: Pan) -> dict:
+    """
+    Adapte une recette d’un moule vers un autre moule.
+    """
+    if not target_pan.volume_cm3_cache:
+        raise ValueError("Le volume du moule cible est inconnu.")
+
+    return adapt_recipe_with_target_volume(recipe, target_pan.volume_cm3_cache)
+
+def adapt_recipe_servings_to_volume(recipe: Recipe, target_servings: int) -> dict:
+    """
+    Adapte une recette à un nombre de portions cible (volume déduit via le pan de la recette).
+    """
+    if target_servings <= 0:
+        raise ValueError("Le nombre de portions cible doit être supérieur à 0.")
+
+    volume_target = target_servings * 150
+    base_data = adapt_recipe_with_target_volume(recipe, volume_target)
+
+    base_data["suggested_pans"] = get_suggested_pans(volume_target)
+    return base_data
+
+def adapt_recipe_servings_to_servings(recipe: Recipe, target_servings: int) -> dict:
+    """
+    Adapte une recette à un nombre de portions cible,
+    en se basant sur servings_min et servings_max (sans moule).
+    """
+    if not recipe.servings_min:
+        raise ValueError("La recette n’a pas d’information sur le nombre de portions d’origine.")
+    if target_servings <= 0:
+        raise ValueError("Le nombre de portions cible doit être supérieur à 0.")
+
+    volume_source = servings_to_volume(recipe.servings_min, recipe.servings_max)
+    volume_target = target_servings * 150
+
+    data = adapt_recipe_with_target_volume(recipe, volume_target, volume_source)
+
+    data["source_servings"] = (recipe.servings_min + recipe.servings_max) / 2 if recipe.servings_max else recipe.servings_min
+    data["target_volume"] = volume_target
+    data["estimated_servings"] = target_servings
+    data["suggested_pans"] = get_suggested_pans(volume_target)
+
+    return data
 
 # def estimate_servings(pan):
 #     # Get the two entries in the reference table with the closest volumes

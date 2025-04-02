@@ -89,46 +89,6 @@ tests/
 │── base_api_test.py  → Classe `BaseAPITest` pour factoriser les tests API
 
 
-####### Mise à jour d'une recette (PATCH vs PUT)
-
-### PATCH /recipes/<id>/
-
-Pour modifier uniquement des champs simples (nom, chef, nombre de portions, etc.).
-
-- Vous **ne pouvez pas** modifier les ingrédients, étapes ou sous-recettes via ce endpoint.
-- Pour cela, utilisez les endpoints imbriqués ci-dessous.
-
----
-
-### Endpoints imbriqués à utiliser :
-
-#### Ingrédients
-- `POST /recipes/<id>/ingredients/` → Ajouter un ingrédient
-- `PATCH /recipes/<id>/ingredients/<id>/` → Modifier un ingrédient
-- `DELETE /recipes/<id>/ingredients/<id>/` → Supprimer un ingrédient
-
-#### Étapes
-- `POST /recipes/<id>/steps/`
-- `PATCH /recipes/<id>/steps/<id>/`
-- `DELETE /recipes/<id>/steps/<id>/`
-
-#### Sous-recettes
-- `POST /recipes/<id>/sub-recipes/`
-- `PATCH /recipes/<id>/sub-recipes/<id>/`
-- `DELETE /recipes/<id>/sub-recipes/<id>/`
-
----
-
-### PUT /recipes/<id>/
-
-Utilisez ce endpoint uniquement si vous souhaitez **remplacer entièrement** tous les blocs :
-- Ingrédients
-- Étapes
-- Sous-recettes
-
-**Attention** : tout ce qui n’est pas envoyé sera supprimé.
-
----
 
 
 """

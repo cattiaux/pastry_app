@@ -1,5 +1,5 @@
 # views.py
-from rest_framework import viewsets, generics, status
+from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
@@ -11,7 +11,8 @@ from django.db.models import ProtectedError
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from .tests.utils import normalize_case
-from .utils import (calculate_quantity_multiplier, apply_multiplier_to_ingredients, adapt_recipe_pan_to_pan)
+from .utils import (servings_to_volume, get_suggested_pans, 
+                    adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_with_target_volume, adapt_recipe_servings_to_servings)
 from .models import *
 from .serializers import *
 
@@ -368,46 +369,62 @@ class PanViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
 class RecipeAdaptationAPIView(APIView):
-    """
-    API permettant d'adapter une recette à un nouveau contexte :
-    - Cas d'usage 1 : adapter une recette à un autre moule (source_pan → target_pan)
-
-    L'utilisateur fournit :
-    - L'ID de la recette d'origine
-    - L'ID du moule d'origine (sécurité)
-    - L'ID du moule cible (nouveau moule utilisateur)
-
-    La réponse retourne :
-    - Les volumes source et cible
-    - Le multiplicateur calculé
-    - Les quantités recalculées des ingrédients
-    - Une estimation du nombre de portions (à partir du volume cible)
-    """
+    """API permettant d'adapter une recette à un nouveau contexte (moule ou portions)."""
 
     def post(self, request, *args, **kwargs):
+        """
+        Permet d’adapter une recette à un autre moule ou à un nombre de portions cible.
+
+        Les cas supportés :
+        - Cas 1 : Adaptation entre moule source et moule cible
+        - Cas 2 : Adaptation depuis un nombre de portions initial vers un moule
+        - Cas 3 : Adaptation depuis un moule source vers un nombre de portions cible
+        - Cas 4 : Adaptation d’un nombre de portions connu (servings_min/max) vers un autre nombre
+        """
         # Extraction des paramètres du corps de la requête
         recipe_id = request.data.get("recipe_id")
         source_pan_id = request.data.get("source_pan_id")
         target_pan_id = request.data.get("target_pan_id")
+        initial_servings = request.data.get("initial_servings")
+        target_servings = request.data.get("target_servings")
 
-        if not recipe_id or not source_pan_id or not target_pan_id:
-            return Response({"error": "recipe_id, source_pan_id et target_pan_id sont requis"}, status=status.HTTP_400_BAD_REQUEST)
-        
+        if not recipe_id:
+            return Response({"error": "recipe_id est requis"}, status=status.HTTP_400_BAD_REQUEST)
+
         # Chargement de la recette
-        recipe = get_object_or_404(Recipe, id=recipe_id)
+        recipe = get_object_or_404(Recipe, pk=recipe_id)
 
-        # Vérification que le moule d’origine fourni est bien celui de la recette
-        if not recipe.pan or recipe.pan.id != int(source_pan_id):
-            return Response({"error": "Le moule d’origine ne correspond pas à celui associé à la recette."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Chargement du moule cible
-        target_pan = get_object_or_404(Pan, id=target_pan_id)
-
-        # Calcul de l’adaptation
         try:
-            data = adapt_recipe_pan_to_pan(recipe, target_pan)
-        except Exception as e:
-            return Response({"error": f"Erreur lors de l’adaptation : {str(e)}"},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # Cas 1 : pan → pan
+            if source_pan_id and target_pan_id:
+                if not recipe.pan or recipe.pan.id != int(source_pan_id):
+                    return Response({"error": "Le moule source de la recette ne correspond pas."}, status=status.HTTP_400_BAD_REQUEST)
+                target_pan = get_object_or_404(Pan, pk=target_pan_id)
+                data = adapt_recipe_pan_to_pan(recipe, target_pan)
 
-        return Response(data, status=status.HTTP_200_OK)
+            # Cas 2 : servings → pan
+            elif initial_servings and target_pan_id:
+                target_pan = get_object_or_404(Pan, pk=target_pan_id)
+                volume_target = target_pan.volume_cm3_cache
+                volume_source = servings_to_volume(int(initial_servings))
+                data = adapt_recipe_with_target_volume(recipe, volume_target, volume_source)
+                data["suggested_pans"] = get_suggested_pans(volume_target)
+
+            # Cas 3 : pan → servings
+            elif source_pan_id and target_servings:
+                if not recipe.pan or recipe.pan.id != int(source_pan_id):
+                    return Response({"error": "Le moule source de la recette ne correspond pas."}, status=status.HTTP_400_BAD_REQUEST)
+                data = adapt_recipe_servings_to_volume(recipe, int(target_servings))
+
+            # Cas 4 : servings min/max → servings cible
+            elif target_servings and recipe.servings_min:
+                data = adapt_recipe_servings_to_servings(recipe, int(target_servings))
+
+            else:
+                return Response({"error": "Combinaison de paramètres invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(data, status=status.HTTP_200_OK)
+    
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
