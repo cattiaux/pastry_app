@@ -161,71 +161,7 @@ def adapt_recipe_servings_to_servings(recipe: Recipe, target_servings: int) -> d
 
     return data
 
-# def estimate_servings(pan):
-#     # Get the two entries in the reference table with the closest volumes
-#     lower_entry = PanServing.objects.filter(pan_type=pan.pan_type, volume__lte=pan.volume).order_by('-volume').first()
-#     upper_entry = PanServing.objects.filter(pan_type=pan.pan_type, volume__gte=pan.volume).order_by('volume').first()
 
-#     # If there's no lower or upper entry, return the servings of the available entry
-#     if lower_entry is None:
-#         return upper_entry.servings
-#     if upper_entry is None:
-#         return lower_entry.servings
-
-#     # If the pan's volume matches exactly with an entry, return its servings
-#     if lower_entry.volume == pan.volume:
-#         return lower_entry.servings
-
-#     # Interpolate between the two closest volumes
-#     volume_diff = upper_entry.volume - lower_entry.volume
-#     servings_diff = upper_entry.servings - lower_entry.servings
-#     volume_ratio = (pan.volume - lower_entry.volume) / volume_diff
-#     estimated_servings = lower_entry.servings + servings_diff * volume_ratio
-
-#     return estimated_servings
-
-# def estimate_volume(servings, recipe_type):
-#     """
-#     Estime le volume de moule nécessaire pour un nombre de servings donné.
-#     - Utilise `PanServing` en priorité.
-#     - Applique une interpolation ou une extrapolation selon les données disponibles.
-#     """
-
-#     query = PanServing.objects.filter(recipe_type=recipe_type)
-    
-#     # Get the two entries in the reference table with the closest servings
-#     lower_entry = query.filter(servings__lte=servings).order_by('-servings').first()
-#     upper_entry = query.filter(servings__gte=servings).order_by('servings').first()
-
-#     # Cas 1️ : Interpolation linéaire si lower_entry et upper_entry existent
-#     if lower_entry and upper_entry:
-#         if lower_entry.servings == servings:
-#             return lower_entry.pan.volume  # Correspondance exacte
-#         # Interpolation entre les deux valeurs
-#         servings_diff = upper_entry.servings - lower_entry.servings
-#         volume_diff = upper_entry.pan.volume - lower_entry.pan.volume
-#         servings_ratio = (servings - lower_entry.servings) / servings_diff
-#         estimated_volume = lower_entry.pan.volume + volume_diff * servings_ratio
-#         return estimated_volume
-
-#     # Cas 2️ : Extrapolation linéaire vers le haut si seul `lower_entry` existe
-#     if lower_entry:
-#         scale_factor = servings / lower_entry.servings  # Produit en croix
-#         estimated_volume = lower_entry.pan.volume * scale_factor
-#         return estimated_volume
-
-#     # Cas 3️ : Extrapolation linéaire vers le bas si seul `upper_entry` existe
-#     if upper_entry:
-#         scale_factor = servings / upper_entry.servings  # Produit en croix inversé
-#         estimated_volume = upper_entry.pan.volume * scale_factor
-#         return estimated_volume
-
-#     return None  # Aucun volume trouvé
-
-# PAN_MODELS = {db_type: globals()[model_type + 'Pan'] for db_type, model_type in Pan.PAN_TYPES}
-
-# def get_pan_model(pan_type):
-#     return PAN_MODELS.get(pan_type.upper())
 
 def update_related_instances(instance, related_data, related_set, related_model, related_serializer, instance_field_name):
     """
