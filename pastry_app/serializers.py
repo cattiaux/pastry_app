@@ -883,3 +883,11 @@ class PanSuggestionSerializer(serializers.Serializer):
             raise serializers.ValidationError("Le nombre de portions doit être supérieur à 0.")
         return value
 
+class RecipeAdaptationByIngredientSerializer(serializers.Serializer):
+    recipe_id = serializers.IntegerField(required=True)
+    ingredient_constraints = serializers.DictField(
+        child=serializers.FloatField(),
+        help_text="Dictionnaire sous la forme {ingredient_id: quantité_disponible}"
+    )
+
+

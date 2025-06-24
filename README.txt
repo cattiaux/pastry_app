@@ -190,36 +190,8 @@ Passer en revue tous les ViewSet exposés par l’API afin d’identifier les ca
 
 
 
-### API de suggestion de moules en fonction du volume cible
-Contexte :
-Actuellement, le modèle Pan permet de stocker et calculer le volume de chaque moule (volume_cm3_cache).
-Cependant, il n'existe pas encore d'API permettant de suggérer dynamiquement des moules adaptés à un volume cible.
-
-Objectif :
-Permettre à l'utilisateur de trouver rapidement les moules compatibles avec :
-- un volume cible (ex : après avoir recalculé les ingrédients)
-- un nombre de portions converti en volume
-- des contraintes physiques (ex : max 1400 cm³)
-
-À faire :
-1. Créer une vue dédiée (PanSuggestionAPIView) en lecture seule
-2. Permettre le passage d’un paramètre ?target_volume=...
-3. Appliquer une tolérance (10% par défaut) pour retourner les Pan dont volume_cm3_cache est proche du volume demandé
-4. Ajouter l’endpoint dans les routes sous : /pans/suggestions/
-5. (Optionnel) Ajouter des filtres supplémentaires (ex: pan_type, brand)
-
-Bénéfice :
-- Meilleure UX pour adapter les recettes
-- Système intelligent de correspondance entre recette et matériel utilisateur
-- Base technique réutilisable pour d'autres fonctionnalités (calcul de portions, adaptation dynamique)
-
-
-### Calcul automatique du multiplicateur de quantité en fonction du moule : 
-Développer une fonction qui, en se basant sur les volumes des moules source et cible, calcule automatiquement le multiplicateur de quantité.
-
 ### Calcul automatique du multiplicateur de quantité en fonction de la quantité d'un ingrédient spécifique 
 
-### Ecrire des tests API pour la route POST /recipes/adapt/
 
 ### UserRecipeAdaptation
 

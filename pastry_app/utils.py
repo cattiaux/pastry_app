@@ -3,7 +3,8 @@ from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 from django.db import models as django_models
 from django.db.models.functions import Abs
-from .models import Recipe, Pan
+from django.core.exceptions import ValidationError
+from .models import Recipe, Pan, Ingredient, RecipeIngredient
 
 def calculate_quantity_multiplier(from_volume_cm3: float, to_volume_cm3: float) -> float:
     """
@@ -229,6 +230,69 @@ def suggest_pans_for_servings(target_servings: int) -> dict:
 
     return {"target_volume_cm3": round(target_volume, 2), "suggested_pans": pans_data}
 
+def adapt_recipe_by_ingredients_constraints(recipe, ingredient_constraints: dict) -> dict:
+    """
+    Adapte une recette en fonction des quantités disponibles pour un ou plusieurs ingrédients.
+
+    :param recipe: instance de Recipe
+    :param ingredient_constraints: dict sous la forme {ingredient_id: quantity_disponible, ...}
+    :return: dict avec les quantités adaptées, le multiplicateur appliqué, l’ingrédient limitant, volumes estimés
+    """
+
+    if not recipe.recipe_ingredients.exists():
+        raise ValidationError("La recette ne contient aucun ingrédient.")
+
+    if not ingredient_constraints:
+        raise ValidationError("Aucune contrainte de quantité d’ingrédient n’a été fournie.")
+
+    multipliers = []
+
+    for recipe_ingredient in recipe.recipe_ingredients.all():
+        ingredient_id = recipe_ingredient.ingredient.id
+
+        if ingredient_id in ingredient_constraints:
+            available_quantity = ingredient_constraints[ingredient_id]
+            if available_quantity <= 0:
+                raise ValidationError(f"La quantité fournie pour l’ingrédient '{recipe_ingredient.ingredient}' doit être positive.")
+            
+            multiplier = available_quantity / recipe_ingredient.quantity
+            multipliers.append((multiplier, ingredient_id))
+
+    if not multipliers:
+        raise ValidationError("Aucune correspondance entre les ingrédients de la recette et les contraintes fournies.")
+
+    # Facteur limitant = le plus petit multiplicateur
+    final_multiplier, limiting_ingredient_id = min(multipliers, key=lambda x: x[0])
+
+    adapted_ingredients = []
+    for recipe_ingredient in recipe.recipe_ingredients.all():
+        adapted_ingredients.append({
+            "ingredient_id": recipe_ingredient.ingredient.id,
+            "ingredient_name": recipe_ingredient.ingredient.ingredient_name,
+            "original_quantity": recipe_ingredient.quantity,
+            "scaled_quantity": round(recipe_ingredient.quantity * final_multiplier, 2),
+            "unit": recipe_ingredient.unit,
+        })
+
+    # Volume estimé (si la recette a un pan ou servings, sinon None)
+    volume_source = None
+    if recipe.pan and recipe.pan.volume_cm3_cache:
+        volume_source = recipe.pan.volume_cm3_cache
+    elif recipe.servings_min and recipe.servings_max:
+        volume_source = round((recipe.servings_min + recipe.servings_max) / 2 * 150)
+
+    volume_target = round(volume_source * final_multiplier, 2) if volume_source else None
+
+    return {
+        "recipe_id": recipe.id,
+        "limiting_ingredient_id": limiting_ingredient_id,
+        "multiplier": final_multiplier,
+        "source_volume": volume_source,
+        "target_volume": volume_target,
+        "ingredients": adapted_ingredients
+    }
+
+
 
 
 
@@ -281,3 +345,4 @@ MODEL_TO_URL_MAPPING = {
 def get_api_url_name(model_name):
     """ Renvoie le nom utilisé dans l'URL d'API pour un modèle donné. """
     return MODEL_TO_URL_MAPPING.get(model_name, f"{model_name}s")  # Fallback en ajoutant "s"
+

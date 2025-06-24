@@ -1,7 +1,8 @@
 import pytest, math
 from django.urls import reverse
 from rest_framework import status
-from pastry_app.utils import adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_servings_to_servings, estimate_servings_from_pan, suggest_pans_for_servings
+from pastry_app.utils import (adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_servings_to_servings, 
+                              estimate_servings_from_pan, suggest_pans_for_servings, adapt_recipe_by_ingredients_constraints)
 from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep
 from pastry_app.tests.base_api_test import api_client, base_url
 import importlib
@@ -164,6 +165,21 @@ def test_suggest_pans_for_servings(target_pan):
     with pytest.raises(ValueError):
         suggest_pans_for_servings(target_servings=0)
 
+def test_adapt_recipe_by_ingredients_constraints(recipe):
+    """
+    Vérifie que la recette est bien adaptée en fonction des quantités disponibles
+    pour un ou plusieurs ingrédients.
+    """
+    ingredient = recipe.recipe_ingredients.first().ingredient
+    constraints = {ingredient.id: 100}  # Quantité disponible
+
+    result = adapt_recipe_by_ingredients_constraints(recipe, constraints)
+
+    expected_multiplier = 100 / recipe.recipe_ingredients.first().quantity
+
+    assert result["multiplier"] == expected_multiplier
+    assert result["limiting_ingredient_id"] == ingredient.id
+    assert abs(result["ingredients"][0]["scaled_quantity"] - 100) < 0.01
 
 ### Test d’intégration des endpoints API
 
@@ -318,10 +334,9 @@ def test_pan_estimation_api(api_client, target_pan):
     et l’intervalle de portions pour un moule existant ou pour des dimensions fournies.
     """
     url = reverse("estimate-pan")
-    print(url)
+
     # Avec pan existant
     response = api_client.post(url, {"pan_id": target_pan.id}, format="json")
-    print(response.json())
     assert response.status_code == 200
     data = response.json()
 
@@ -375,3 +390,21 @@ def test_pan_suggestion_api(api_client, target_pan):
     assert response.status_code == 400
     assert "target_servings" in response.json()
 
+#  POST /recipes-adapt/by-ingredient/
+
+def test_recipe_adaptation_by_ingredient_api(api_client, recipe):
+    """
+    Vérifie que l’API adapte correctement une recette en fonction
+    de la quantité d’un ingrédient donné.
+    """
+    ingredient = recipe.recipe_ingredients.first().ingredient
+    url = reverse("adapt-recipe-by-ingredient")
+
+    response = api_client.post(url, {"recipe_id": recipe.id, "ingredient_constraints": {str(ingredient.id): 100}}, format="json")
+    print(response.json())
+    assert response.status_code == 200
+    data = response.json()
+    assert data["recipe_id"] == recipe.id
+    assert data["limiting_ingredient_id"] == ingredient.id
+    assert data["multiplier"] > 0
+    assert data["ingredients"][0]["ingredient_id"] == ingredient.id

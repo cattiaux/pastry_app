@@ -12,7 +12,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from .tests.utils import normalize_case
 from .utils import (servings_to_volume, get_suggested_pans, adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_with_target_volume, 
-                    adapt_recipe_servings_to_servings, estimate_servings_from_pan, suggest_pans_for_servings)
+                    adapt_recipe_servings_to_servings, estimate_servings_from_pan, suggest_pans_for_servings, adapt_recipe_by_ingredients_constraints)
 from .models import *
 from .serializers import *
 
@@ -476,3 +476,26 @@ class PanSuggestionAPIView(APIView):
 
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
+
+class RecipeAdaptationByIngredientAPIView(APIView):
+    """
+    API pour adapter une recette en fonction des quantités disponibles
+    d’un ou plusieurs ingrédients.
+    """
+
+    def post(self, request):
+        serializer = RecipeAdaptationByIngredientSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        recipe = get_object_or_404(Recipe, pk=serializer.validated_data["recipe_id"])
+        # Conversion des clés en entier pour correspondre aux IDs en base
+        ingredient_constraints = {
+            int(k): v for k, v in serializer.validated_data["ingredient_constraints"].items()
+        }
+        
+        try:
+            result = adapt_recipe_by_ingredients_constraints(recipe, ingredient_constraints)
+            return Response(result, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
