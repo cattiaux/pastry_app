@@ -763,3 +763,37 @@ Utilisez ce endpoint uniquement si vous souhaitez **remplacer entièrement** tou
 **Attention** : tout ce qui n’est pas envoyé sera supprimé.
 
 ---
+
+
+
+####### Synthèse des Contraintes pour les Calculs d’Adaptation, d’Estimation et de Suggestion
+
+# Contraintes Métier
+
+        Fonction / Endpoint	                                Contraintes Métier	                                             Test Correspondant
+/api/recipes-adapt/ (adaptation de recettes)	- Oblige la présence d’un recipe_id.                                    - test_recipe_adaptation_api_pan_to_pan
+                                                - Vérifie les priorités des paramètres (source_pan_id prioritaire).     - test_recipe_adaptation_api_servings_to_volume
+                                                - Les servings doivent être ≥ 1.                                        - test_recipe_adaptation_api_servings_to_servings
+                                                - Les pans doivent être valides et exister si fournis.                  - test_recipe_adaptation_api_prioritizes_source_pan
+                                                - Si la recette n’a pas de pan, alors servings_min et servings_max 
+                                                doivent être définis pour calculer.	
+
+/api/pans/estimate-volume/	                    - Si pan_id est fourni, les dimensions ne doivent pas être envoyées.    - test_pan_estimation_api
+                                                - Si pan_id est absent, les dimensions doivent être complètes 
+                                                selon le type de pan.
+                                                - Les dimensions doivent être strictement positives.
+
+/api/pan-suggesttion/	                        - Le nombre de servings cible est requis et ≥ 1.                        - test_suggest_pans_api
+                                                - Retourne tous les pans compatibles 
+                                                (où servings_min ≤ target ≤ servings_max).	
+
+# Contraintes Techniques
+Les endpoints d’estimation et de suggestion sont indépendants et séparés de l’endpoint d’adaptation (/recipes-adapt/).
+Les calculs utilisent une convention métier :
+➝ 1 portion = 150 ml par défaut (peut évoluer dans une version future).
+Les suggestions de pans sont basées sur l’intervalle (servings_min, servings_max) enregistré dans le modèle Pan.
+
+# Contraintes de Validation API
+Validation stricte des combinaisons d’entrées :
+Exemple : Il est interdit d’envoyer à la fois un pan_id et des dimensions dans /pans/estimate-volume/.
+Dans /recipes-adapt/, si un source_pan_id est présent, la logique Serving → Serving est ignorée.

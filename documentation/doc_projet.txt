@@ -29,7 +29,7 @@ Fichier	Rôle
     admin.py	Configuration de l’interface d’administration Django
     constants.py	Variables constantes utilisées dans l’application
     utils.py	Fonctions utilitaires (ex: calculs liés aux moules)
-    tests/	 Dossier contenant tous les tests (modèle, validation, API/CRUD)
+    tests/	 Dossier contenant tous les tests (modèle, validation, API/CRUD, services)
     settings.py	Configuration principale de Django
     populate_db.py	Script pour initialiser la base de données
 
@@ -79,6 +79,40 @@ Fichier	Rôle
         CustomPan (Moule personnalisé) - Modèle pour un moule de forme non standard.
             volume : Volume total du moule, défini par l’utilisateur.
 
+📐 Fonctionnalités avancées : Adaptation, Estimation et Suggestion
+Le backend intègre une logique métier avancée autour de l’adaptation des recettes, la suggestion de moules et l’estimation des portions ou volumes.
+Use cases supportés :
+
+Adapter une recette vers un autre moule (Pan → Pan)
+➝ Ajuste les quantités d’une recette en fonction d’un moule source et d’un moule cible.
+
+Adapter une recette en fonction d’un nombre de portions vers un moule (Serving → Pan)
+➝ L’utilisateur précise le nombre de portions souhaité et le moule cible.
+
+Adapter une recette d’un nombre de portions vers un autre (Serving → Serving)
+➝ Permet de recalculer les quantités sans dépendre d’un moule.
+
+Estimer combien de portions une recette donne dans un moule donné (Pan → Serving)
+➝ Fournit l’intervalle de portions réalisables avec la recette dans un moule spécifique.
+
+Estimer le nombre de portions réalisables avec un moule sans passer par une recette (Pan seul)
+➝ Fournit le volume et un intervalle de portions pour un moule existant ou défini par ses dimensions.
+
+Suggérer les moules adaptés pour un nombre de portions (Serving seul)
+➝ L’utilisateur fournit le nombre de portions souhaitées et obtient une liste de moules compatibles.
+
+Si plusieurs modes d’adaptation sont possibles dans une requête, le backend applique une priorité stricte :
+Pan → Pan (prioritaire si source_pan et target_pan sont fournis)
+Sinon Serving → Pan
+Sinon Serving → Serving
+Sinon Pan → Serving
+
+🔧 Endpoints API associés :
+/api/recipes-adapt/	         ➝ Endpoint central pour les cas 1 à 4
+/api/pans/estimate-volume/   ➝ Estimation volume + portions à partir d’un moule (cas 5)
+/api/pans/suggest/	         ➝ Suggestion de moules selon un nombre de portions (cas 6)
+
+
 📌 Tests mis en place
 Organisation des tests :
 
@@ -87,7 +121,7 @@ tests/
 │── validation/  → Tests de validation métier (`test_category_validation.py`, `test_recipe_validation.py`, etc.)
 │── crud/  → Tests CRUD via API (`test_category.py`, `test_ingredient.py`, etc.)
 │── base_api_test.py  → Classe `BaseAPITest` pour factoriser les tests API
-
+|── services/  → Tests des services d'adaptation, d'estimation et de suggestion de moules et servings
 
 
 
