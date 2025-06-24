@@ -12,7 +12,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from .tests.utils import normalize_case
 from .utils import (servings_to_volume, get_suggested_pans, adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_with_target_volume, 
-                    adapt_recipe_servings_to_servings, estimate_servings_from_pan)
+                    adapt_recipe_servings_to_servings, estimate_servings_from_pan, suggest_pans_for_servings)
 from .models import *
 from .serializers import *
 
@@ -456,6 +456,23 @@ class PanEstimationAPIView(APIView):
                 volume_raw=data.get("volume_raw")
             )
             return Response(estimation, status=200)
+
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+
+class PanSuggestionAPIView(APIView):
+    """
+    API permettant de suggérer des moules en fonction d’un nombre de portions cible,
+    sans passer par une recette.
+    """
+
+    def post(self, request):
+        serializer = PanSuggestionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = suggest_pans_for_servings(target_servings=serializer.validated_data["target_servings"])
+            return Response(result, status=200)
 
         except ValueError as e:
             return Response({"error": str(e)}, status=400)

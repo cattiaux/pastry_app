@@ -1,7 +1,7 @@
 import pytest, math
 from django.urls import reverse
 from rest_framework import status
-from pastry_app.utils import adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_servings_to_servings, estimate_servings_from_pan
+from pastry_app.utils import adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_servings_to_servings, estimate_servings_from_pan, suggest_pans_for_servings
 from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep
 from pastry_app.tests.base_api_test import api_client, base_url
 import importlib
@@ -139,9 +139,35 @@ def test_estimate_servings_from_pan(recipe, target_pan):
     with pytest.raises(ValueError):
         estimate_servings_from_pan()
 
+def test_suggest_pans_for_servings(target_pan):
+    """
+    Vérifie la suggestion de moules pour un nombre de portions donné.
+    """
+    result = suggest_pans_for_servings(target_servings=10)
+
+    assert "target_volume_cm3" in result
+    assert "suggested_pans" in result
+    assert isinstance(result["suggested_pans"], list)
+
+    for pan in result["suggested_pans"]:
+        assert "id" in pan
+        assert "pan_name" in pan
+        assert "volume_cm3_cache" in pan
+        assert "estimated_servings_standard" in pan
+
+    # Test avec un nombre élevé
+    result_high = suggest_pans_for_servings(target_servings=50)
+    assert result_high["target_volume_cm3"] == 50 * 150
+    assert isinstance(result_high["suggested_pans"], list)
+
+    # Gestion des erreurs
+    with pytest.raises(ValueError):
+        suggest_pans_for_servings(target_servings=0)
+
+
 ### Test d’intégration des endpoints API
 
-#  POST /recipes/adapt/
+#  POST /recipes-adapt/
 
 def test_recipe_adaptation_api_pan_to_pan(api_client, recipe, target_pan):
     """
@@ -284,7 +310,7 @@ def test_recipe_adaptation_api_servings_to_servings(api_client, recipe):
     for pan in data["suggested_pans"]:
         assert volume_target * 0.95 <= pan["volume_cm3_cache"] <= volume_target * 1.05
 
-#  POST /pans/estimate/
+#  POST /pan-estimation/
 
 def test_pan_estimation_api(api_client, target_pan):
     """
@@ -321,3 +347,31 @@ def test_pan_estimation_api(api_client, target_pan):
     response = api_client.post(url, {}, format="json")
     assert response.status_code == 400
     assert "error" in response.json() or "non_field_errors" in response.json()
+
+#  POST /pan-suggestion/
+
+def test_pan_suggestion_api(api_client, target_pan):
+    """
+    Vérifie que l’API suggère des moules pour un nombre de portions donné.
+    """
+    url = reverse("suggest-pans")
+
+    response = api_client.post(url, {"target_servings": 10}, format="json")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "target_volume_cm3" in data
+    assert "suggested_pans" in data
+    assert isinstance(data["suggested_pans"], list)
+
+    for pan in data["suggested_pans"]:
+        assert "id" in pan
+        assert "pan_name" in pan
+        assert "volume_cm3_cache" in pan
+        assert "estimated_servings_standard" in pan
+
+    # Test erreur avec target_servings manquant
+    response = api_client.post(url, {}, format="json")
+    assert response.status_code == 400
+    assert "target_servings" in response.json()
+

@@ -2,6 +2,7 @@ import math
 from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 from django.db import models as django_models
+from django.db.models.functions import Abs
 from .models import Recipe, Pan
 
 def calculate_quantity_multiplier(from_volume_cm3: float, to_volume_cm3: float) -> float:
@@ -187,6 +188,47 @@ def estimate_servings_from_pan(pan: Pan = None, pan_type: str = None, diameter: 
         "estimated_servings_min": servings["min"],
         "estimated_servings_max": servings["max"]
     }
+
+def suggest_pans_for_servings(target_servings: int) -> dict:
+    """
+    Propose des moules adaptés à un nombre de portions cible,
+    sans passer par une recette.
+    """
+    if target_servings <= 0:
+        raise ValueError("Le nombre de portions doit être supérieur à 0.")
+
+    # Calcul du volume cible
+    target_volume = target_servings * 150
+
+    # Recherche des moules compatibles (+/- 5%)
+    lower_bound = target_volume * 0.95
+    upper_bound = target_volume * 1.05
+
+    suggested_pans = Pan.objects.filter(
+        volume_cm3_cache__gte=lower_bound,
+        volume_cm3_cache__lte=upper_bound
+    )
+
+    # Si aucun moule parfaitement compatible → proposer le plus proche
+    if not suggested_pans.exists():
+        closest_pan = Pan.objects.order_by(Abs(django_models.F("volume_cm3_cache") - target_volume)).first()
+        suggested_pans = [closest_pan] if closest_pan else []
+
+    # Construction de la réponse
+    pans_data = []
+    for pan in suggested_pans:
+        servings = get_servings_interval(pan.volume_cm3_cache)
+        pans_data.append({
+            "id": pan.id,
+            "pan_name": pan.pan_name,
+            "volume_cm3_cache": pan.volume_cm3_cache,
+            "estimated_servings_min": servings["min"],
+            "estimated_servings_standard": servings["standard"],
+            "estimated_servings_max": servings["max"],
+        })
+
+    return {"target_volume_cm3": round(target_volume, 2), "suggested_pans": pans_data}
+
 
 
 

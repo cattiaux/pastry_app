@@ -49,6 +49,7 @@ urlpatterns = [
     path('categories/<int:pk>/delete-subcategories/', CategoryViewSet.as_view({"delete": "delete_subcategories"}), name="delete_subcategories"),
     path("api/recipes-adapt/", RecipeAdaptationAPIView.as_view(), name="adapt-recipe"),
     path("api/pan-estimation/", PanEstimationAPIView.as_view(), name="estimate-pan"),
+    path("api/pan-suggestion/", PanSuggestionAPIView.as_view(), name="suggest-pans"),
 ]
 
 

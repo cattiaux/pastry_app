@@ -874,3 +874,12 @@ class PanEstimationSerializer(serializers.Serializer):
         if not data.get("pan_id") and not data.get("pan_type") and not data.get("volume_raw"):
             raise serializers.ValidationError("Vous devez fournir un pan_id OU un pan_type avec dimensions OU un volume_raw.")
         return data
+
+class PanSuggestionSerializer(serializers.Serializer):
+    target_servings = serializers.IntegerField(required=True, min_value=1)
+
+    def validate_target_servings(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Le nombre de portions doit être supérieur à 0.")
+        return value
+
