@@ -1,3 +1,4 @@
+import math
 from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 from django.db import models as django_models
@@ -160,6 +161,32 @@ def adapt_recipe_servings_to_servings(recipe: Recipe, target_servings: int) -> d
     data["suggested_pans"] = get_suggested_pans(volume_target)
 
     return data
+
+def estimate_servings_from_pan(pan: Pan = None, pan_type: str = None, diameter: float = None, height: float = None, length: float = None, 
+                               width: float = None, rect_height: float = None, volume_raw: float = None) -> dict:
+    """
+    Estime le volume et l’intervalle de portions à partir d’un pan existant
+    ou de dimensions fournies.
+    """
+    if pan:
+        volume = pan.volume_cm3_cache
+    elif pan_type == "ROUND" and diameter and height:
+        volume = math.pi * (diameter / 2) ** 2 * height
+    elif pan_type == "RECTANGLE" and length and width and rect_height:
+        volume = length * width * rect_height
+    elif pan_type == "OTHER" and volume_raw:
+        volume = volume_raw
+    else:
+        raise ValueError("Les informations fournies sont insuffisantes pour calculer le volume.")
+
+    servings = get_servings_interval(volume)
+
+    return {
+        "volume_cm3": round(volume, 2),
+        "estimated_servings_standard": servings["standard"],
+        "estimated_servings_min": servings["min"],
+        "estimated_servings_max": servings["max"]
+    }
 
 
 

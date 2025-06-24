@@ -857,3 +857,20 @@ class PanSerializer(serializers.ModelSerializer):
 
         return data
 
+class PanEstimationSerializer(serializers.Serializer):
+    pan_id = serializers.IntegerField(required=False)
+    pan_type = serializers.ChoiceField(choices=["ROUND", "RECTANGLE", "OTHER"], required=False)
+
+    diameter = serializers.FloatField(required=False)
+    height = serializers.FloatField(required=False)
+
+    length = serializers.FloatField(required=False)
+    width = serializers.FloatField(required=False)
+    rect_height = serializers.FloatField(required=False)
+
+    volume_raw = serializers.FloatField(required=False)
+
+    def validate(self, data):
+        if not data.get("pan_id") and not data.get("pan_type") and not data.get("volume_raw"):
+            raise serializers.ValidationError("Vous devez fournir un pan_id OU un pan_type avec dimensions OU un volume_raw.")
+        return data

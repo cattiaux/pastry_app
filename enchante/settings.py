@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'pastry_app',
     'corsheaders',
     'django_filters',
+    "django_extensions",
 ]
 
 MIDDLEWARE = [

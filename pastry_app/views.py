@@ -11,8 +11,8 @@ from django.db.models import ProtectedError
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from .tests.utils import normalize_case
-from .utils import (servings_to_volume, get_suggested_pans, 
-                    adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_with_target_volume, adapt_recipe_servings_to_servings)
+from .utils import (servings_to_volume, get_suggested_pans, adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_with_target_volume, 
+                    adapt_recipe_servings_to_servings, estimate_servings_from_pan)
 from .models import *
 from .serializers import *
 
@@ -428,3 +428,34 @@ class RecipeAdaptationAPIView(APIView):
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+class PanEstimationAPIView(APIView):
+    """
+    API permettant d’estimer le volume et le nombre de portions
+    d’un moule (pan), à partir d’un moule existant ou de dimensions fournies.
+    """
+
+    def post(self, request):
+        serializer = PanEstimationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+
+        pan = None
+        if data.get("pan_id"):
+            pan = get_object_or_404(Pan, pk=data["pan_id"])
+
+        try:
+            estimation = estimate_servings_from_pan(
+                pan=pan,
+                pan_type=data.get("pan_type"),
+                diameter=data.get("diameter"),
+                height=data.get("height"),
+                length=data.get("length"),
+                width=data.get("width"),
+                rect_height=data.get("rect_height"),
+                volume_raw=data.get("volume_raw")
+            )
+            return Response(estimation, status=200)
+
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)

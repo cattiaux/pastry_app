@@ -1,7 +1,7 @@
 import pytest, math
 from django.urls import reverse
 from rest_framework import status
-from pastry_app.utils import adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_servings_to_servings
+from pastry_app.utils import adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_servings_to_servings, estimate_servings_from_pan
 from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep
 from pastry_app.tests.base_api_test import api_client, base_url
 import importlib
@@ -109,7 +109,39 @@ def test_adapt_recipe_servings_to_servings(recipe):
     assert "suggested_pans" in result  # Vérifie les suggestions de moules
     assert isinstance(result["suggested_pans"], list)
 
-### Test d’intégration de l’endpoint POST /recipes/adapt/
+def test_estimate_servings_from_pan(recipe, target_pan):
+    """
+    Vérifie le calcul d’estimation de servings à partir d’un pan existant
+    ou de dimensions fournies.
+    """
+    # Avec pan existant
+    result = estimate_servings_from_pan(pan=target_pan)
+    assert "volume_cm3" in result
+    assert result["estimated_servings_standard"] > 0
+    assert result["estimated_servings_min"] <= result["estimated_servings_standard"]
+    assert result["estimated_servings_max"] >= result["estimated_servings_standard"]
+
+    # Avec dimensions ROUND
+    result_round = estimate_servings_from_pan(pan_type="ROUND", diameter=20, height=5)
+    assert "volume_cm3" in result_round
+    assert result_round["estimated_servings_standard"] > 0
+
+    # Avec dimensions RECTANGLE
+    result_rect = estimate_servings_from_pan(pan_type="RECTANGLE", length=30, width=20, rect_height=5)
+    assert "volume_cm3" in result_rect
+    assert result_rect["estimated_servings_standard"] > 0
+
+    # Avec volume brut
+    result_raw = estimate_servings_from_pan(pan_type="OTHER", volume_raw=2000)
+    assert result_raw["estimated_servings_standard"] == round(2000 / 150)
+
+    # Test des erreurs
+    with pytest.raises(ValueError):
+        estimate_servings_from_pan()
+
+### Test d’intégration des endpoints API
+
+#  POST /recipes/adapt/
 
 def test_recipe_adaptation_api_pan_to_pan(api_client, recipe, target_pan):
     """
@@ -252,4 +284,40 @@ def test_recipe_adaptation_api_servings_to_servings(api_client, recipe):
     for pan in data["suggested_pans"]:
         assert volume_target * 0.95 <= pan["volume_cm3_cache"] <= volume_target * 1.05
 
+#  POST /pans/estimate/
 
+def test_pan_estimation_api(api_client, target_pan):
+    """
+    Vérifie que l’API d’estimation retourne bien le volume
+    et l’intervalle de portions pour un moule existant ou pour des dimensions fournies.
+    """
+    url = reverse("estimate-pan")
+    print(url)
+    # Avec pan existant
+    response = api_client.post(url, {"pan_id": target_pan.id}, format="json")
+    print(response.json())
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "volume_cm3" in data
+    assert "estimated_servings_standard" in data
+    assert "estimated_servings_min" in data
+    assert "estimated_servings_max" in data
+    assert data["volume_cm3"] == round(target_pan.volume_cm3_cache, 2)
+
+    # Avec dimensions ROUND
+    response = api_client.post(url, {"pan_type": "ROUND", "diameter": 24, "height": 5}, format="json")
+    assert response.status_code == 200
+    data_round = response.json()
+    assert data_round["estimated_servings_standard"] > 0
+
+    # Avec dimensions RECTANGLE
+    response = api_client.post(url, {"pan_type": "RECTANGLE", "length": 30, "width": 20, "rect_height": 5}, format="json")
+    assert response.status_code == 200
+    data_rect = response.json()
+    assert data_rect["estimated_servings_standard"] > 0
+
+    # Test erreur si aucun input valide
+    response = api_client.post(url, {}, format="json")
+    assert response.status_code == 400
+    assert "error" in response.json() or "non_field_errors" in response.json()
