@@ -401,7 +401,6 @@ def test_recipe_adaptation_by_ingredient_api(api_client, recipe):
     url = reverse("adapt-recipe-by-ingredient")
 
     response = api_client.post(url, {"recipe_id": recipe.id, "ingredient_constraints": {str(ingredient.id): 100}}, format="json")
-    print(response.json())
     assert response.status_code == 200
     data = response.json()
     assert data["recipe_id"] == recipe.id

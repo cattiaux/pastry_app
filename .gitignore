@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.db
+.env
+# Additional temporary files
+*.log
+.cache/
+.DS_Store
+.tmp

@@ -189,10 +189,6 @@ Passer en revue tous les ViewSet exposés par l’API afin d’identifier les ca
 - L’ajout de filterset_fields ne casse rien : c’est rétrocompatible
 
 
-
-### Calcul automatique du multiplicateur de quantité en fonction de la quantité d'un ingrédient spécifique 
-
-
 ### UserRecipeAdaptation
 
 Contexte :
