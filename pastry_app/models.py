@@ -329,10 +329,10 @@ class Recipe(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ('recipe_name', 'chef_name',)
         ordering = ['recipe_name', 'chef_name']
-        constraints = [models.UniqueConstraint(fields=["recipe_name", "chef_name", "context_name"], 
-                                               name="unique_recipe_per_context")]
+        constraints = [
+            models.UniqueConstraint(fields=["recipe_name", "chef_name"], name="unique_recipe_chef"),
+            models.UniqueConstraint(fields=["recipe_name", "chef_name", "context_name"], name="unique_recipe_per_context")]
 
     def __str__(self):
         base = f"{self.recipe_name} ({self.chef_name})"
@@ -464,7 +464,7 @@ class RecipeStep(models.Model):
 
     class Meta:
         ordering = ['recipe','step_number']
-        unique_together = ("recipe", "step_number")
+        constraints = [models.UniqueConstraint(fields=["recipe", "step_number"], name="unique_step_per_recipe"),]
 
     def delete(self, *args, **kwargs):
         """Empêche la suppression du dernier `RecipeStep` d'une recette et réorganise les étapes après suppression."""
@@ -610,7 +610,6 @@ class Store(models.Model):
     zip_code = models.CharField(max_length=10, null=True, blank=True)
 
     class Meta:
-        # unique_together = ("store_name", "city", "zip_code")  # Empêcher les doublons
         constraints = [models.UniqueConstraint(fields=["store_name", "city", "zip_code"], name="unique_store_per_location")]
         indexes = [models.Index(fields=["store_name", "city", "zip_code"])]  # Ajout d'un index pour accélérer les requêtes sur (store_name, city, zip_code)
 
