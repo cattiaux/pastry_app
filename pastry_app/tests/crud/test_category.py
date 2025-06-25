@@ -8,6 +8,8 @@ from django.contrib.auth.models import User
 # Définir model_name pour les tests de Category
 model_name = "categories"
 
+pytestmark = pytest.mark.django_db
+
 @pytest.fixture
 def admin_client(api_client, db):
     """Crée un utilisateur admin et authentifie les requêtes API avec lui."""
@@ -20,7 +22,6 @@ def setup_category(db):
     """Crée une catégorie par défaut pour les tests."""
     return Category.objects.create(category_name="Desserts", category_type="recipe")
 
-@pytest.mark.django_db
 def test_create_category(admin_client, base_url, setup_category):
     """Test de création d’une catégorie avec un `parent_category` valide"""
     url = base_url(model_name)
@@ -30,7 +31,6 @@ def test_create_category(admin_client, base_url, setup_category):
     assert Category.objects.filter(category_name=normalize_case("Pâtisseries")).exists()
     assert response.json()["parent_category"] == setup_category.category_name  # Vérifie bien le slug
 
-@pytest.mark.django_db
 def test_get_category(api_client, base_url, setup_category):
     """Test de récupération d’une catégorie"""
     url = base_url(model_name) + f"{setup_category.id}/"
@@ -38,7 +38,6 @@ def test_get_category(api_client, base_url, setup_category):
     assert response.status_code == status.HTTP_200_OK
     assert response.json().get("category_name") == normalize_case(setup_category.category_name)
 
-@pytest.mark.django_db
 def test_list_categories(api_client, base_url, setup_category):
     """Test que l'API retourne bien la liste des catégories."""
     url = base_url(model_name)
@@ -46,7 +45,6 @@ def test_list_categories(api_client, base_url, setup_category):
     assert response.status_code == status.HTTP_200_OK
     assert len(response.json()) > 0  # Vérifie que l'API retourne au moins une catégorie
 
-@pytest.mark.django_db
 def test_update_category_parent(admin_client, base_url, setup_category):
     """Test de mise à jour d’une catégorie en changeant son `parent_category`"""
     # Création d'une nouvelle catégorie pour servir de parent
@@ -64,7 +62,6 @@ def test_update_category_parent(admin_client, base_url, setup_category):
     setup_category.refresh_from_db()
     assert setup_category.parent_category == new_parent  # Vérifie que le parent a bien changé
 
-@pytest.mark.django_db
 def test_partial_update_category(admin_client, base_url, setup_category):
     """Test la mise à jour partielle d'une catégorie via PATCH."""
     url = base_url(model_name) + f"{setup_category.id}/"
@@ -75,7 +72,6 @@ def test_partial_update_category(admin_client, base_url, setup_category):
     assert setup_category.parent_category == new_category  # Vérifie que c'est bien l'objet
     assert setup_category.parent_category.category_name == normalize_case("Tartes")  # Vérifie que c'est bien le bon nom
 
-@pytest.mark.django_db
 def test_delete_category(setup_category, admin_client, base_url):
     """Test de suppression d’une catégorie"""
     category_id = setup_category.id
@@ -84,21 +80,18 @@ def test_delete_category(setup_category, admin_client, base_url):
     assert response.status_code == status.HTTP_204_NO_CONTENT
     assert not Category.objects.filter(id=category_id).exists()
 
-@pytest.mark.django_db
 def test_get_nonexistent_category(api_client, base_url):
     """Vérifie qu'on obtient une erreur 404 quand on essaie de récupérer une Category qui n'existe pas"""
     url = base_url(model_name)+f"9999/" # ID inexistant
     response = api_client.get(url)  
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
-@pytest.mark.django_db
 def test_delete_nonexistent_category(admin_client, base_url):
     """Vérifie qu'on obtient une erreur 404 quand on essaie de supprimer une Category qui n'existe pas"""
     url = base_url(model_name)+f"9999/" # ID inexistant
     response = admin_client.delete(url)  
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
-@pytest.mark.django_db
 @pytest.mark.parametrize("parent_category_value, expected_status", [
     (None, status.HTTP_201_CREATED),  # `None` doit être accepté
     ("Desserts", status.HTTP_201_CREATED),  # Un `parent_category` valide doit être accepté
@@ -113,7 +106,6 @@ def test_parent_category_validation(admin_client, base_url, parent_category_valu
     if expected_status == status.HTTP_400_BAD_REQUEST:
         assert "parent_category" in response.json()
 
-@pytest.mark.django_db
 def test_delete_category_with_linked_objects(admin_client, base_url, setup_category):
     """Vérifie qu'on ne peut pas supprimer une Category utilisée par un Ingredient OU une Recipe"""
 
@@ -121,7 +113,7 @@ def test_delete_category_with_linked_objects(admin_client, base_url, setup_categ
     ingredient = Ingredient.objects.create(ingredient_name="Beurre")
     IngredientCategory.objects.create(ingredient=ingredient, category=setup_category)  # Ajout via table intermédiaire (conséquence de on_delete=PROTECT et l'utilisation de postgresql au lieu de sqlite)
     # Créer et ajouter une recette qui utilise cette catégorie
-    recipe = Recipe.objects.create(recipe_name="Tarte aux pommes")
+    recipe = Recipe.objects.create(recipe_name="Tarte aux pommes", chef_name="Martin")
     RecipeCategory.objects.create(recipe=recipe, category=setup_category)  # Ajout via table intermédiaire (conséquence de on_delete=PROTECT et l'utilisation de postgresql au lieu de sqlite)
 
     url = base_url(model_name) + f"{setup_category.id}/"
@@ -132,7 +124,6 @@ def test_delete_category_with_linked_objects(admin_client, base_url, setup_categ
     assert "Cette catégorie est utilisée" in response.json()["error"]
     assert Category.objects.filter(id=setup_category.id).exists()  # Vérifie que la catégorie est toujours en base
 
-@pytest.mark.django_db
 def test_non_admin_cannot_delete_category(api_client, base_url, setup_category):
     """ Vérifie qu'un utilisateur non admin ne peut pas supprimer une Category. """
     url = base_url(model_name) + f"{setup_category.id}/"

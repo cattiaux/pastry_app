@@ -1,5 +1,5 @@
 import pytest, json
-from pastry_app.models import Ingredient, Category, Label, Recipe
+from pastry_app.models import Ingredient, Category, Label, Recipe, RecipeIngredient
 from rest_framework import status
 from pastry_app.tests.utils import normalize_case
 from pastry_app.tests.base_api_test import api_client, base_url
@@ -30,6 +30,8 @@ from pastry_app.tests.base_api_test import api_client, base_url
 # Définir model_name pour les tests de Category
 model_name = "ingredients"
 
+pytestmark = pytest.mark.django_db
+
 @pytest.fixture
 def setup_ingredient(db):
     """Création d’un ingrédient pour les tests"""
@@ -48,9 +50,8 @@ def label():
 @pytest.fixture
 def recipe():
     """Crée une recette pour les tests."""
-    return Recipe.objects.create(recipe_name="Tarte aux pommes")
+    return Recipe.objects.create(recipe_name="Tarte aux pommes", chef_name="Martin")
 
-@pytest.mark.django_db
 def test_create_ingredient(api_client, base_url):
     """Test de création d’un ingrédient"""
     url = base_url(model_name)
@@ -61,7 +62,6 @@ def test_create_ingredient(api_client, base_url):
     assert response.status_code == status.HTTP_201_CREATED
     assert Ingredient.objects.filter(ingredient_name=normalize_case(ingredient_name)).exists()
 
-@pytest.mark.django_db
 def test_get_ingredient(api_client, base_url, setup_ingredient):
     """Test de récupération d’un ingrédient existant"""
     print(f"DEBUG - Nom après récupération : {setup_ingredient.ingredient_name}")
@@ -72,7 +72,6 @@ def test_get_ingredient(api_client, base_url, setup_ingredient):
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["ingredient_name"] == normalize_case(setup_ingredient.ingredient_name)
 
-@pytest.mark.django_db
 def test_update_ingredient_name(api_client, base_url, setup_ingredient):
     """Test de mise à jour d’un ingrédient"""
     url = base_url(model_name) + f"{setup_ingredient.id}/"
@@ -84,7 +83,6 @@ def test_update_ingredient_name(api_client, base_url, setup_ingredient):
     setup_ingredient.refresh_from_db()
     assert setup_ingredient.ingredient_name == normalize_case(ingredient_name)
 
-@pytest.mark.django_db
 def test_delete_ingredient(api_client, base_url, setup_ingredient):
     """Test de suppression d’un ingrédient"""
     url = base_url(model_name) + f"{setup_ingredient.id}/"
@@ -93,7 +91,6 @@ def test_delete_ingredient(api_client, base_url, setup_ingredient):
     assert response.status_code == status.HTTP_204_NO_CONTENT
     assert not Ingredient.objects.filter(id=setup_ingredient.id).exists()
 
-@pytest.mark.django_db
 def test_create_ingredient_with_category(api_client, base_url, category):
     """Test de création d’un ingrédient avec une catégorie existante."""
     url = base_url(model_name)
@@ -104,7 +101,6 @@ def test_create_ingredient_with_category(api_client, base_url, category):
     assert response.status_code == status.HTTP_201_CREATED
     assert Ingredient.objects.filter(ingredient_name=normalize_case(ingredient_name), categories=category).exists()
 
-@pytest.mark.django_db
 def test_create_ingredient_with_label(api_client, base_url, label):
     """Test de création d’un ingrédient avec un label existant."""
     url = base_url(model_name)
@@ -115,14 +111,12 @@ def test_create_ingredient_with_label(api_client, base_url, label):
     assert response.status_code == status.HTTP_201_CREATED
     assert Ingredient.objects.filter(ingredient_name=normalize_case(ingredient_name), labels=label).exists()
 
-@pytest.mark.django_db
 def test_get_nonexistent_ingredient(api_client, base_url):
     """Test de récupération d’un ingrédient inexistant."""
     url = base_url(model_name) + "9999/"
     response = api_client.get(url)
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
-@pytest.mark.django_db
 def test_update_ingredient_add_category(api_client, base_url, setup_ingredient, category):
     """Test d’ajout d’une catégorie à un ingrédient existant."""
     url = base_url(model_name) + f"{setup_ingredient.id}/"
@@ -133,7 +127,6 @@ def test_update_ingredient_add_category(api_client, base_url, setup_ingredient, 
     setup_ingredient.refresh_from_db()
     assert category in setup_ingredient.categories.all()
 
-@pytest.mark.django_db
 def test_update_ingredient_add_label(api_client, base_url, setup_ingredient, label):
     """Test d’ajout d’un label à un ingrédient existant."""
     url = base_url(model_name) + f"{setup_ingredient.id}/"
@@ -144,7 +137,6 @@ def test_update_ingredient_add_label(api_client, base_url, setup_ingredient, lab
     setup_ingredient.refresh_from_db()
     assert label in setup_ingredient.labels.all()
 
-@pytest.mark.django_db
 def test_update_ingredient_remove_category(api_client, base_url, setup_ingredient, category):
     """Test de suppression d’une catégorie associée à un ingrédient."""
     setup_ingredient.categories.add(category)  # Ajouter la catégorie initialement
@@ -156,7 +148,6 @@ def test_update_ingredient_remove_category(api_client, base_url, setup_ingredien
     setup_ingredient.refresh_from_db()
     assert category not in setup_ingredient.categories.all()
 
-@pytest.mark.django_db
 def test_update_ingredient_remove_label(api_client, base_url, setup_ingredient, label):
     """Test de suppression d’une catégorie associée à un ingrédient."""
     setup_ingredient.labels.add(label)  # Ajouter le label initialement
@@ -168,17 +159,15 @@ def test_update_ingredient_remove_label(api_client, base_url, setup_ingredient, 
     setup_ingredient.refresh_from_db()
     assert label not in setup_ingredient.labels.all()
 
-@pytest.mark.django_db
 def test_delete_ingredient_used_in_recipe(api_client, base_url, setup_ingredient, recipe):
     """Vérifie qu’on ne peut PAS supprimer un ingrédient utilisé dans une recette."""
-    recipe.ingredients.add(setup_ingredient)  # Associer l'ingrédient à la recette
+    RecipeIngredient.objects.create(recipe=recipe, ingredient=setup_ingredient, quantity=100, unit="g")
     url = base_url(model_name) + f"{setup_ingredient.id}/"
     response = api_client.delete(url)
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "ne peut pas être supprimé" in response.json()["error"]
 
-@pytest.mark.django_db
 def test_delete_nonexistent_ingredient(api_client, base_url):
     """Vérifie qu’on obtient une erreur 404 quand on essaie de supprimer un ingrédient qui n’existe pas."""
     url = base_url(model_name) + "9999/"
