@@ -38,16 +38,35 @@ class StoreSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        """ Vérifie qu'au moins une ville (`city`) ou un code postal (`zip_code`) est renseigné. """
-        # Si c'est un PATCH (mise à jour partielle), ne pas valider les champs absents
-        if self.partial:
-            return data
-    
-        data["city"] = data.get("city", "") or ""  # Convertit None en ""
-        data["zip_code"] = data.get("zip_code", "") or ""
+        """
+        Vérifie, lors de la création ou de la mise à jour d'un Store :
+        - Qu'au moins une ville (`city`) ou un code postal (`zip_code`) est renseigné,
+        - Que le magasin (défini par le triplet `store_name`, `city`, `zip_code`) n'existe pas déjà en base.
+        La validation s'applique aussi bien en création (POST) qu'en modification partielle ou complète (PATCH/PUT).
+        """        
+        # Récupérer les valeurs actuelles (instance) si absentes de data (cas PATCH)
+        store_name = data.get("store_name", getattr(self.instance, "store_name", ""))
+        city = data.get("city", getattr(self.instance, "city", ""))
+        zip_code = data.get("zip_code", getattr(self.instance, "zip_code", ""))
 
-        if not data["city"] and not data["zip_code"]:
-            raise serializers.ValidationError("Si un magasin est renseigné, vous devez indiquer une ville ou un code postal.", code="missing_location")
+        # Appliquer la normalisation car le champ PATCH peut ne pas passer par validate_<field>
+        store_name = normalize_case(store_name) if store_name else ""
+        city = normalize_case(city) if city else ""
+
+        # Validation métier : il faut au moins une city OU un zip_code
+        if not city and not zip_code:
+            raise serializers.ValidationError(
+                "Si un magasin est renseigné, vous devez indiquer une ville ou un code postal.",
+                code="missing_location"
+            )
+
+        # Vérification de l'unicité, même pour PATCH (mise à jour partielle)
+        qs = Store.objects.filter(store_name=store_name, city=city, zip_code=zip_code)
+        if self.instance:
+            qs = qs.exclude(id=self.instance.id)
+        if qs.exists():
+            raise serializers.ValidationError("Ce magasin existe déjà.")
+        
         return data
 
 class IngredientPriceSerializer(serializers.ModelSerializer):

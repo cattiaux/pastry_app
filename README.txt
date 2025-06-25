@@ -42,16 +42,6 @@ Facilite les futures évolutions si d’autres conventions d’URL sont adoptée
 - Exemple d'utilisation : 
 related_url = base_url(get_api_url_name(related_model_name))
 
-### Gestion des stores : Ajout d'une Contrainte d’Unicité sur Store en Production
-
-Problème actuel : unique_together est actuellement défini au niveau de l’API via serializers.py, mais pas directement en base​. 
-Impact : Risque d'incohérences si la validation API est contournée.
-Solution : Ajouter une contrainte unique en base de données
-    - Étape 1 : Modifier models.py avec l'ajout d'une contrainte unique :
-    class Meta:
-        constraints = [models.UniqueConstraint(fields=["store_name", "city", "zip_code"], name="unique_store_per_location")]
-        indexes = [models.Index(fields=["store_name", "city", "zip_code"])]
-    - Étape 2 : Générer la migration avec makemigrations et migrate
 
 ### Différence entre unique_together et UniqueConstraint
 -> Remplacer dans le code unique_together par UniqueConstraint car c’est la méthode moderne et plus puissante.

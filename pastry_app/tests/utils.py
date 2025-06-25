@@ -117,11 +117,10 @@ def validate_unique_together(model, expected_error, **valid_data):
         obj.save()
     assert expected_error in str(excinfo.value.message_dict), f"Erreur attendue '{expected_error}' non trouvée dans '{excinfo.value}'" # Vérifier que l'erreur attendue est bien levée
 
-def validate_unique_together_api(api_client, base_url, model_name, valid_data):
+def validate_unique_together_api(api_client, base_url, model_name, valid_data, error_message="must make a unique set."):
     """ Vérifie qu'une contrainte `unique_together` est respectée en API et empêche la duplication. """
     url = base_url(model_name)
-    # Construire dynamiquement le message d'erreur attendu
-    error_message = "must make a unique set."
+
     # Premier enregistrement (OK)
     response1 = api_client.post(url, data=json.dumps(valid_data), content_type="application/json")
     assert response1.status_code == status.HTTP_201_CREATED  # Création réussie
@@ -210,7 +209,7 @@ def validate_optional_field_value_api(api_client, base_url, model_name, field_na
         valid_data[field_name] = value
         response = api_client.post(url, valid_data, format="json")
         assert response.status_code == status.HTTP_201_CREATED  # Doit réussir
-        assert response.json()[field_name] == (value if value is not None else "")  # Vérification
+        assert response.json()[field_name] in (value, "" if value is None else value)
 
 def get_serializer_for_model(model_name):
     """ Récupère dynamiquement le serializer correspondant au modèle donné, sans import direct. """

@@ -610,7 +610,8 @@ class Store(models.Model):
     zip_code = models.CharField(max_length=10, null=True, blank=True)
 
     class Meta:
-        unique_together = ("store_name", "city", "zip_code")  # Empêcher les doublons
+        # unique_together = ("store_name", "city", "zip_code")  # Empêcher les doublons
+        constraints = [models.UniqueConstraint(fields=["store_name", "city", "zip_code"], name="unique_store_per_location")]
         indexes = [models.Index(fields=["store_name", "city", "zip_code"])]  # Ajout d'un index pour accélérer les requêtes sur (store_name, city, zip_code)
 
     def __str__(self):
@@ -632,7 +633,7 @@ class Store(models.Model):
         self.store_name = normalize_case(self.store_name)
         self.city = normalize_case(self.city)
 
-        # Vérifie qu'on ne peut pas créer deux magasins identiques (unique_together)
+        # Vérifie l’unicité en base sur (store_name, city, zip_code)
         if Store.objects.filter(store_name=self.store_name, city=self.city, zip_code=self.zip_code).exclude(id=self.id).exists():
             raise ValidationError("Ce magasin existe déjà.")
         
