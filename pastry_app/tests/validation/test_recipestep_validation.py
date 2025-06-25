@@ -35,9 +35,10 @@ def test_unique_value_api(api_client, base_url, field_name, recipestep):
     """ Vérifie que `step_number` doit être unique pour une même recette via l’API. """
     valid_data = {"recipe": recipestep.recipe.id, "step_number": recipestep.step_number, "instruction": recipestep.instruction}
     response = validate_unique_constraint_api(api_client, base_url, model_name, field_name, **valid_data)
-    assert "non_field_errors" in response.json(), f"L'erreur d'unicité n'a pas été détectée : {response.json()}"
-    assert "The fields recipe, step_number must make a unique set." in response.json()["non_field_errors"], (
-        f"Message d'erreur attendu non trouvé dans {response.json()['non_field_errors']}")
+    assert "step_number" in response.json(), f"L'erreur d'unicité n'a pas été détectée : {response.json()}"
+    assert "Ce numéro d'étape existe déjà pour cette recette." in response.json()["step_number"][0], (
+        f"Message d'erreur attendu non trouvé dans {response.json()['step_number']}"
+    )
 
 @pytest.mark.parametrize("field_name, invalid_value", [("step_number", 0), ("step_number", -1)])
 def test_step_number_must_start_at_1_api(api_client, base_url, field_name, invalid_value, recipe):

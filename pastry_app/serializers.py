@@ -436,11 +436,23 @@ class RecipeStepSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        """Vérifie que `step_number` est consécutif."""
+        """
+        - Vérifie que `step_number` est consécutif.
+        - Vérifie qu'il n'y a pas déjà une étape avec ce numéro pour cette recette (unicité recipe/step_number).
+        """
         recipe = data.get("recipe")
         step_number = data.get("step_number")
 
         if recipe and step_number is not None:
+            # Unicité : interdit de dupliquer une étape
+            qs = RecipeStep.objects.filter(recipe=recipe, step_number=step_number)
+            # Si c'est un update, on exclut l'instance en cours
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError({"step_number": "Ce numéro d'étape existe déjà pour cette recette."})
+
+            # Consécutivité
             last_step = RecipeStep.objects.filter(recipe=recipe).aggregate(Max("step_number"))["step_number__max"]
             if last_step is not None and step_number > last_step + 1:
                 raise serializers.ValidationError({"step_number": "Step numbers must be consecutive."})
@@ -455,15 +467,6 @@ class RecipeStepSerializer(serializers.ModelSerializer):
             validated_data["step_number"] = 1 if max_step is None else max_step + 1
 
         return super().create(validated_data)
-
-    def update(self, instance, validated_data):
-        """ Gère la mise à jour d'un `RecipeStep`, tout en validant `step_number` si changé. """
-        step_number = validated_data.get("step_number", instance.step_number)
-        # Vérifie si on essaye de modifier `step_number` en doublon
-        if step_number != instance.step_number:
-            if RecipeStep.objects.filter(recipe=instance.recipe, step_number=step_number).exclude(pk=instance.pk).exists():
-                raise serializers.ValidationError({"step_number": "Ce numéro d'étape existe déjà pour cette recette."})
-        return super().update(instance, validated_data)
 
 class SubRecipeSerializer(serializers.ModelSerializer):
     recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), required=False)
