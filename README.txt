@@ -43,17 +43,6 @@ Facilite les futures évolutions si d’autres conventions d’URL sont adoptée
 related_url = base_url(get_api_url_name(related_model_name))
 
 
-### Différence entre unique_together et UniqueConstraint
--> Remplacer dans le code unique_together par UniqueConstraint car c’est la méthode moderne et plus puissante.
-
-- unique_together = ("field1", "field2")
-    Avantages : Facile à écrire, rétrocompatible	
-    Inconvénients : Vieille syntaxe, risque d’être dépréciée
-- UniqueConstraint(fields=["field1", "field2"], name="constraint_name")	
-    Avantages : Plus flexible (on peut ajouter des filtres condition, deferrable...), recommandé par Django	
-    Inconvénient : Un peu plus verbeux
-
-
 ### Gestion des recettes multi-utilisateurs avec partage et recettes publiques
 Dans une application de gestion de recettes multi-utilisateurs, on doit gérer :
 ✔ Les recettes propres à chaque utilisateur
@@ -94,55 +83,38 @@ Bonus : Permettre aux utilisateurs de copier une recette publique
 
 
 ### Optimisation des traitements dans clean() et save()
-Contexte
-    Actuellement, certaines validations sont effectuées dans clean() et save(). 
-    Cependant, si elles ne sont pas bien optimisées, elles peuvent ralentir l'application, 
-    notamment lors d’opérations en masse ou d'accès fréquents à la base de données.
+Constat actuel :
+La plupart des modèles (Recipe, Pan, Ingredient, Store, etc.) appellent self.full_clean() ou self.clean() à chaque save().
+Certaines validations métier (unicité, normalisation, etc.) sont faites dans les méthodes du modèle, ce qui garantit l’intégrité même hors API, 
+mais peut ralentir les traitements en masse (import, migration, scripts).
 
-Améliorations à mettre en place
-1. Limiter les requêtes en base dans clean()
-    - Éviter les .filter().exists() répétitifs qui génèrent plusieurs requêtes SQL.
-    - Préférer une approche qui utilise un count() si nécessaire.
-2. Ne pas appeler full_clean() dans save() systématiquement
-    - full_clean() peut être coûteux si save() est exécuté en masse.
-    - À utiliser uniquement si la validation ne peut être garantie autrement (ex : API ouverte, gestion externe).
-3. Regrouper les traitements pour éviter des accès multiples à la base
-    - Si plusieurs vérifications nécessitent des requêtes SQL, les regrouper en une seule requête plutôt que d’en exécuter plusieurs dans clean().
-4. Éviter full_clean() lors d’imports en masse
-    - Remplacer .save() sur chaque objet par bulk_create() pour améliorer les performances.
-    - Exemple :
-        objs = [SubRecipe(**data) for data in dataset]
-        SubRecipe.objects.bulk_create(objs)  # Évite full_clean(), optimise l’insertion
+Risques :
+Ralentissement lors des traitements en masse (imports, bulk, migration de données).
+Multiplication des requêtes SQL inutiles si plusieurs validations similaires sont faites sur les mêmes objets.
 
-Actions à mener
-    - Identifier les clean() et save() qui contiennent des requêtes répétitives et les optimiser.
-    - Supprimer les full_clean() inutiles dans save(), sauf si une validation stricte est requise.
-    - Utiliser bulk_create() pour les traitements de masse.
+Best Practices (à appliquer quand tu optimises) :
+1. Ne pas appeler full_clean() dans save() systématiquement
+- Sauf si on souhaite forcer la validation en dehors de l’API (ex : accès par admin ou script direct).
+- Prévoir une option save(validate=True) pour désactiver la validation dans les scripts/bulk.
+2. Centraliser la logique métier dans les serializers (API)
+- Mettre la plupart des règles métier côté API via DRF serializers.
+- Garder dans les modèles uniquement ce qui doit absolument être garanti en toute circonstance (contrainte d’intégrité, unicité…).
+3. Optimiser les accès base dans clean()
+- Regrouper les requêtes similaires pour éviter plusieurs appels à .filter().exists().
+- Ne faire qu’une seule requête, stocker le résultat en variable locale pour tous les checks.
+4. Utiliser bulk_create() pour les imports massifs
+- Ne déclenche ni save(), ni clean() : à utiliser uniquement si les objets sont déjà validés en amont.
+5. Documenter les points d’entrée de validation
+- Préciser dans chaque modèle et serializer où se trouve la source de vérité (API ? modèle ?).
 
+À faire plus tard
+- Refactoriser les modèles pour retirer les full_clean() inutiles dans save().
+- Déplacer la validation métier lourde côté serializers DRF.
+- Créer des helpers/commandes d’import massif qui prévalident les données avant un bulk_create.
+- Rédiger des tests unitaires couvrant tous les cas de validation côté API.
 
-
-### Analyse et implémentation des filter_backends dans les ViewSet
-Contexte :
-Pour l’instant, certaines vues utilisent uniquement SearchFilter pour les recherches textuelles (via ?search=), 
-mais les besoins métiers futurs (notamment côté admin ou frontend) nécessiteront de 
-filtrer précisément les objets via des champs spécifiques (ex: ?pan_type=ROUND, ?brand=...).
-
-Objectif :
-Passer en revue tous les ViewSet exposés par l’API afin d’identifier les cas où il serait pertinent d'ajouter :
-- DjangoFilterBackend pour les filtres champ à champ (filterset_fields)
-- Des filtres plus complexes (via FilterSet custom si besoin)
-
-Étapes à faire :
-- Auditer tous les ViewSet de l’API
-    - Identifier les besoins métiers en termes de filtrage pour chaque entité
-    - Ex: pouvoir filtrer les recettes par label, category, ou les ingrédients par store, unit, etc.
-- Ajouter progressivement filter_backends = [DjangoFilterBackend] là où nécessaire
-- Écrire des tests de filtrage simples (ex : ?champ=valeur retourne bien les bons objets)
-- Documenter les filtres disponibles pour chaque endpoint (utile pour le frontend ou Swagger)
-
-À noter :
-- Peut être combiné avec SearchFilter pour conserver les recherches textuelles
-- L’ajout de filterset_fields ne casse rien : c’est rétrocompatible
+Nota Bene :
+Pour la robustesse, garde les contraintes d’unicité essentielles en base (UniqueConstraint), même si tu les valides aussi côté API.
 
 
 ### UserRecipeAdaptation

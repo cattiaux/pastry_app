@@ -1,7 +1,7 @@
 # views.py
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
-from rest_framework.filters import SearchFilter
+from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.exceptions import ValidationError as DRFValidationError
@@ -18,8 +18,13 @@ from .serializers import *
 
 class StoreViewSet(viewsets.ModelViewSet):
     """ API CRUD pour gérer les magasins. """
-    queryset = Store.objects.all()
+    queryset = Store.objects.all().order_by('store_name', 'city')
     serializer_class = StoreSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["city", "zip_code", "store_name"]
+    search_fields = ["store_name", "city", "zip_code"]
+    ordering_fields = ["store_name", "city", "zip_code"]
+    ordering = ["store_name", "city"]
 
     def create(self, request, *args, **kwargs):
         """ Vérifie que le magasin n'existe pas avant de le créer. """
@@ -118,15 +123,18 @@ class IngredientPriceHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ["ingredient__ingredient_name"]
     
 class RecipeViewSet(viewsets.ModelViewSet):
-    queryset = Recipe.objects.all().prefetch_related(
-        "categories", "labels", "recipe_ingredients", "steps", "main_recipes"
-        ).select_related("pan", "parent_recipe")
+    queryset = Recipe.objects.all()\
+        .prefetch_related("categories", "labels", "recipe_ingredients", "steps", "main_recipes")\
+        .select_related("pan", "parent_recipe")\
+        .order_by("recipe_name", "chef_name")
     serializer_class = RecipeSerializer
     permission_classes = [AllowAny]
 
-    filter_backends = [SearchFilter, DjangoFilterBackend]
+    filter_backends = [SearchFilter, DjangoFilterBackend, OrderingFilter]
     search_fields = ["recipe_name", "chef_name", "context_name"]
     filterset_fields = ["recipe_type", "chef_name", "categories", "labels", "pan"]
+    ordering_fields = ["recipe_name", "chef_name", "recipe_type", "created_at"]
+    ordering = ["recipe_name", "chef_name"]
 
     def destroy(self, request, *args, **kwargs):
         """ Empêche la suppression d'une recette utilisée comme sous-recette """
@@ -138,8 +146,13 @@ class RecipeViewSet(viewsets.ModelViewSet):
             return Response({"error": "Cannot delete this recipe because it is used in another recipe."}, status=status.HTTP_400_BAD_REQUEST)
 
 class IngredientViewSet(viewsets.ModelViewSet):
-    queryset = Ingredient.objects.all()
+    queryset = Ingredient.objects.all().order_by('ingredient_name')
     serializer_class = IngredientSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["categories", "labels"]
+    search_fields = ["ingredient_name"]
+    ordering_fields = ["ingredient_name"]
+    ordering = ["ingredient_name"]
 
     def create(self, request, *args, **kwargs):
         """ Normaliser le nom de l'ingrédient et empêcher les doublons """
@@ -178,8 +191,11 @@ class IngredientViewSet(viewsets.ModelViewSet):
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all().order_by('category_name')
     serializer_class = CategorySerializer
-    filter_backends = [SearchFilter]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["category_name", "parent_category"]
     search_fields = ['category_name']
+    ordering_fields = ["category_name", "parent_category"]
+    ordering = ["category_name"]  # ordre par défaut
     permission_classes = []  # On définit les permissions dans `get_permissions`
 
     def get_permissions(self):
@@ -223,8 +239,11 @@ class CategoryViewSet(viewsets.ModelViewSet):
 class LabelViewSet(viewsets.ModelViewSet):
     queryset = Label.objects.all().order_by('label_name')
     serializer_class = LabelSerializer
-    filter_backends = [SearchFilter]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["label_type"]
     search_fields = ['label_name']
+    ordering_fields = ["label_name", "label_type"]
+    ordering = ["label_name"]
     permission_classes = []  # On définit les permissions dans `get_permissions`
 
     def get_permissions(self):
@@ -255,8 +274,12 @@ class LabelViewSet(viewsets.ModelViewSet):
 
 class RecipeStepViewSet(viewsets.ModelViewSet):
     """ API CRUD pour gérer les étapes d'une recette. """
-    queryset = RecipeStep.objects.all()
+    queryset = RecipeStep.objects.all().order_by('recipe', 'step_number')
     serializer_class = RecipeStepSerializer
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ["recipe"]
+    ordering_fields = ["step_number", "recipe"]
+    ordering = ["recipe", "step_number"]
 
     def get_queryset(self):
         recipe_pk = self.kwargs.get("recipe_pk")
@@ -284,7 +307,7 @@ class RecipeStepViewSet(viewsets.ModelViewSet):
 
 class RecipeIngredientViewSet(viewsets.ModelViewSet):
     """ API CRUD pour la gestion des ingrédients dans les recettes. """
-    queryset = RecipeIngredient.objects.all()
+    queryset = RecipeIngredient.objects.all().order_by('recipe', 'ingredient')
     serializer_class = RecipeIngredientSerializer
 
     def get_queryset(self):
@@ -341,9 +364,12 @@ class SubRecipeViewSet(viewsets.ModelViewSet):
 class PanViewSet(viewsets.ModelViewSet):
     queryset = Pan.objects.all().order_by('pan_name')
     serializer_class = PanSerializer
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['pan_type', 'pan_brand']  # autorise le filtre ?pan_type=ROUND&pan_brand=DeBuyer
-    
+    search_fields = ["pan_name", "pan_brand"]
+    ordering_fields = ["pan_name", "pan_type", "pan_brand"]
+    ordering = ["pan_name"]
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -492,7 +518,7 @@ class RecipeAdaptationByIngredientAPIView(APIView):
         ingredient_constraints = {
             int(k): v for k, v in serializer.validated_data["ingredient_constraints"].items()
         }
-        
+
         try:
             result = adapt_recipe_by_ingredients_constraints(recipe, ingredient_constraints)
             return Response(result, status=status.HTTP_200_OK)
