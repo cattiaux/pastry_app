@@ -546,7 +546,7 @@ class RecipeSerializer(serializers.ModelSerializer):
     image = serializers.ImageField(required=False, allow_null=True)
     servings_min = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     servings_max = serializers.IntegerField(required=False, allow_null=True, min_value=1)
-
+    
     # Relations simples
     pan = serializers.PrimaryKeyRelatedField(queryset=Pan.objects.all(), allow_null=True, required=False)
     parent_recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), allow_null=True, required=False)
@@ -556,6 +556,12 @@ class RecipeSerializer(serializers.ModelSerializer):
     steps = RecipeStepSerializer(many=True, required=False, context={"is_nested": True})
     sub_recipes = SubRecipeSerializer(many=True, required=False, context={"is_nested": True}, source="main_recipes")
 
+    # Utilisateur et visibilité
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    guest_id = serializers.CharField(read_only=True)
+    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')])
+    is_default = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = Recipe
         fields = ["id", 
@@ -563,7 +569,8 @@ class RecipeSerializer(serializers.ModelSerializer):
                   "source", "recipe_type", "parent_recipe", 
                   "servings_min", "servings_max", "description", "trick", "image", 
                   "pan", "categories", "labels", "ingredients", "steps", "sub_recipes", 
-                  "created_at", "updated_at"]
+                  "created_at", "updated_at",
+                  "user", "guest_id", "visibility", "is_default"]
         read_only_fields = ["created_at", "updated_at"]    
 
     def __init__(self, *args, **kwargs):

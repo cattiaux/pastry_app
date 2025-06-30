@@ -3,11 +3,12 @@ from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAdminUser
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticatedOrReadOnly
+from .permissions import IsOwnerOrGuestOrReadOnly, IsNotDefaultRecipe, IsAdminOrReadOnly
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Q
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from .tests.utils import normalize_case
@@ -123,18 +124,49 @@ class IngredientPriceHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ["ingredient__ingredient_name"]
     
 class RecipeViewSet(viewsets.ModelViewSet):
+    """
+    - Lecture pour tous
+    - Modification/suppression :
+        - pour le propriétaire (user ou guest_id)
+        - INTERDIT pour les recettes de base (is_default=True)
+    """
     queryset = Recipe.objects.all()\
         .prefetch_related("categories", "labels", "recipe_ingredients", "steps", "main_recipes")\
         .select_related("pan", "parent_recipe")\
         .order_by("recipe_name", "chef_name")
     serializer_class = RecipeSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsOwnerOrGuestOrReadOnly & IsNotDefaultRecipe]
 
     filter_backends = [SearchFilter, DjangoFilterBackend, OrderingFilter]
     search_fields = ["recipe_name", "chef_name", "context_name"]
     filterset_fields = ["recipe_type", "chef_name", "categories", "labels", "pan"]
     ordering_fields = ["recipe_name", "chef_name", "recipe_type", "created_at"]
     ordering = ["recipe_name", "chef_name"]
+
+    def get_queryset(self):
+        user = self.request.user
+        # Cas connecté : ses recettes privées + les publiques + les is_default
+        if user.is_authenticated:
+            return Recipe.objects.filter(Q(user=user) | Q(visibility="public") | Q(is_default=True))
+        # Gérer les recettes de l'invité non connecté (privées)
+        guest_id = self.request.headers.get("X-Guest-Id") or self.request.query_params.get("guest_id")
+        qs = Recipe.objects.filter(Q(visibility="public") | Q(is_default=True))
+        if guest_id:
+            # Ajoute ses recettes "privées" (guest_id + visibility=private)
+            qs = qs | Recipe.objects.filter(guest_id=guest_id, visibility="private")
+        return qs
+
+    def perform_create(self, serializer):
+        """
+        Attribue la recette à l'utilisateur connecté, ou à un invité via guest_id.
+        Si l'utilisateur n'est pas authentifié, récupère le guest_id depuis le header ou les données du POST.
+        """
+        if self.request.user.is_authenticated:
+            serializer.save(user=self.request.user)
+        else:
+            # Récupère le guest_id côté front (header prioritaire, sinon data)
+            guest_id = self.request.headers.get("X-Guest-Id") or self.request.data.get("guest_id")
+            serializer.save(user=None, guest_id=guest_id)
 
     def destroy(self, request, *args, **kwargs):
         """ Empêche la suppression d'une recette utilisée comme sous-recette """

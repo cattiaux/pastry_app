@@ -4,6 +4,8 @@ from django.core.validators import MinValueValidator
 from django.utils.timezone import now
 from django.core.exceptions import ValidationError
 from django.db.models import UniqueConstraint
+from django.contrib.auth import get_user_model
+User = get_user_model()
 from pastry_app.tests.utils import normalize_case
 from .constants import UNIT_CHOICES
 
@@ -327,6 +329,12 @@ class Recipe(models.Model):
     # Tracking
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Utilisateur
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="recipes", blank=True, null=True)  # null=True pour migrer en douceur
+    guest_id = models.CharField(max_length=64, blank=True, null=True, db_index=True) 
+    visibility = models.CharField(max_length=10, choices=[('private', 'Privée'), ('public', 'Publique')], default='private')
+    is_default = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['recipe_name', 'chef_name']
