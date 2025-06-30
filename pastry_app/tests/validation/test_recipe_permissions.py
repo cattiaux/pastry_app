@@ -69,7 +69,6 @@ def test_guest_cannot_modify_others_recipe(api_client, base_url, guest_id):
     patch_url = f"{url}{recipe_id}/"
     # Tentative (invité B)
     response2 = api_client.patch(patch_url, {"recipe_name": "Hack"}, format="json", HTTP_X_GUEST_ID="another-guest-id")
-    print(response2.json())
     # En cas de tentative de modification d'une recette appartenant à un autre guest,
     # DRF retourne "404 Not Found" (sécurité : ne pas révéler l'existence de la ressource).
     assert response2.status_code in [403, 404]

@@ -16,6 +16,7 @@ from .utils import (servings_to_volume, get_suggested_pans, adapt_recipe_pan_to_
                     adapt_recipe_servings_to_servings, estimate_servings_from_pan, suggest_pans_for_servings, adapt_recipe_by_ingredients_constraints)
 from .models import *
 from .serializers import *
+from .mixins import GuestUserRecipeMixin
 
 class StoreViewSet(viewsets.ModelViewSet):
     """ API CRUD pour gérer les magasins. """
@@ -123,7 +124,7 @@ class IngredientPriceHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ["ingredient__ingredient_name"]
     
-class RecipeViewSet(viewsets.ModelViewSet):
+class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     """
     - Lecture pour tous
     - Modification/suppression :
@@ -142,31 +143,6 @@ class RecipeViewSet(viewsets.ModelViewSet):
     filterset_fields = ["recipe_type", "chef_name", "categories", "labels", "pan"]
     ordering_fields = ["recipe_name", "chef_name", "recipe_type", "created_at"]
     ordering = ["recipe_name", "chef_name"]
-
-    def get_queryset(self):
-        user = self.request.user
-        # Cas connecté : ses recettes privées + les publiques + les is_default
-        if user.is_authenticated:
-            return Recipe.objects.filter(Q(user=user) | Q(visibility="public") | Q(is_default=True))
-        # Gérer les recettes de l'invité non connecté (privées)
-        guest_id = self.request.headers.get("X-Guest-Id") or self.request.query_params.get("guest_id")
-        qs = Recipe.objects.filter(Q(visibility="public") | Q(is_default=True))
-        if guest_id:
-            # Ajoute ses recettes "privées" (guest_id + visibility=private)
-            qs = qs | Recipe.objects.filter(guest_id=guest_id, visibility="private")
-        return qs
-
-    def perform_create(self, serializer):
-        """
-        Attribue la recette à l'utilisateur connecté, ou à un invité via guest_id.
-        Si l'utilisateur n'est pas authentifié, récupère le guest_id depuis le header ou les données du POST.
-        """
-        if self.request.user.is_authenticated:
-            serializer.save(user=self.request.user)
-        else:
-            # Récupère le guest_id côté front (header prioritaire, sinon data)
-            guest_id = self.request.headers.get("X-Guest-Id") or self.request.data.get("guest_id")
-            serializer.save(user=None, guest_id=guest_id)
 
     def destroy(self, request, *args, **kwargs):
         """ Empêche la suppression d'une recette utilisée comme sous-recette """
