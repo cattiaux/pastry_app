@@ -4,11 +4,11 @@ from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticatedOrReadOnly
-from .permissions import IsOwnerOrGuestOrReadOnly, IsNotDefaultRecipe, IsAdminOrReadOnly
+from .permissions import IsOwnerOrGuestOrReadOnly, IsNotDefaultInstance, IsAdminOrReadOnly
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
-from django.db.models import ProtectedError, Q
+from django.db.models import ProtectedError
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from .tests.utils import normalize_case
@@ -18,7 +18,7 @@ from .models import *
 from .serializers import *
 from .mixins import GuestUserRecipeMixin
 
-class StoreViewSet(viewsets.ModelViewSet):
+class StoreViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     """ API CRUD pour gérer les magasins. """
     queryset = Store.objects.all().order_by('store_name', 'city')
     serializer_class = StoreSerializer
@@ -27,6 +27,7 @@ class StoreViewSet(viewsets.ModelViewSet):
     search_fields = ["store_name", "city", "zip_code"]
     ordering_fields = ["store_name", "city", "zip_code"]
     ordering = ["store_name", "city"]
+    permission_classes = [IsOwnerOrGuestOrReadOnly & IsNotDefaultInstance]
 
     def create(self, request, *args, **kwargs):
         """ Vérifie que le magasin n'existe pas avant de le créer. """
@@ -136,7 +137,7 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         .select_related("pan", "parent_recipe")\
         .order_by("recipe_name", "chef_name")
     serializer_class = RecipeSerializer
-    permission_classes = [IsOwnerOrGuestOrReadOnly & IsNotDefaultRecipe]
+    permission_classes = [IsOwnerOrGuestOrReadOnly, IsNotDefaultInstance]
 
     filter_backends = [SearchFilter, DjangoFilterBackend, OrderingFilter]
     search_fields = ["recipe_name", "chef_name", "context_name"]
@@ -153,7 +154,7 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         except ProtectedError:
             return Response({"error": "Cannot delete this recipe because it is used in another recipe."}, status=status.HTTP_400_BAD_REQUEST)
 
-class IngredientViewSet(viewsets.ModelViewSet):
+class IngredientViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     queryset = Ingredient.objects.all().order_by('ingredient_name')
     serializer_class = IngredientSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -161,6 +162,7 @@ class IngredientViewSet(viewsets.ModelViewSet):
     search_fields = ["ingredient_name"]
     ordering_fields = ["ingredient_name"]
     ordering = ["ingredient_name"]
+    permission_classes = [IsOwnerOrGuestOrReadOnly & IsNotDefaultInstance]
 
     def create(self, request, *args, **kwargs):
         """ Normaliser le nom de l'ingrédient et empêcher les doublons """
@@ -369,7 +371,7 @@ class SubRecipeViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-class PanViewSet(viewsets.ModelViewSet):
+class PanViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     queryset = Pan.objects.all().order_by('pan_name')
     serializer_class = PanSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -377,6 +379,7 @@ class PanViewSet(viewsets.ModelViewSet):
     search_fields = ["pan_name", "pan_brand"]
     ordering_fields = ["pan_name", "pan_type", "pan_brand"]
     ordering = ["pan_name"]
+    permission_classes = [IsOwnerOrGuestOrReadOnly & IsNotDefaultInstance]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

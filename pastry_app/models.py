@@ -33,6 +33,12 @@ class Pan(models.Model):
     pan_brand = models.CharField(max_length=100, blank=True, null=True)
     units_in_mold = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
 
+    # Utilisateur
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="pans", blank=True, null=True)  # null=True pour migrer en douceur
+    guest_id = models.CharField(max_length=64, blank=True, null=True, db_index=True) 
+    visibility = models.CharField(max_length=10, choices=[('private', 'Privée'), ('public', 'Publique')], default='private')
+    is_default = models.BooleanField(default=False)
+
     # Dimensions pour ROUND
     diameter = models.FloatField(validators=[MinValueValidator(0.1)], blank=True, null=True)
     height = models.FloatField(validators=[MinValueValidator(0.1)], blank=True, null=True)
@@ -168,6 +174,7 @@ class Category(models.Model):
     category_name = models.CharField(max_length=200,  verbose_name="category_name")#, unique=True) #unique=True à activer en production
     category_type = models.CharField(max_length=10, choices=CATEGORY_CHOICES, blank=False, null=False)
     parent_category = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="subcategories")
+    is_default = models.BooleanField(default=False)
 
     def __str__(self):
         return self.category_name
@@ -236,6 +243,7 @@ class Label(models.Model):
     # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
     label_name = models.CharField(max_length=200,  verbose_name="label_name", unique=True) #unique=True à activer en production
     label_type = models.CharField(max_length=10, choices=LABEL_CHOICES, default='both')
+    is_default = models.BooleanField(default=False)
 
     def __str__(self):
         return self.label_name
@@ -560,6 +568,12 @@ class Ingredient(models.Model):
     categories = models.ManyToManyField(Category, related_name='ingredients', blank=True)
     labels = models.ManyToManyField(Label, related_name='ingredients', blank=True)
 
+    # Utilisateur
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="ingredients", blank=True, null=True)  # null=True pour migrer en douceur
+    guest_id = models.CharField(max_length=64, blank=True, null=True, db_index=True) 
+    visibility = models.CharField(max_length=10, choices=[('private', 'Privée'), ('public', 'Publique')], default='private')
+    is_default = models.BooleanField(default=False)
+
     class Meta:
         ordering = ['ingredient_name']
 
@@ -616,6 +630,12 @@ class Store(models.Model):
     store_name = models.CharField(max_length=200, null=False, blank=False) #default="Non renseigné")
     city = models.CharField(max_length=100, null=True, blank=True)
     zip_code = models.CharField(max_length=10, null=True, blank=True)
+
+    # Utilisateur
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="stores", blank=True, null=True)  # null=True pour migrer en douceur
+    guest_id = models.CharField(max_length=64, blank=True, null=True, db_index=True) 
+    visibility = models.CharField(max_length=10, choices=[('private', 'Privée'), ('public', 'Publique')], default='private')
+    is_default = models.BooleanField(default=False)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["store_name", "city", "zip_code"], name="unique_store_per_location")]

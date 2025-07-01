@@ -16,13 +16,15 @@ class IsOwnerOrGuestOrReadOnly(BasePermission):
         guest_id = request.headers.get("X-Guest-Id") or request.data.get("guest_id")
         return obj.guest_id and obj.guest_id == guest_id
     
-class IsNotDefaultRecipe(BasePermission):
+class IsNotDefaultInstance(BasePermission):
     """
-    Interdit la modification/suppression des recettes de base (is_default=True).
+    Interdit la modification/suppression des objets 'de base' (is_default=True).
+    S'applique à tous les modèles qui possèdent un champ booléen 'is_default'.
     """
     def has_object_permission(self, request, view, obj):
+        # Si l'objet a is_default=True => lecture seule
         if getattr(obj, 'is_default', False):
-            return request.method in SAFE_METHODS  # Lecture seule
+            return request.method in SAFE_METHODS 
         return True
     
 class IsAdminOrReadOnly(BasePermission):

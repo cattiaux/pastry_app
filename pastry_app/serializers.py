@@ -16,9 +16,15 @@ class StoreSerializer(serializers.ModelSerializer):
     city = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     zip_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)    
 
+    # Utilisateur et visibilité
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    guest_id = serializers.CharField(read_only=True)
+    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')])
+    is_default = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = Store
-        fields = ["id", "store_name", "city", "zip_code"]
+        fields = ["id", "store_name", "city", "zip_code", "user", "guest_id", "visibility", "is_default"]
 
     def validate_store_name(self, value):
         """ Normalisation et validation du nom du magasin. """
@@ -298,9 +304,15 @@ class IngredientSerializer(serializers.ModelSerializer):
     categories = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), many=True, required=False) #PrimaryKeyRelatedField assure la vérification de l'existence de la category par DRF
     labels = serializers.PrimaryKeyRelatedField(queryset=Label.objects.all(), many=True, required=False)
 
+    # Utilisateur et visibilité
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    guest_id = serializers.CharField(read_only=True)
+    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')])
+    is_default = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = Ingredient
-        fields = ['id', 'ingredient_name', 'categories', 'labels', 'prices']
+        fields = ['id', 'ingredient_name', 'categories', 'labels', 'prices', "user", "guest_id", "visibility", "is_default"]
     
     def validate_ingredient_name(self, value):
         """ Vérifie que l'ingrédient n'existe pas déjà (insensible à la casse), sauf s'il s'agit de la mise à jour du même ingrédient. """
@@ -756,66 +768,17 @@ class RecipeSerializer(serializers.ModelSerializer):
 
         return instance
 
-    # def update(self, instance, validated_data):
-    #     request = self.context.get("request")
-    #     is_partial = request.method == "PATCH" if request else False
-
-    #     # 1. Récupération des sous-objets et M2M fournis dans la requête
-    #     ingredients_data = validated_data.pop("recipe_ingredients", [])
-    #     steps_data = validated_data.pop("steps", [])
-    #     subrecipes_data = validated_data.pop("main_recipes", None)
-    #     categories = validated_data.pop("categories", None)
-    #     labels = validated_data.pop("labels", None)
-
-    #     # 2. Mise à jour des champs simples
-    #     for attr, value in validated_data.items():
-    #         setattr(instance, attr, value)
-    #     instance.save()
-
-    #     # 3. Mise à jour des M2M si fourni
-    #     if categories is not None:
-    #         instance.categories.set(categories)
-    #     if labels is not None:
-    #         instance.labels.set(labels)
-
-    #     # 4. Remplacement total (PUT) ou partiel (PATCH)
-    #     if not is_partial:  # PUT : remplacement total des blocs 
-    #         # Vérification métier avant suppression
-    #         if not ingredients_data and not subrecipes_data:
-    #             raise serializers.ValidationError("Une recette doit contenir au moins un ingrédient ou une sous-recette.")
-    #         if not steps_data and not subrecipes_data:
-    #             raise serializers.ValidationError("Une recette doit contenir au moins une étape ou une sous-recette.")
-
-    #         # Suppression totale
-    #         instance.recipe_ingredients.all().delete()
-    #         instance.main_recipes.all().delete()
-    #         instance.steps.all().delete()
-
-    #         # Re-création
-    #         RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=instance, **ingredient) for ingredient in ingredients_data])
-    #         RecipeStep.objects.bulk_create([RecipeStep(recipe=instance, **step) for step in steps_data])
-    #         SubRecipe.objects.bulk_create([SubRecipe(recipe=instance, **sub) for sub in subrecipes_data])
-    #     else:
-    #         # PATCH — supprimer uniquement ce qui est fourni
-    #         if "recipe_ingredients" in self.initial_data:                
-    #             instance.recipe_ingredients.all().delete()
-    #             RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=instance, **ingredient) for ingredient in ingredients_data])
-    #         if "steps" in self.initial_data:
-    #             if not steps_data and not instance.main_recipes.exists():
-    #                 raise serializers.ValidationError("Une recette doit avoir au moins une étape ou une sous-recette.")
-    #             instance.steps.all().delete()
-    #             RecipeStep.objects.bulk_create([RecipeStep(recipe=instance, **step) for step in steps_data])
-    #         if "main_recipes" in self.initial_data:
-    #             instance.main_recipes.all().delete()
-    #             SubRecipe.objects.bulk_create([SubRecipe(recipe=instance, **sub) for sub in subrecipes_data])
-
-    #     return instance
-
 class PanSerializer(serializers.ModelSerializer):
     pan_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     pan_brand = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     volume_cm3 = serializers.FloatField(read_only=True)  # expose le volume calculé, non modifiable
     units_in_mold = serializers.IntegerField(min_value=1, required=False, default=1)
+
+    # Utilisateur et visibilité
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    guest_id = serializers.CharField(read_only=True)
+    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')])
+    is_default = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Pan
@@ -824,7 +787,8 @@ class PanSerializer(serializers.ModelSerializer):
             "diameter", "height",
             "length", "width", "rect_height",
             "volume_raw", "unit",
-            "volume_cm3", "volume_cm3_cache"
+            "volume_cm3", "volume_cm3_cache",
+            "user", "guest_id", "visibility", "is_default"
         ]
         read_only_fields = ["volume_cm3", "volume_cm3_cache"]
 
