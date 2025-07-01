@@ -797,3 +797,37 @@ Les suggestions de pans sont basées sur l’intervalle (servings_min, servings_
 Validation stricte des combinaisons d’entrées :
 Exemple : Il est interdit d’envoyer à la fois un pan_id et des dimensions dans /pans/estimate-volume/.
 Dans /recipes-adapt/, si un source_pan_id est présent, la logique Serving → Serving est ignorée.
+
+######## Gestion multi-utilisateurs, invités, et partage dans l’app
+
+#Contexte & Objectifs
+- Gérer une base partagée de recettes, ingrédients, moules, magasins : certains objets sont “de base” (accessibles à tous), 
+d’autres sont “privés” ou publics à l’utilisateur.
+- Supporter l’utilisation sans compte (mode invité) : un utilisateur non connecté doit pouvoir consulter, créer 
+et organiser ses propres objets (ex : ses recettes, ses ingrédients, ses moules…) sans création de compte obligatoire.
+- Préparer le passage futur à un mode full communautaire (auth, partage avancé).
+
+# Règles d’usage :
+user : utilisateur propriétaire, ou None pour invité ou “objet de base”
+guest_id : UUID unique par invité/frontend, stocké côté client (cookie, localStorage, etc.), utilisé en header X-Guest-Id dans chaque requête
+visibility : privé/public
+is_default : objet de base, fourni par l’app, non modifiable/supprimable
+
+# Permissions et visibilité des objets
+Objet “de base” (is_default=True) : visible en lecture par tous, jamais modifiable/supprimable par un utilisateur (ni invité, ni user)
+Objet public (visibility="public") : visible par tous, modifiable/supprimable uniquement par son propriétaire (user ou guest_id)
+Objet privé (visibility="private") :
+    - Si user connecté : visible uniquement par ce user
+    - Si invité : visible uniquement par ce guest_id
+
+# NB dev front : 
+Pour garantir une expérience fluide sans compte, le front doit générer et conserver un guest_id (UUID) persistant côté client (cookie/localStorage)
+et l’envoyer systématiquement en header X-Guest-Id sur les requêtes d’édition/lecture (GET, POST, PATCH, DELETE…).
+(Si l’utilisateur s’inscrit, une logique pourra migrer ses objets “invités” vers son compte.)
+
+# Filtrage (backend)
+Chaque ViewSet utilise un mixin standardisé (exemple pour Recipe : GuestUserRecipeMixin) pour :
+- Restreindre l’accès et l’édition selon les règles ci-dessus
+- Attribuer le bon propriétaire (user ou guest_id) à la création
+- Ne jamais permettre modification/suppression d’un objet “de base” (is_default=True)
+- Supporter la recherche, le filtrage et l’ordering selon les besoins métier

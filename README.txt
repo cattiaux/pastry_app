@@ -43,43 +43,20 @@ Facilite les futures évolutions si d’autres conventions d’URL sont adoptée
 related_url = base_url(get_api_url_name(related_model_name))
 
 
-### Gestion des recettes multi-utilisateurs avec partage et recettes publiques
-Dans une application de gestion de recettes multi-utilisateurs, on doit gérer :
-✔ Les recettes propres à chaque utilisateur
-✔ Le partage de recettes entre utilisateurs
-✔ Une base de recettes publiques accessibles à tous
+### gestion avancée des utilisateurs et migration invité → user
+Migration guest_id → user :
+- À faire : lors de la création d’un compte, proposer à l’utilisateur de migrer ses objets (recettes, ingrédients, etc.) associés à son guest_id vers son nouveau compte user.
+- Endpoints/API à prévoir pour faciliter cette migration (ex : /api/migrate-guest-to-user/)
+- Stocker le mapping guest_id ↔ user au moment de l’inscription (attention à la sécurité)
+Partage avancé et duplication : 
+- Mettre en place une vraie fonctionnalité de duplication de recette (et autres objets), pour copier dans le compte user ou dans l’espace invité
+- Préciser les droits lors du partage (modifiable, consultable, etc.)
+Fonctionnalités sociales :
+- Commentaires, favoris, notation, etc.
+- Gestion du “profil” utilisateur
+Référentiel “de base” :
+- Définir une interface d’admin claire pour éditer la base d’objets “is_default” (via admin Django ou un outil dédié)
 
-1. Associer chaque recette à un utilisateur
-    Ajout d’un champ user, visibility et is_default dans le modèle Recipe :
-            user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="recipes")
-            visibility = models.CharField(max_length=10, choices=[('private', 'Privée'), ('public', 'Publique')], default='private')
-            is_default = models.BooleanField(default=False)  # Recette fournie par l'app (voir section 3)
-        ✔ Chaque utilisateur possède ses recettes privées (visibility='private').
-        ✔ Il peut choisir de les rendre publiques (visibility='public').
-        ✔ Certaines recettes peuvent être des recettes "de base" (is_default=True).
-2. Gérer le partage des recettes
-    Dans la vue API, permettre aux utilisateurs de voir :
-        Leurs propres recettes
-        Les recettes publiques des autres utilisateurs
-        Les recettes de base fournies par l'application
-        Filtrer les recettes en fonction de l’utilisateur connecté :
-            ✔ Chaque utilisateur voit uniquement ses recettes privées + celles partagées + les recettes publiques de base.
-            ✔ Les recettes publiques restent visibles à tous, mais ne sont modifiables que par leur créateur.
-3. Ajouter une base de recettes publiques
-Méthode 1 : Utiliser is_default=True (Simple et efficace)
-    Créer des recettes de base et marquer is_default=True : user=None, is_default=True et visibility="public"
-    ✔ Toutes les recettes avec is_default=True sont accessibles à tous.
-    ✔ Elles apparaissent dans get_queryset() sans être liées à un utilisateur.
-Méthode 2 : Utiliser un utilisateur "système" (shared_recipes)
-    Créer un utilisateur spécial shared_recipes : def get_system_user(): """Retourne l'utilisateur système qui possède les recettes de base"""
-    Créer les recettes de base sous cet utilisateur : Recipe.objects.create(user=get_system_user(), recipe_name="Crêpes faciles", description="Recette universelle", visibility="public")
-    Adapter get_queryset() : def get_queryset(self):  """Retourne les recettes de l'utilisateur + celles qui sont publiques + les recettes de base"""
-                                        user = self.request.user
-                                        return Recipe.objects.filter(Q(user=user) | Q(visibility="public") | Q(is_default=True))
-    ✔ Les recettes de base sont gérées sous un utilisateur spécifique.
-    ✔ Elles peuvent être modifiées par un admin, mais accessibles à tous.
-Bonus : Permettre aux utilisateurs de copier une recette publique
-    Créer une méthode pour dupliquer une recette : def copy_recipe_to_user(user, recipe)
 
 
 ### Optimisation des traitements dans clean() et save()
