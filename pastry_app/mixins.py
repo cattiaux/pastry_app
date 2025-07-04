@@ -23,10 +23,7 @@ class GuestUserRecipeMixin:
         if user.is_authenticated:
             # Recettes de l'utilisateur + publiques + de base
             return (
-                self.queryset.model.objects.filter(
-                    Q(user=user) | Q(visibility="public") | Q(is_default=True)
-                ).distinct()
-            )
+                self.queryset.model.objects.filter(Q(user=user) | Q(visibility="public") | Q(is_default=True)).distinct())
         else:
             guest_id = self.get_guest_id()
             qs = self.queryset.model.objects.filter(Q(visibility="public") | Q(is_default=True))

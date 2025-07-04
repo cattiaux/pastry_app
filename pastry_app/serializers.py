@@ -1,6 +1,8 @@
 from rest_framework import serializers
+from rest_framework.response import Response
+from rest_framework import status
 from django.db import IntegrityError
-from django.db.models import Max
+from django.db.models import Max, Q
 from django.utils.timezone import now
 from .models import *
 from .constants import UNIT_CHOICES
@@ -558,7 +560,9 @@ class RecipeSerializer(serializers.ModelSerializer):
     image = serializers.ImageField(required=False, allow_null=True)
     servings_min = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     servings_max = serializers.IntegerField(required=False, allow_null=True, min_value=1)
-    
+    parent_recipe_name = serializers.SerializerMethodField()
+    adaptation_note = serializers.CharField(allow_blank=True, allow_null=True, required=False)
+
     # Relations simples
     pan = serializers.PrimaryKeyRelatedField(queryset=Pan.objects.all(), allow_null=True, required=False)
     parent_recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), allow_null=True, required=False)
@@ -578,7 +582,7 @@ class RecipeSerializer(serializers.ModelSerializer):
         model = Recipe
         fields = ["id", 
                   "recipe_name", "chef_name", "context_name", 
-                  "source", "recipe_type", "parent_recipe", 
+                  "source", "recipe_type", "parent_recipe", "parent_recipe_name", "adaptation_note",
                   "servings_min", "servings_max", "description", "trick", "image", 
                   "pan", "categories", "labels", "ingredients", "steps", "sub_recipes", 
                   "created_at", "updated_at",
@@ -602,6 +606,9 @@ class RecipeSerializer(serializers.ModelSerializer):
         if "chef_name" in data:
             data["chef_name"] = normalize_case(data["chef_name"])
         return super().to_internal_value(data)
+
+    def get_parent_recipe_name(self, obj):
+        return obj.parent_recipe.recipe_name if obj.parent_recipe else None
 
     def validate_recipe_name(self, value):
         if len(value.strip()) < 3:
@@ -634,9 +641,16 @@ class RecipeSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        parent = data.get("parent_recipe")
+        """
+        Validation centrale de Recipe :
+        - Vérifie la logique d'adaptation (parent, type VARIATION, etc)
+        - Vérifie unicité logique
+        - Vérifie présence d'au moins un ingrédient/sous-recette SAUF si création via adapt_recipe
+        """
+        parent = data.get("parent_recipe", getattr(self.instance, "parent_recipe", None))
         rtype = data.get("recipe_type", getattr(self.instance, "recipe_type", "BASE"))
 
+        # 1. Règles d'adaptation (parent/type)
         if parent and parent == self.instance:
             raise serializers.ValidationError("Une recette ne peut pas être sa propre version précédente.")
         if parent and rtype != "VARIATION":
@@ -644,12 +658,17 @@ class RecipeSerializer(serializers.ModelSerializer):
         if rtype == "VARIATION" and not parent:
             raise serializers.ValidationError("Une recette de type VARIATION doit avoir une parent_recipe.")
 
+        # 2. Coherence servings
         min_val = data.get("servings_min")
         max_val = data.get("servings_max")
         if min_val and max_val and min_val > max_val:
             raise serializers.ValidationError("Le nombre de portions minimum ne peut pas être supérieur au maximum.")
 
-        # Validation d’unicité logique (soft-match insensible à la casse)
+        # 3. Note adaptation cohérente
+        if data.get("adaptation_note") and not data.get("parent_recipe"):
+            raise serializers.ValidationError({"adaptation_note": "Ce champ n'est permis que pour une adaptation (parent_recipe doit être défini)."})
+
+        # 4. Validation d’unicité logique (soft-match insensible à la casse)
         # Fusion champ par champ pour obtenir l'état final du triplet unique
         name = normalize_case(data.get("recipe_name") or (self.instance and self.instance.recipe_name))
         chef = normalize_case(data.get("chef_name") or (self.instance and self.instance.chef_name))
@@ -660,8 +679,9 @@ class RecipeSerializer(serializers.ModelSerializer):
         if Recipe.objects.exclude(id=recipe_id).filter(recipe_name__iexact=name, chef_name__iexact=chef, context_name__iexact=context).exists():
             raise serializers.ValidationError("Une recette avec ce nom, ce chef et ce contexte existe déjà.")
         
+        # 5. Présence d'ingrédients/étapes/sous-recettes (sauf adapt_recipe)
         # Vérification du contenu minimum (à la création uniquement)
-        if not self.instance:
+        if not self.instance and not self.context.get("is_adapt_recipe", False):
             ingredients = data.get("recipe_ingredients", [])
             sub_recipes = data.get("main_recipes", [])
             steps = data.get("steps", [])
@@ -671,7 +691,7 @@ class RecipeSerializer(serializers.ModelSerializer):
             if not (steps or sub_recipes):
                 raise serializers.ValidationError("Une recette doit contenir au moins une étape ou une sous-recette.")
 
-        # Boucle indirecte
+        # 6. Boucle indirecte parent (cycle)
         def has_cyclic_parent(instance, new_parent):
             current = new_parent
             while current:
@@ -682,11 +702,6 @@ class RecipeSerializer(serializers.ModelSerializer):
 
         if parent and self.instance and has_cyclic_parent(self.instance, parent):
             raise serializers.ValidationError("Cycle détecté dans les versions de recette.")
-
-        if parent and rtype != "VARIATION":
-            raise serializers.ValidationError("Une recette avec une parent_recipe doit être de type VARIATION.")
-        if rtype == "VARIATION" and not parent:
-            raise serializers.ValidationError("Une recette de type VARIATION doit avoir une parent_recipe.")
 
         return data
 
@@ -767,6 +782,25 @@ class RecipeSerializer(serializers.ModelSerializer):
             ])
 
         return instance
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        user = request.user if request.user.is_authenticated else None
+        guest_id = request.headers.get("X-Guest-Id")
+
+        # Cas 1 : recette de base (is_default) ou recette qui n'appartient pas à ce user/guest
+        if instance.is_default or (instance.user is None and not instance.guest_id):
+            # Soft delete (masquage) pour ce user/invité
+            UserRecipeVisibility.objects.get_or_create(
+                user=user if user else None,
+                guest_id=None if user else guest_id,
+                recipe=instance,
+                defaults={"visible": False}
+            )
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        # Cas 2 : c'est sa propre recette (user ou guest_id)
+        return super().destroy(request, *args, **kwargs)
 
 class PanSerializer(serializers.ModelSerializer):
     pan_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)

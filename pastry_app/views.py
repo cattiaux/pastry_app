@@ -2,6 +2,7 @@
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticatedOrReadOnly
 from .permissions import IsOwnerOrGuestOrReadOnly, IsNotDefaultInstance, IsAdminOrReadOnly
@@ -9,6 +10,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
 from django.db.models import ProtectedError
+from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from .tests.utils import normalize_case
@@ -141,18 +143,137 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
 
     filter_backends = [SearchFilter, DjangoFilterBackend, OrderingFilter]
     search_fields = ["recipe_name", "chef_name", "context_name"]
-    filterset_fields = ["recipe_type", "chef_name", "categories", "labels", "pan"]
-    ordering_fields = ["recipe_name", "chef_name", "recipe_type", "created_at"]
+    filterset_fields = ["recipe_type", "chef_name", "categories", "labels", "pan", "parent_recipe"]
+    ordering_fields = ["recipe_name", "chef_name", "recipe_type", "created_at", "parent_recipe"]
     ordering = ["recipe_name", "chef_name"]
 
-    def destroy(self, request, *args, **kwargs):
-        """ Empêche la suppression d'une recette utilisée comme sous-recette """
-        instance = self.get_object()
+    @action(detail=True, methods=["post"], url_path="adapt", permission_classes=[AllowAny])
+    @transaction.atomic  # Pour que tout soit fait ou rien si une étape échoue
+    def adapt_recipe(self, request, pk=None):
+        """
+        Clone une recette existante (VARIATION) :
+        - Attribue parent_recipe
+        - Copie tous les ingrédients/étapes/sous-recettes
+        - Bypasse la validation "au moins un ingrédient/sous-recette" au moment du .save()
+        - Si la cible est déjà une adaptation, rattache automatiquement à la recette mère.
+        """
+        original = self.get_object()
+       # Si on adapte déjà une adaptation, on remonte à la mère
+        mother = original
+        while mother.parent_recipe:
+            mother = mother.parent_recipe
+        print("mother : ", mother)
+
+        # Récupère les données de la recette d'origine
+        data = RecipeSerializer(original).data
+        data.pop("id", None)
+        # Lien de parenté et type d'adaptation
+        data["parent_recipe"] = mother.id
+        data["recipe_type"] = "VARIATION"
+        # Propriétaire (user ou invité)
+        data["user"] = request.user.id if request.user.is_authenticated else None
+        data["guest_id"] = request.headers.get("X-Guest-Id") if not request.user.is_authenticated else None
+        # Champs personnalisables par l'utilisateur
+        data["recipe_name"] = request.data.get("recipe_name", f"Adaptation de {original.recipe_name}")
+        data["adaptation_note"] = request.data.get("adaptation_note", "")
+
+        # Exclure les relations complexes (étapes, ingrédients, sous-recettes)
+        data.pop("ingredients", None)
+        data.pop("steps", None)
+        data.pop("sub_recipes", None)
+
+        # Crée la nouvelle recette d'adaptation (flag spécial pour éviter l’erreur de validation sur les ingrédients à ce stade)
+        context = self.get_serializer_context()
+        context["is_adapt_recipe"] = True
+        print("verification du user de la request :")
+        print(data["user"])
+        user = request.user if request.user.is_authenticated else None
+        guest_id = request.headers.get("X-Guest-Id") if not user else None
+        serializer = self.get_serializer(data=data, context=context)        
+        serializer.is_valid(raise_exception=True)
+        new_recipe = serializer.save(user=user, guest_id=guest_id)
+        print("New adaptation id:", new_recipe.id, "user:", new_recipe.user_id)
+
+        # Copie les ingrédients (RecipeIngredient)
+        for ri in original.recipe_ingredients.all():
+            ri.__class__.objects.create(
+                recipe=new_recipe,
+                ingredient=ri.ingredient,
+                quantity=ri.quantity,
+                unit=ri.unit,
+                display_name=ri.display_name,
+            )
+
+        # Copie les étapes
+        for step in original.steps.all():
+            step.__class__.objects.create(
+                recipe=new_recipe,
+                step_number=step.step_number,
+                instruction=step.instruction,
+                trick=step.trick,
+            )
+
+        # Copie les sous-recettes
+        for sr in original.main_recipes.all():
+            sr.__class__.objects.create(
+                parent_recipe=new_recipe,
+                sub_recipe=sr.sub_recipe,
+                quantity=sr.quantity,
+                unit=sr.unit,
+            )
+
+        # Copie les M2M (categories, labels, etc.)
+        new_recipe.categories.set(original.categories.all())
+        new_recipe.labels.set(original.labels.all())
+
+        return Response(self.get_serializer(new_recipe).data, status=status.HTTP_201_CREATED)
+
+    def get_queryset(self):
+        """
+        Retourne les recettes visibles pour l'utilisateur courant (connecté ou invité).
+        - Filtre de base : recettes accessibles selon GuestUserRecipeMixin (user, guest_id, visibilité, is_default).
+        - Exclut les recettes masquées pour l'utilisateur courant (UserRecipeVisibility).
+        - Si query param `parent_recipe`, filtre uniquement les adaptations de cette recette mère.
+        """
+        # Étape 1 : Récupère le queryset de base (incluant user/guest_id/public/de base)
+        print("All recipes ids in DB:", list(Recipe.objects.all().values_list("id", flat=True)))
+        qs = super().get_queryset()
+        user = self.request.user
+        guest_id = (
+            self.request.headers.get("X-Guest-Id")
+            or self.request.headers.get("X-GUEST-ID")
+            or self.request.data.get("guest_id")
+            or self.request.query_params.get("guest_id")
+        )
+
+        # Étape 2 : Exclure les recettes explicitement masquées par ce user ou guest_id
+        if user.is_authenticated:
+            hidden_ids = UserRecipeVisibility.objects.filter(user=user, visible=False).values_list("recipe_id", flat=True)
+            print("hidden_ids pour user", user, ":", list(hidden_ids))
+            qs = qs.exclude(id__in=hidden_ids)
+        elif guest_id:
+            hidden_ids = UserRecipeVisibility.objects.filter(guest_id=guest_id, visible=False).values_list("recipe_id", flat=True)
+            print("hidden_ids pour guest_id", guest_id, ":", list(hidden_ids))
+            qs = qs.exclude(id__in=hidden_ids)
+
+        # Étape 3 : Si on filtre sur une recette mère, ne garder que ses adaptations (variations)
+        parent_recipe = self.request.query_params.get("parent_recipe")
+        if parent_recipe:
+            qs = qs.filter(parent_recipe=parent_recipe)
+
+        # Optionnel pour debug :
+        print("Queryset pour", user, ":", list(qs.values_list("id", flat=True)))
+        return qs
+
+    def perform_destroy(self, instance):
+        # Blocage si adaptations (versions)
+        if instance.versions.exists():
+            raise ValidationError("Impossible de supprimer cette recette : au moins une adaptation existe.")
+        # Blocage si utilisée comme sous-recette
         try:
             instance.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
         except ProtectedError:
-            return Response({"error": "Cannot delete this recipe because it is used in another recipe."}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError("Cannot delete this recipe because it is used in another recipe.")
 
 class IngredientViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     queryset = Ingredient.objects.all().order_by('ingredient_name')

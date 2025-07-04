@@ -4,6 +4,7 @@ from django.core.validators import MinValueValidator
 from django.utils.timezone import now
 from django.core.exceptions import ValidationError
 from django.db.models import UniqueConstraint
+from django.conf import settings
 from django.contrib.auth import get_user_model
 User = get_user_model()
 from pastry_app.tests.utils import normalize_case
@@ -333,6 +334,7 @@ class Recipe(models.Model):
     description = models.TextField(blank=True, null=True)
     trick = models.TextField(null=True, blank=True)
     image = models.ImageField(upload_to="recipes/", null=True, blank=True)
+    adaptation_note = models.CharField(max_length=255, blank=True, null=True) 
 
     # Tracking
     created_at = models.DateTimeField(auto_now_add=True)
@@ -985,3 +987,30 @@ class RecipeIngredient(models.Model):
         for index, ingredient in enumerate(recipe_ingredients, start=1):
             ingredient.display_name = f"{ingredient.ingredient.ingredient_name} {index}"
             ingredient.save(update_fields=['display_name'])  # Évite un save complet
+
+class UserRecipeVisibility(models.Model):
+    """
+    Permet à chaque utilisateur ou invité (guest) de masquer des recettes qui, sinon,
+    resteraient accessibles à tous (ex: recettes de base de l’application).
+    Une ligne par (user OU guest_id, recipe). Un des deux (user ou guest_id) doit être non-null.
+    Si `visible=False`, la recette est masquée pour cet utilisateur/invité ; sinon, visible (par défaut).
+    """
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True, related_name="hidden_recipes")
+    guest_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    recipe = models.ForeignKey("Recipe", on_delete=models.CASCADE)
+    visible = models.BooleanField(default=True) 
+    hidden_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("user", "guest_id", "recipe"),)
+
+    def clean(self):
+        # Au moins un des deux doit être présent
+        if not self.user and not self.guest_id:
+            raise ValidationError("Un UserRecipeVisibility doit être lié à un user OU un guest_id.")
+        if self.user and self.guest_id:
+            raise ValidationError("Un UserRecipeVisibility ne peut pas avoir à la fois user et guest_id.")
+        
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
