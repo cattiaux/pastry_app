@@ -1010,6 +1010,17 @@ class UserRecipeVisibility(models.Model):
             raise ValidationError("Un UserRecipeVisibility doit être lié à un user OU un guest_id.")
         if self.user and self.guest_id:
             raise ValidationError("Un UserRecipeVisibility ne peut pas avoir à la fois user et guest_id.")
+
+        # Vérif unicité "à la main" car DB ne le fera pas si NULL présent
+        qs = UserRecipeVisibility.objects.filter(recipe=self.recipe)
+        if self.user:
+            qs = qs.filter(user=self.user, guest_id__isnull=True)
+        else:
+            qs = qs.filter(user__isnull=True, guest_id=self.guest_id)
+        if self.pk:
+            qs = qs.exclude(pk=self.pk)
+        if qs.exists():
+            raise ValidationError("Doublon (user/guest_id/recipe) impossible.")
         
     def save(self, *args, **kwargs):
         self.full_clean()

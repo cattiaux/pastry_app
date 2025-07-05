@@ -20,6 +20,8 @@ def base_recipe_data():
         "steps": [{"step_number": 1, "instruction": "Préchauffer le four."}],
         "ingredients": [{"ingredient": ingredient.pk, "quantity": 300, "unit": "g"}],
         "pan_quantity": 1,
+        "visibility": "private",
+        "is_default": False,
     }
 
 User = get_user_model()
@@ -36,6 +38,7 @@ def guest_id():
 def test_create_recipe_api(api_client, base_url, base_recipe_data, user):
     api_client.force_authenticate(user=user)
     response = api_client.post(base_url(model_name), data=base_recipe_data, format="json")
+    print(response.json())
     assert response.status_code == status.HTTP_201_CREATED
     assert response.data["recipe_name"] == "tarte normande"
 
@@ -265,7 +268,7 @@ def test_adapt_recipe_api(api_client, base_url, base_recipe_data, user):
     url= base_url(model_name)
     api_client.force_authenticate(user=user)
     # Crée une recette mère
-    response = api_client.post(url, base_recipe_data(), format="json")
+    response = api_client.post(url, base_recipe_data, format="json")
     mother_id = response.data["id"]
 
     # Adapte la recette
@@ -274,7 +277,7 @@ def test_adapt_recipe_api(api_client, base_url, base_recipe_data, user):
         "servings_min": 4,
         "adaptation_note": "Pour un moule plus petit",
         "steps": [{"step_number": 1, "instruction": "Nouveau préchauffage"}],
-        "ingredients": base_recipe_data()["ingredients"],
+        "ingredients": base_recipe_data["ingredients"],
     }
     adapt_resp = api_client.post(f"{url}{mother_id}/adapt/", payload, format="json")
     assert adapt_resp.status_code == status.HTTP_201_CREATED
@@ -287,10 +290,10 @@ def test_adapt_recipe_appears_in_list(api_client, base_url, base_recipe_data, us
     """L’adaptation est visible via un filtre parent_recipe."""
     url= base_url(model_name)
     api_client.force_authenticate(user=user)
-    mother_resp = api_client.post(url, base_recipe_data(), format="json")
+    mother_resp = api_client.post(url, base_recipe_data, format="json")
     mother_id = mother_resp.data["id"]
     # Crée adaptation
-    payload = {"recipe_name": "Fork", "steps": [{"step_number": 1, "instruction": "New"}], "ingredients": base_recipe_data()["ingredients"]}
+    payload = {"recipe_name": "Fork", "steps": [{"step_number": 1, "instruction": "New"}], "ingredients": base_recipe_data["ingredients"]}
     fork = api_client.post(f"{url}{mother_id}/adapt/", payload, format="json").data
 
     # On filtre toutes les recettes issues de cette mère
@@ -301,8 +304,12 @@ def test_adapt_recipe_appears_in_list(api_client, base_url, base_recipe_data, us
 def test_guest_can_delete_own_adaptation(api_client, base_url, base_recipe_data, guest_id):
     """Un invité peut supprimer sa propre adaptation."""
     url= base_url(model_name)
-    mother = api_client.post(url, base_recipe_data(), format="json").data
-    fork = api_client.post(f"{url}{mother['id']}/adapt/", base_recipe_data(recipe_name="fork"), format="json", HTTP_X_GUEST_ID=guest_id).data
+    payload = copy.deepcopy(base_recipe_data)
+    payload["visibility"] = "public"
+    mother = api_client.post(url, payload, format="json").data
+    payload["recipe_name"] = "fork"
+    response = api_client.post(f"{url}{mother['id']}/adapt/", payload, format="json", HTTP_X_GUEST_ID=guest_id)
+    fork = response.data
     fork_url = f"{url}{fork['id']}/"
     resp = api_client.delete(fork_url, HTTP_X_GUEST_ID=guest_id)
     assert resp.status_code in (204, 200)
@@ -310,8 +317,11 @@ def test_guest_can_delete_own_adaptation(api_client, base_url, base_recipe_data,
 def test_guest_cannot_delete_others_adaptation(api_client, base_url, base_recipe_data, guest_id):
     """Un invité ne peut pas supprimer l’adaptation d’un autre invité."""
     url= base_url(model_name)
-    mother = api_client.post(url, base_recipe_data(), format="json").data
-    fork = api_client.post(f"{url}{mother['id']}/adapt/", base_recipe_data(recipe_name="fork"), format="json", HTTP_X_GUEST_ID="guestA").data
+    payload = copy.deepcopy(base_recipe_data)
+    payload["visibility"] = "public"
+    mother = api_client.post(url, payload, format="json").data
+    payload["recipe_name"] = "fork"
+    fork = api_client.post(f"{url}{mother['id']}/adapt/", payload, format="json", HTTP_X_GUEST_ID="guestA").data
     fork_url = f"{url}{fork['id']}/"
     resp = api_client.delete(fork_url, HTTP_X_GUEST_ID="guestB")
-    assert resp.status_code == 403
+    assert resp.status_code in [403, 404]

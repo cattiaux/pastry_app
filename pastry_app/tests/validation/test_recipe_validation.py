@@ -282,11 +282,11 @@ def test_adaptation_permissions_guest(api_client, base_url, guest_id):
 
     # Invité B ne peut pas modifier
     resp2 = api_client.patch(fork_url, {"recipe_name": "forbidden"}, format="json", HTTP_X_GUEST_ID="other-guest-id")
-    assert resp2.status_code == 403
+    assert resp2.status_code in [403, 404]
 
     # Invité B ne peut pas supprimer non plus
     resp3 = api_client.delete(fork_url, HTTP_X_GUEST_ID="other-guest-id")
-    assert resp3.status_code == 403
+    assert resp3.status_code in [403, 404]
 
     # Invité A peut supprimer
     resp4 = api_client.delete(fork_url, HTTP_X_GUEST_ID=guest_id)
@@ -309,7 +309,6 @@ def test_filter_adaptations_by_parent(api_client, base_url, user):
     # Filtre
     resp = api_client.get(f"{url}?parent_recipe={parent_id}")
     names = [r["recipe_name"] for r in resp.json()]
-    print("names : ", names)
     assert normalize_case("Adapt1") in names
     assert normalize_case("Adapt2") in names
     assert "Mère" not in names  # La recette mère ne doit pas apparaître dans le filtrage
@@ -343,9 +342,6 @@ def test_soft_hide_base_recipe_for_user(api_client, base_url, user, other_user):
         pan_quantity=1,
     )
     base_id = base_recipe.id
-
-    r = Recipe.objects.get(id=base_id)
-    print("is_default enregistré en base:", r.is_default)
 
     # User1 "masque" la recette de base pour lui (simulateur : suppression logique ou table de masquage, à adapter)
     api_client.force_authenticate(user=user)

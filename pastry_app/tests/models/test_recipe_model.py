@@ -1,9 +1,12 @@
 import pytest
 from django.core.exceptions import ValidationError
-from pastry_app.models import Recipe, Pan, RecipeIngredient, Ingredient, RecipeStep
+from django.contrib.auth import get_user_model
+from pastry_app.models import Recipe, Pan, RecipeIngredient, Ingredient, RecipeStep, UserRecipeVisibility
 from pastry_app.tests.utils import validate_constraint, validate_field_normalization, normalize_case
 
 pytestmark = pytest.mark.django_db
+
+User = get_user_model()
 
 # --- Fixtures hybrides ---
 
@@ -21,6 +24,10 @@ def recipe(pan):
     # Ajout d’une étape
     RecipeStep.objects.create(recipe=recipe, step_number=1, instruction="Mélanger la farine et le sucre.")
     return recipe
+
+@pytest.fixture
+def user():
+    return User.objects.create_user(username="user1", password="testpass123")
 
 # --- Tests de validation modèle ---
 
@@ -163,3 +170,50 @@ def test_servings_are_scaled_by_pan_quantity(recipe):
     recipe.full_clean()
     assert recipe.servings_min == recipe.pan.units_in_mold * 3
     assert recipe.servings_max == recipe.pan.units_in_mold * 3
+
+# --- test pour UserRecipeVisibility ---
+
+def test_create_user_visibility(db, user, recipe):
+    """On peut créer une UserRecipeVisibility pour un user et une recette."""
+    v = UserRecipeVisibility.objects.create(user=user, recipe=recipe, visible=False)
+    assert v.pk is not None
+    assert v.visible is False
+    assert v.user == user
+    assert v.guest_id is None
+
+def test_create_guest_visibility(db, recipe):
+    """On peut créer une UserRecipeVisibility pour un guest_id et une recette."""
+    v = UserRecipeVisibility.objects.create(guest_id="guest-123", recipe=recipe, visible=False)
+    assert v.pk is not None
+    assert v.visible is False
+    assert v.user is None
+    assert v.guest_id == "guest-123"
+
+def test_visibility_error_if_no_user_nor_guest_id(db, recipe):
+    """Erreur si ni user ni guest_id n'est renseigné."""
+    v = UserRecipeVisibility(recipe=recipe, visible=False)
+    with pytest.raises(ValidationError, match="lié à un user OU un guest_id"):
+        v.full_clean()
+
+def test_visibility_error_if_both_user_and_guest_id(db, user, recipe):
+    """Erreur si user ET guest_id sont définis."""
+    v = UserRecipeVisibility(user=user, guest_id="guest-123", recipe=recipe)
+    with pytest.raises(ValidationError, match="ne peut pas avoir à la fois user et guest_id"):
+        v.full_clean()
+
+def test_unique_constraint(db, user, recipe):
+    """On ne peut pas dupliquer une ligne (user, guest_id, recipe)."""
+    UserRecipeVisibility.objects.create(user=user, recipe=recipe)
+    v2 = UserRecipeVisibility(user=user, recipe=recipe)
+    with pytest.raises(Exception): 
+        v2.save()
+
+def test_visibility_unique_constraint_guest(db, recipe):
+    UserRecipeVisibility.objects.create(guest_id="guest-123", recipe=recipe)
+    v2 = UserRecipeVisibility(guest_id="guest-123", recipe=recipe)
+    with pytest.raises(Exception):
+        v2.save()
+
+def test_visibility_hidden_at_autofilled(db, user, recipe):
+    v = UserRecipeVisibility.objects.create(user=user, recipe=recipe)
+    assert v.hidden_at is not None

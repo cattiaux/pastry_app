@@ -176,6 +176,8 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         # Champs personnalisables par l'utilisateur
         data["recipe_name"] = request.data.get("recipe_name", f"Adaptation de {original.recipe_name}")
         data["adaptation_note"] = request.data.get("adaptation_note", "")
+        data["visibility"] = "private"  # L'adaptation est toujours privée à la création
+        data["is_default"] = False      # Jamais recette de base
 
         # Exclure les relations complexes (étapes, ingrédients, sous-recettes)
         data.pop("ingredients", None)
