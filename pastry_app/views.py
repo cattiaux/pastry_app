@@ -5,7 +5,7 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticatedOrReadOnly
-from .permissions import IsOwnerOrGuestOrReadOnly, IsNotDefaultInstance, IsAdminOrReadOnly
+from .permissions import *
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
@@ -139,7 +139,7 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         .select_related("pan", "parent_recipe")\
         .order_by("recipe_name", "chef_name")
     serializer_class = RecipeSerializer
-    permission_classes = [IsOwnerOrGuestOrReadOnly, IsNotDefaultInstance]
+    permission_classes = [CanSoftHideRecipeOrIsOwnerOrGuest]
 
     filter_backends = [SearchFilter, DjangoFilterBackend, OrderingFilter]
     search_fields = ["recipe_name", "chef_name", "context_name"]
@@ -264,16 +264,56 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         # Optionnel pour debug :
         print("Queryset pour", user, ":", list(qs.values_list("id", flat=True)))
         return qs
+        
+    def destroy(self, request, *args, **kwargs):
+        """
+        - Empêche la suppression d'une recette mère si elle a des adaptations (versions) ou si elle est utilisée comme sous-recette.
+        - Pour les recettes de base (is_default=True), ne les supprime jamais vraiment, mais les masque pour le user ou guest_id courant ("soft-hide").
+        - Retourne une erreur métier explicite.
+        """
+        print("on entre dans le destroy de RecipeViewSet")
+        instance = self.get_object()
+        print("instance id:", instance.id, "is_default:", instance.is_default)
+        # Cas 1 : Recette de base → soft-hide pour ce user ou guest_id
+        if instance.is_default:
+            print("on entre dans le cas 1 du destroy")
+            user = request.user if request.user.is_authenticated else None
+            guest_id = (
+                request.headers.get("X-Guest-Id")
+                or request.headers.get("X-GUEST-ID")
+                or request.data.get("guest_id")
+                or request.query_params.get("guest_id")
+            )
+            if not user and not guest_id:
+                # Anonyme non identifié : refuse la suppression/masquage
+                return Response({"detail": "Authentication required for this action."}, status=status.HTTP_403_FORBIDDEN)
 
-    def perform_destroy(self, instance):
-        # Blocage si adaptations (versions)
+            # Soft-hide = ajoute/maj entrée UserRecipeVisibility pour ce user/guest_id et cette recette
+            obj, created = UserRecipeVisibility.objects.get_or_create(user=user, guest_id=guest_id, recipe=instance, defaults={"visible": False})
+            if not created and obj.visible:
+                obj.visible = False
+                obj.save()
+            # Succès : la recette est masquée pour ce user/invité uniquement
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        # Cas 2 : Blocage si adaptations (versions)
         if instance.versions.exists():
-            raise ValidationError("Impossible de supprimer cette recette : au moins une adaptation existe.")
-        # Blocage si utilisée comme sous-recette
+            print("on entre dans le cas 2 du destroy")
+            return Response({"detail": "Impossible de supprimer cette recette : au moins une adaptation existe."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Cas 3 : Blocage si utilisée comme sous-recette (intégrité)
         try:
-            instance.delete()
+            self.perform_destroy(instance)
+            print("on entre dans le cas 3 du destroy")
+
         except ProtectedError:
-            raise ValidationError("Cannot delete this recipe because it is used in another recipe.")
+            return Response({"detail": "Cannot delete this recipe because it is used in another recipe."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Cas normal : suppression réussie
+        print("on entre dans le cas normal du destroy")
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 class IngredientViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     queryset = Ingredient.objects.all().order_by('ingredient_name')

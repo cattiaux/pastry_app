@@ -324,22 +324,32 @@ def test_cannot_delete_mother_with_adaptations(api_client, base_url, user):
     # Tente de supprimer la mère
     resp = api_client.delete(f"{url}{mother['id']}/")
     assert resp.status_code == 400  # Ou 403 selon ta logique
-    assert "adaptation" in str(resp.json()).lower()
+    assert resp.json()["detail"] == "Impossible de supprimer cette recette : au moins une adaptation existe."
 
 def test_soft_hide_base_recipe_for_user(api_client, base_url, user, other_user):
     """
     Un user peut masquer une recette de base UNIQUEMENT pour lui : elle reste visible pour les autres users/invités.
     """
     url = base_url("recipes")
-    # Création d'une recette de base par un admin
-    base_data = base_recipe_data(recipe_name="BaseMasquee", is_default=True, visibility="public")
-    response = api_client.post(url, base_data, format="json")
-    base_id = response.data["id"]
-    
+
+    # Création d'une recette de base par un admin via ORM (pas via POST)
+    base_recipe = Recipe.objects.create(
+        recipe_name="BaseMasquee",
+        chef_name="Chef Test",
+        is_default=True,
+        visibility="public",
+        servings_min=6,
+        servings_max=6,
+        pan_quantity=1,
+    )
+    base_id = base_recipe.id
+
+    r = Recipe.objects.get(id=base_id)
+    print("is_default enregistré en base:", r.is_default)
+
     # User1 "masque" la recette de base pour lui (simulateur : suppression logique ou table de masquage, à adapter)
     api_client.force_authenticate(user=user)
     hide_resp = api_client.delete(f"{url}{base_id}/")
-    print(hide_resp.json())
     assert hide_resp.status_code in (204, 200)  # Soft-delete OK
 
     # User1 NE VOIT PLUS la recette
