@@ -673,7 +673,7 @@ class Store(models.Model):
 class IngredientPrice(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name="prices")
     brand_name = models.CharField(max_length=200, null=True, blank=True, default=None)
-    store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name="prices", null=True, blank=True)
+    store = models.ForeignKey(Store, on_delete=models.PROTECT, related_name="prices", null=True, blank=True)
     quantity = models.FloatField(validators=[MinValueValidator(0)])       # Quantité
     unit = models.CharField(max_length=50, choices=UNIT_CHOICES)          # Unité de mesure
     price = models.FloatField(validators=[MinValueValidator(0)])          # Prix normal

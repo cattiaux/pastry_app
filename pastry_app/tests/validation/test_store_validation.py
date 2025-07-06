@@ -61,15 +61,16 @@ def test_update_store_to_duplicate_api(api_client, base_url, fields, user):
 
 @pytest.mark.parametrize("related_models", [
     [
-        ("stores", StoreSerializer, {}, {"store_name": "Auchan", "city": "Paris", "zip_code": None}),
+        ("stores", StoreSerializer, {}, {"store_name": "Auchan", "city": "Paris", "zip_code": None, "visibility": "public"}),
         ("ingredients", IngredientSerializer, {}, {"ingredient_name": "blabla"}),
         ("ingredient_prices", IngredientPriceSerializer, {"store": "stores", "ingredient": "ingredients"}, {"price": 2.5, "date": "2024-02-20", "quantity": 1, "unit": "kg", "brand_name": None}),
     ]
 ])
-def test_delete_store_used_in_prices(api_client, base_url, related_models):
+def test_delete_store_used_in_prices(api_client, base_url, related_models, user):
     """ Vérifie qu'un Store utilisé dans des prix d'ingrédients ne peut pas être supprimé. """
+    api_client.force_authenticate(user=user)
     expected_error = "Ce magasin est associé à des prix d'ingrédients et ne peut pas être supprimé."
-    validate_protected_delete_api(api_client, base_url, model_name, related_models, expected_error)
+    validate_protected_delete_api(api_client, base_url, model_name, related_models, expected_error, user=user)
 
 def test_store_requires_city_or_zip_code_api(api_client, base_url):
     """ Vérifie qu'un store ne peut pas être créé sans au moins une `city` ou `zip_code` en API. """

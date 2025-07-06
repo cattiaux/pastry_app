@@ -272,7 +272,7 @@ def create_related_models_api(api_client, base_url, related_models):
 
     return created_instances
 
-def validate_protected_delete_api(api_client, base_url, main_model_name, related_models, expected_error):
+def validate_protected_delete_api(api_client, base_url, main_model_name, related_models, expected_error, user=None):
     """
     Vérifie qu'un objet ne peut pas être supprimé via l'API s'il est référencé dans un ou plusieurs modèles.
 
@@ -289,6 +289,8 @@ def validate_protected_delete_api(api_client, base_url, main_model_name, related
     main_url = f"{base_url(main_model_name)}{main_obj_id}/"
 
     # Étape 3 : Tentative de suppression de l'objet principal
-    response_delete = api_client.delete(main_url)
-    assert response_delete.status_code == status.HTTP_400_BAD_REQUEST, (f"La suppression de {main_model_name} aurait dû être interdite, mais a réussi !")
+    response_delete = api_client.delete(main_url, user=user)
+    print(response_delete.json())  # Afficher la réponse pour le débogage
+    print(response_delete.status_code)  # Afficher le code de statut pour le débogage
+    assert response_delete.status_code == status.HTTP_400_BAD_REQUEST, (f"Suppression de {main_model_name}: attendu 400/interdiction, obtenu {response_delete.status_code} avec message {response_delete.json()}")
     assert expected_error in response_delete.json().get("error", ""), (f"Le message d'erreur attendu ('{expected_error}') n'a pas été trouvé dans {response_delete.json()}.")
