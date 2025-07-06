@@ -46,12 +46,9 @@ class StoreViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """ Empêche la suppression d'un magasin s'il est utilisé dans des prix. """
-        qs = self.get_queryset()
-        print("Queryset dans destroy:", list(qs.values_list("id", flat=True)))
         store = self.get_object()
         print("Store to delete:", store)
         if store.prices.exists():
-            print("Store has associated prices, cannot delete.")
             return Response({"error": "Ce magasin est associé à des prix d'ingrédients et ne peut pas être supprimé."}, status=status.HTTP_400_BAD_REQUEST)
         return super().destroy(request, *args, **kwargs)
 

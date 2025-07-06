@@ -1,5 +1,6 @@
 import pytest
 from rest_framework import status
+from django.contrib.auth import get_user_model
 from pastry_app.models import Recipe, SubRecipe
 from pastry_app.tests.base_api_test import api_client, base_url
 from pastry_app.tests.utils import validate_constraint_api
@@ -8,11 +9,17 @@ from pastry_app.tests.utils import validate_constraint_api
 model_name = "sub_recipes"
 pytestmark = pytest.mark.django_db
 
+User = get_user_model()
+
 @pytest.fixture
-def subrecipe():
+def user():
+    return User.objects.create_user(username="user1", password="testpass123")
+
+@pytest.fixture
+def subrecipe(user):
     """ Crée une sous-recette d'une recette"""
-    recipe1 = Recipe.objects.create(recipe_name="Tarte aux pommes", chef_name="Martin")
-    recipe2 = Recipe.objects.create(recipe_name="Crème pâtissière", chef_name="Martin")
+    recipe1 = Recipe.objects.create(recipe_name="Tarte aux pommes", chef_name="Martin", user=user)
+    recipe2 = Recipe.objects.create(recipe_name="Crème pâtissière", chef_name="Martin", user=user)
     return SubRecipe.objects.create(recipe=recipe1, sub_recipe=recipe2, quantity=200, unit="g")
 
 @pytest.mark.parametrize("field_name", ["quantity", "unit"])
@@ -53,12 +60,14 @@ def test_patch_cannot_set_recipe_as_its_own_subrecipe_api(api_client, base_url, 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "sub_recipe" in response.json()
 
-def test_cannot_delete_recipe_used_as_subrecipe_api(api_client, base_url, subrecipe):
+def test_cannot_delete_recipe_used_as_subrecipe_api(api_client, base_url, subrecipe, user):
     """ Vérifie qu'on ne peut pas supprimer une recette utilisée comme sous-recette via l'API """
+    api_client.force_authenticate(user=user)
     url = base_url("recipes") + f"{subrecipe.sub_recipe.id}/"
     delete_response = api_client.delete(url)
+    print(delete_response.json())  # Afficher la réponse pour le débogage
     assert delete_response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "Cannot delete" in delete_response.json()["error"]
+    assert "Cannot delete" in delete_response.json()["detail"]
 
 def test_cannot_patch_recipe_field_in_subrecipe_api(api_client, base_url, subrecipe):
     """ Vérifie que `recipe` est `read_only` et ne peut pas être modifié via `PATCH` """

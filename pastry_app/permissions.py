@@ -23,16 +23,12 @@ class CanSoftHideRecipeOrIsOwnerOrGuest(BasePermission):
     - Lecture seule pour tous.
     """
     def has_object_permission(self, request, view, obj):
-        print("Checking permissions for object:", obj)
         # Lecture seule toujours autorisée
         if request.method in SAFE_METHODS:
             return True
-        print("Request method:", request.method)
-        print("Object is_default:", getattr(obj, "is_default", False))
 
         # Cas spécial : recette de base (is_default=True) ET delete
         if request.method == "DELETE" and getattr(obj, "is_default", False):
-            print("Recette de base, autorisation soft-hide")
             if request.user.is_authenticated or (request.headers.get("X-Guest-Id") or request.data.get("guest_id")):
                 return True
 

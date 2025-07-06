@@ -1,6 +1,7 @@
 import pytest, json
-from pastry_app.models import Ingredient, Category, Label, Recipe, RecipeIngredient
+from django.contrib.auth import get_user_model
 from rest_framework import status
+from pastry_app.models import Ingredient, Category, Label, Recipe, RecipeIngredient
 from pastry_app.tests.utils import normalize_case
 from pastry_app.tests.base_api_test import api_client, base_url
 
@@ -31,11 +32,16 @@ from pastry_app.tests.base_api_test import api_client, base_url
 model_name = "ingredients"
 
 pytestmark = pytest.mark.django_db
+User = get_user_model()
 
 @pytest.fixture
-def setup_ingredient(db):
+def user():
+    return User.objects.create_user(username="user1", password="testpass123")
+
+@pytest.fixture
+def setup_ingredient(db, user):
     """Création d’un ingrédient pour les tests"""
-    return Ingredient.objects.create(ingredient_name="Chocolat")
+    return Ingredient.objects.create(ingredient_name="Chocolat", visibility="public", user=user)
 
 @pytest.fixture
 def category():
@@ -64,27 +70,27 @@ def test_create_ingredient(api_client, base_url):
 
 def test_get_ingredient(api_client, base_url, setup_ingredient):
     """Test de récupération d’un ingrédient existant"""
-    print(f"DEBUG - Nom après récupération : {setup_ingredient.ingredient_name}")
-
     url = base_url(model_name) + f"{setup_ingredient.id}/"
     response = api_client.get(url)
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["ingredient_name"] == normalize_case(setup_ingredient.ingredient_name)
 
-def test_update_ingredient_name(api_client, base_url, setup_ingredient):
+def test_update_ingredient_name(api_client, base_url, setup_ingredient, user):
     """Test de mise à jour d’un ingrédient"""
     url = base_url(model_name) + f"{setup_ingredient.id}/"
     ingredient_name="Cacao "
     data = {"ingredient_name": ingredient_name}
+    api_client.force_authenticate(user=user)
     response = api_client.patch(url, data=json.dumps(data), content_type="application/json")
 
     assert response.status_code == status.HTTP_200_OK
     setup_ingredient.refresh_from_db()
     assert setup_ingredient.ingredient_name == normalize_case(ingredient_name)
 
-def test_delete_ingredient(api_client, base_url, setup_ingredient):
+def test_delete_ingredient(api_client, base_url, setup_ingredient, user):
     """Test de suppression d’un ingrédient"""
+    api_client.force_authenticate(user=user)
     url = base_url(model_name) + f"{setup_ingredient.id}/"
     response = api_client.delete(url)
 
@@ -117,8 +123,9 @@ def test_get_nonexistent_ingredient(api_client, base_url):
     response = api_client.get(url)
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
-def test_update_ingredient_add_category(api_client, base_url, setup_ingredient, category):
+def test_update_ingredient_add_category(api_client, base_url, setup_ingredient, category, user):
     """Test d’ajout d’une catégorie à un ingrédient existant."""
+    api_client.force_authenticate(user=user)
     url = base_url(model_name) + f"{setup_ingredient.id}/"
     data = {"categories": [category.id]}
 
@@ -127,8 +134,9 @@ def test_update_ingredient_add_category(api_client, base_url, setup_ingredient, 
     setup_ingredient.refresh_from_db()
     assert category in setup_ingredient.categories.all()
 
-def test_update_ingredient_add_label(api_client, base_url, setup_ingredient, label):
+def test_update_ingredient_add_label(api_client, base_url, setup_ingredient, label, user):
     """Test d’ajout d’un label à un ingrédient existant."""
+    api_client.force_authenticate(user=user)
     url = base_url(model_name) + f"{setup_ingredient.id}/"
     data = {"labels": [label.id]}
 
@@ -137,8 +145,9 @@ def test_update_ingredient_add_label(api_client, base_url, setup_ingredient, lab
     setup_ingredient.refresh_from_db()
     assert label in setup_ingredient.labels.all()
 
-def test_update_ingredient_remove_category(api_client, base_url, setup_ingredient, category):
+def test_update_ingredient_remove_category(api_client, base_url, setup_ingredient, category, user):
     """Test de suppression d’une catégorie associée à un ingrédient."""
+    api_client.force_authenticate(user=user)
     setup_ingredient.categories.add(category)  # Ajouter la catégorie initialement
     url = base_url(model_name) + f"{setup_ingredient.id}/"
     data = {"categories": []}  # On vide la liste
@@ -148,8 +157,9 @@ def test_update_ingredient_remove_category(api_client, base_url, setup_ingredien
     setup_ingredient.refresh_from_db()
     assert category not in setup_ingredient.categories.all()
 
-def test_update_ingredient_remove_label(api_client, base_url, setup_ingredient, label):
+def test_update_ingredient_remove_label(api_client, base_url, setup_ingredient, label, user):
     """Test de suppression d’une catégorie associée à un ingrédient."""
+    api_client.force_authenticate(user=user)
     setup_ingredient.labels.add(label)  # Ajouter le label initialement
     url = base_url(model_name) + f"{setup_ingredient.id}/"
     data = {"labels": []}  # On vide la liste
@@ -159,8 +169,9 @@ def test_update_ingredient_remove_label(api_client, base_url, setup_ingredient, 
     setup_ingredient.refresh_from_db()
     assert label not in setup_ingredient.labels.all()
 
-def test_delete_ingredient_used_in_recipe(api_client, base_url, setup_ingredient, recipe):
+def test_delete_ingredient_used_in_recipe(api_client, base_url, setup_ingredient, recipe, user):
     """Vérifie qu’on ne peut PAS supprimer un ingrédient utilisé dans une recette."""
+    api_client.force_authenticate(user=user)
     RecipeIngredient.objects.create(recipe=recipe, ingredient=setup_ingredient, quantity=100, unit="g")
     url = base_url(model_name) + f"{setup_ingredient.id}/"
     response = api_client.delete(url)

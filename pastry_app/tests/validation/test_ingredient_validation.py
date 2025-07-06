@@ -1,11 +1,14 @@
 import pytest, json
 from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
 from rest_framework import status
 from pastry_app.models import Ingredient
 from pastry_app.tests.utils import normalize_case
 from pastry_app.tests.base_api_test import api_client, base_url
 
 """Tests de validation et de gestion des erreurs pour le modèle Ingredient"""
+
+pytestmark = pytest.mark.django_db
 
 # Création
 # test_create_ingredient_without_name → Vérifie qu'on ne peut PAS créer un ingrédient sans ingredient_name.
@@ -33,7 +36,12 @@ from pastry_app.tests.base_api_test import api_client, base_url
 # Définir model_name pour les tests de Ingredient
 model_name = "ingredients"
 
-@pytest.mark.django_db
+User = get_user_model()
+
+@pytest.fixture
+def user():
+    return User.objects.create_user(username="user1", password="testpass123")
+
 def test_create_ingredient_without_name(api_client, base_url):
     """ Vérifie qu'on ne peut PAS créer un ingrédient sans `ingredient_name`"""
     url = base_url(model_name)
@@ -41,7 +49,6 @@ def test_create_ingredient_without_name(api_client, base_url):
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "ingredient_name" in response.json() # Vérifie que l'erreur concerne bien `ingredient_name`
 
-@pytest.mark.django_db
 def test_create_duplicate_ingredient(api_client, base_url):
     """ Vérifie qu'on ne peut PAS créer deux ingrédients avec le même `ingredient_name`"""
     url = base_url(model_name)
@@ -57,7 +64,6 @@ def test_create_duplicate_ingredient(api_client, base_url):
     assert response2.status_code == status.HTTP_400_BAD_REQUEST
     assert "ingredient_name" in response2.json()
 
-@pytest.mark.django_db
 def test_create_ingredient_with_nonexistent_category(api_client, base_url):
     """ Vérifie qu'on ne peut PAS créer un ingrédient avec une catégorie inexistante et que le message est clair """
     url = base_url(model_name)
@@ -68,7 +74,6 @@ def test_create_ingredient_with_nonexistent_category(api_client, base_url):
     assert "categories" in response.json()
     assert "object does not exist" in response.json()["categories"][0]  # Vérification du message
 
-@pytest.mark.django_db
 def test_create_ingredient_with_nonexistent_label(api_client, base_url):
     """ Vérifie qu'on ne peut PAS créer un ingrédient avec un label inexistant et que le message est clair """
     url = base_url(model_name)
@@ -85,9 +90,9 @@ def test_create_ingredient_with_nonexistent_label(api_client, base_url):
 # 1️. Tester l'unicité dans l'API avec `validate_ingredient_name()` dans `serializers.py` (sans `unique=True`).
 # 2️. En production, remettre `unique=True` dans `models.py` pour sécuriser la base, mais NE PAS tester cela avec pytest.
 #    Si ces tests échouent avec `unique=True`, c'est normal et tu peux ignorer l'erreur !
-@pytest.mark.django_db
-def test_update_ingredient_to_duplicate(api_client, base_url):
+def test_update_ingredient_to_duplicate(api_client, base_url, user):
     """ Vérifie qu'on ne peut PAS modifier un ingrédient en lui donnant un `ingredient_name` déjà existant"""
+    api_client.force_authenticate(user=user)
     url = base_url(model_name)
 
     # Sélectionner deux noms d’ingrédients dynamiquement
@@ -111,30 +116,27 @@ def test_update_ingredient_to_duplicate(api_client, base_url):
     assert response3.status_code == status.HTTP_400_BAD_REQUEST
     assert "ingredient_name" in response3.json()
 
-@pytest.mark.django_db
 def test_get_nonexistent_ingredient(api_client, base_url):
     """ Vérifie qu'on obtient une erreur 404 quand on essaie de récupérer un ingrédient qui n'existe pas"""
     url = base_url(model_name) + "9999/"  # ID inexistant
     response = api_client.get(url)
     assert response.status_code == status.HTTP_404_NOT_FOUND  # Doit renvoyer une erreur 404
 
-@pytest.mark.django_db
 def test_delete_nonexistent_ingredient(api_client, base_url):
     """ Vérifie qu'on obtient une erreur 404 quand on essaie de supprimer un ingrédient qui n'existe pas"""
     url = base_url(model_name) + "9999/"  # ID inexistant
     response = api_client.delete(url)
     assert response.status_code == status.HTTP_404_NOT_FOUND  # Doit renvoyer une erreur 404
 
-@pytest.mark.django_db
 def test_ingredient_name_cannot_be_empty():
     """ Vérifie qu'on ne peut pas créer un ingrédient avec un `ingredient_name` vide"""
     ingredient = Ingredient(ingredient_name="")
     with pytest.raises(ValidationError, match="This field cannot be blank"):
         ingredient.full_clean(exclude=['categories', 'labels']) # Vérifie la validation avant la sauvegarde
 
-@pytest.mark.django_db
-def test_cannot_assign_nonexistent_category(api_client, base_url):
+def test_cannot_assign_nonexistent_category(api_client, base_url, user):
     """ Vérifie qu'on ne peut PAS assigner une catégorie qui n'existe pas """
+    api_client.force_authenticate(user=user)
     url = base_url(model_name)
 
     # Création d'un ingrédient via l'API
@@ -151,9 +153,9 @@ def test_cannot_assign_nonexistent_category(api_client, base_url):
     assert "categories" in response.json()
     assert "object does not exist" in response.json()["categories"][0]
 
-@pytest.mark.django_db
-def test_cannot_assign_nonexistent_label(api_client, base_url):
+def test_cannot_assign_nonexistent_label(api_client, base_url, user):
     """ Vérifie qu'on ne peut PAS assigner un label qui n'existe pas """
+    api_client.force_authenticate(user=user)
     url = base_url(model_name)
 
     # Création d'un ingrédient via l'API
@@ -170,7 +172,6 @@ def test_cannot_assign_nonexistent_label(api_client, base_url):
     assert "labels" in response.json()
     assert "object does not exist" in response.json()["labels"][0]
 
-@pytest.mark.django_db
 def test_ingredient_name_is_normalized():
     """ Vérifie que le `ingredient_name` est bien normalisé (minuscule, sans espaces inutiles). """
     ingredient_name = "  Chocolat  Noir "

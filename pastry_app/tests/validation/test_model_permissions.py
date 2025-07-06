@@ -257,18 +257,70 @@ class TestGenericPermissions:
         # Pour tous les autres modèles, création simple
         return model_cls.objects.create(**data)
 
-    def test_default_object_is_readonly(self, api_client, base_url, model_name, default_object, user, name_field, model_cls):
+    def test_default_object_is_readonly(self, api_client, base_url, base_data_func, model_name, default_object, user, name_field, model_cls, guest_id):
+        """
+        Vérifie que les objets 'de base' (is_default=True) sont en lecture seule :
+        - PATCH doit être interdit (403) pour tous les modèles.
+        - DELETE : 
+            - Pour Recipe, doit renvoyer 204 (soft-hide)
+            - Pour les autres modèles, doit renvoyer 403 (interdit).
+        """
+        # On crée l'objet via ORM pour simuler une donnée de catalogue (pas de user/guest_id, pas d'ambiguïté de permissions).
+        base_data = base_data_func()
+        base_data["is_default"] = True
+        base_data["visibility"] = "public"   # Généralement, les objets de base sont publics
+
+        # Cas spécial "Recipe" : création via ORM + M2M et FK séparément
+        if model_name == "recipes":
+            # Création de l'objet principal sans M2M ni steps
+            recipe_kwargs = base_data.copy()
+            ingredients = recipe_kwargs.pop("ingredients", [])
+            steps = recipe_kwargs.pop("steps", [])
+            recipe = model_cls.objects.create(**recipe_kwargs)
+
+            # Ajout des ingrédients (FK)
+            for ingredient_data in ingredients:
+                # Crée l'ingrédient si besoin, puis l'association RecipeIngredient
+                ing = Ingredient.objects.get(pk=ingredient_data["ingredient"])
+                RecipeIngredient.objects.create(
+                    recipe=recipe,
+                    ingredient=ing,
+                    quantity=ingredient_data["quantity"],
+                    unit=ingredient_data.get("unit", "g"),
+                    display_name=ing.ingredient_name,
+                )
+            # Ajout des étapes
+            for idx, step_data in enumerate(steps):
+                RecipeStep.objects.create(
+                    recipe=recipe,
+                    step_number=step_data.get("step_number", idx + 1),
+                    instruction=step_data["instruction"],
+                )
+            default_object = recipe
+
+        # Pour les autres modèles, création directe
+        else:
+            default_object = model_cls.objects.create(**base_data)
+
         url = base_url(model_name) + f"{default_object.id}/"
-        # Invité : interdit
-        response = api_client.patch(url, {name_field: "NOPE"})
+
+        # --- TESTS DES PERMISSIONS API ---
+        
+        # Invité : modif interdite
+        response = api_client.patch(url, {name_field: "NOPE"}, HTTP_X_GUEST_ID=guest_id)
         assert response.status_code == 403
-        # Utilisateur connecté : interdit aussi
+
+        # Utilisateur connecté : modif interdite aussi
         api_client.force_authenticate(user=user)
         response2 = api_client.patch(url, {name_field: "NOPE2"})
         assert response2.status_code == 403
-        # DELETE interdit
+
+        # DELETE : 204 pour Recipe (soft-hide), 403 sinon
         response3 = api_client.delete(url)
-        assert response3.status_code == 403
+        if model_name == "recipes":
+            assert response3.status_code in (204, 200)
+        else:
+            assert response3.status_code == 403
 
     def test_default_object_is_visible(self, api_client, base_url, model_name, default_object, name_field, model_cls):
         url = base_url(model_name)
