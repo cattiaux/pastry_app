@@ -798,6 +798,9 @@ Validation stricte des combinaisons d’entrées :
 Exemple : Il est interdit d’envoyer à la fois un pan_id et des dimensions dans /pans/estimate-volume/.
 Dans /recipes-adapt/, si un source_pan_id est présent, la logique Serving → Serving est ignorée.
 
+
+
+
 ######## Gestion multi-utilisateurs, invités, et partage dans l’app
 
 #Contexte & Objectifs
@@ -831,3 +834,34 @@ Chaque ViewSet utilise un mixin standardisé (exemple pour Recipe : GuestUserR
 - Attribuer le bon propriétaire (user ou guest_id) à la création
 - Ne jamais permettre modification/suppression d’un objet “de base” (is_default=True)
 - Supporter la recherche, le filtrage et l’ordering selon les besoins métier
+
+### Synthèse des Contraintes pour l’Adaptation, la Visibilité, et la Gestion Multi-Utilisateurs
+
+Gestion de la visibilité, du “soft-hide” et des droits d’édition/suppression
+
+    Règle/Contrainte	                                     Explication	                                                  Test(s) associé(s)
+Objet “de base” (is_default=True)	Visible en lecture seule pour tous (invités et users), jamais modifiable            
+                                    ou supprimable (ni via API ni admin, hors superuser).	                            test_default_object_is_readonly
+Objet privé (visibility="private")	Visible seulement par son propriétaire (user ou guest_id). Modification et          
+                                    suppression autorisées uniquement pour le propriétaire.	                            test_visibility_private_logic
+Objet public (visibility="public")	Visible par tous. Modification/suppression réservées au propriétaire.	            test_visibility_public_logic
+Invités (“guest_id”)	            Un invité identifié par un guest_id unique peut créer, éditer et masquer ses        
+                                    propres objets. Les objets publics ou “de base” restent visibles en lecture.	    test_adaptation_permissions_guest
+Soft-hide (UserRecipeVisibility)	Les recettes de base ne sont jamais supprimées pour un user/guest : une 
+                                    suppression entraîne la création d’une entrée UserRecipeVisibility avec 
+                                    visible=False pour masquer la recette uniquement pour cet utilisateur/invité.	    test_soft_hide_base_recipe_for_user
+Masquage logique (soft-hide)    	Un objet “de base” masqué reste accessible aux autres utilisateurs.	                test_soft_hide_base_recipe_for_user, test_soft_hide_for_guests
+Adaptations (Fork/Adaptation)	    Un utilisateur peut adapter une recette “de base” (fork : création d’une 
+                                    nouvelle recette liée par parent_recipe et recipe_type="VARIATION"), qui 
+                                    devient son propre objet, privé ou public.	                                        test_filter_adaptations_by_parent, test_adaptation_permissions_guest
+
+# Points d’attention techniques
+
+- Mixin d’attribution : toute création d’objet attribue automatiquement l’auteur (user) ou le guest_id (pour les invités).
+- Gestion du guest_id : le frontend doit générer un identifiant persistant pour chaque invité (UUID, stocké en localStorage/cookie) 
+et l’envoyer en header X-Guest-Id à chaque requête.
+- Soft-hide vs suppression : la suppression d’un objet “de base” par un user/guest ne supprime rien en base : elle ajoute une entrée 
+de masquage dans UserRecipeVisibility (et exclut l’objet du queryset de l’utilisateur).
+- Permissions customisées : les ViewSets utilisent une permission spécifique pour gérer ces logiques (CanSoftHideRecipeOrIsOwnerOrGuest).
+- Cas d’adaptation : lors d’une adaptation (endpoint /adapt/), l’objet créé hérite toujours de is_default=False et visibility=private, 
+sauf si l’utilisateur choisit explicitement le contraire et que c’est permis.

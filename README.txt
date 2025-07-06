@@ -94,22 +94,6 @@ Nota Bene :
 Pour la robustesse, garde les contraintes d’unicité essentielles en base (UniqueConstraint), même si tu les valides aussi côté API.
 
 
-### UserRecipeAdaptation
-
-Contexte :
-Pour permettre aux utilisateurs de personnaliser une recette existante (ex: recette d’un chef ou recette de base), 
-nous devons leur offrir la possibilité de créer une **version adaptée**, sans dupliquer intégralement la recette source.
-
-À faire plus tard :
-- Créer un modèle `UserRecipeAdaptation` lié à `User` et `Recipe`
-- Stocker les adaptations spécifiques : `custom_pan`, `custom_servings`, `custom_title`, `custom_trick`, etc.
-- Conserver un lien vers la recette d’origine pour traçabilité
-- Offrir à l’utilisateur une interface pour retrouver ses adaptations, les partager, ou les recalculer automatiquement
-- Ne pas confondre adaptation = transformation contextuelle ≠ nouvelle recette indépendante
-
-Objectif :
-Ne jamais dupliquer inutilement les recettes en base mais permettre un système fluide d’adaptation personnalisée (à la manière de “forks” intelligents).
-
 ### Ajout des allergènes dans une recette. Penser à la structure de données pour ça.
 
 ### Ajout module IA, agent AI, MCP

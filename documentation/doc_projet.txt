@@ -124,5 +124,33 @@ tests/
 |── services/  → Tests des services d'adaptation, d'estimation et de suggestion de moules et servings
 
 
+📐 Fonctionnalités avancées : Adaptation, Forks, Visibilité & Gestion utilisateurs/invités
+
+L’application permet :
+
+- L’adaptation intelligente (“fork”) : chaque utilisateur (ou invité) peut créer une adaptation personnalisée d’une recette existante 
+(par exemple, ajuster pour un autre moule, modifier des ingrédients ou les quantités).
+    - L’adaptation crée un nouvel objet Recipe lié à la recette mère (parent_recipe, recipe_type="VARIATION").
+    - Les objets “adaptés” sont visibles, modifiables et supprimables uniquement par leur créateur (user ou guest_id).
+    - Les recettes de base ou publiques restent inaltérées et non dupliquées.
+
+- La gestion fluide des invités (“guest”) : un invité (utilisateur sans compte) possède un identifiant unique côté front (guest_id) 
+pour retrouver ses objets (recettes, ingrédients, etc.).
+
+- Le masquage logique (soft-hide) : suppression d’une recette de base = masquage uniquement pour le user/guest, sans suppression réelle en base. 
+Les autres utilisateurs continuent à voir l’objet.
+
+- Contrôle strict des droits : les permissions API empêchent toute modification/suppression d’un objet “de base” ou public par un non-propriétaire. 
+Les objets privés restent visibles exclusivement pour leur créateur.
+
+# Exemple d’usage côté front :
+
+- Lorsqu’un invité ou utilisateur adapte (“fork”) une recette, il obtient sa propre version, indépendante, sans polluer la base commune.
+- Un bouton “masquer cette recette de base” ne la supprime pas : elle est juste cachée à l’utilisateur concerné.
+- Toute requête de modification/suppression sur un objet de base est refusée (statut 403).
+
+Objectif :
+Favoriser l’adaptabilité et la personnalisation, tout en évitant la duplication de données, en respectant les droits de chaque utilisateur 
+et en gardant une UX cohérente même pour les invités.
 
 """
