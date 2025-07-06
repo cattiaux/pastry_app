@@ -13,9 +13,8 @@ from django.db.models import ProtectedError
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
-from .utils import normalize_case
-from .utils import (servings_to_volume, get_suggested_pans, adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_with_target_volume, 
-                    adapt_recipe_servings_to_servings, estimate_servings_from_pan, suggest_pans_for_servings, adapt_recipe_by_ingredients_constraints)
+from .utils_pure import normalize_case
+from .utils import *
 from .models import *
 from .serializers import *
 from .mixins import GuestUserRecipeMixin
