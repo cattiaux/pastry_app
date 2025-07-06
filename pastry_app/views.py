@@ -13,7 +13,7 @@ from django.db.models import ProtectedError
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
-from .tests.utils import normalize_case
+from .utils import normalize_case
 from .utils import (servings_to_volume, get_suggested_pans, adapt_recipe_pan_to_pan, adapt_recipe_servings_to_volume, adapt_recipe_with_target_volume, 
                     adapt_recipe_servings_to_servings, estimate_servings_from_pan, suggest_pans_for_servings, adapt_recipe_by_ingredients_constraints)
 from .models import *
@@ -47,7 +47,6 @@ class StoreViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """ Empêche la suppression d'un magasin s'il est utilisé dans des prix. """
         store = self.get_object()
-        print("Store to delete:", store)
         if store.prices.exists():
             return Response({"error": "Ce magasin est associé à des prix d'ingrédients et ne peut pas être supprimé."}, status=status.HTTP_400_BAD_REQUEST)
         return super().destroy(request, *args, **kwargs)

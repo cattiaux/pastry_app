@@ -6,6 +6,12 @@ from django.db.models.functions import Abs
 from django.core.exceptions import ValidationError
 from .models import Recipe, Pan, Ingredient, RecipeIngredient
 
+def normalize_case(value):
+    """ Normalise une chaîne en supprimant les espaces superflus et en la mettant en minuscule. """
+    if isinstance(value, str):  # Vérifie que c'est bien une chaîne
+        return " ".join(value.strip().lower().split())  
+    return value  # Retourne la valeur telle quelle si ce n'est pas une chaîne
+
 def calculate_quantity_multiplier(from_volume_cm3: float, to_volume_cm3: float) -> float:
     """
     Calcule le multiplicateur de quantité nécessaire pour passer d’un volume source à un volume cible.

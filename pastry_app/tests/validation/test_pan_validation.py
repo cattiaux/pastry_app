@@ -86,7 +86,6 @@ def test_update_to_duplicate_name_api(api_client, base_url, user):
     pan2 = Pan.objects.create(user=user, pan_type="CUSTOM", volume_raw=800, unit="cm3", pan_name="Unique")
     url = base_url(model_name) + f"{pan2.id}/"
     response = api_client.patch(url, data={"pan_name": "Original"}, format="json")
-    print(response.json())  # Pour débogage
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "pan_name" in response.json()
 

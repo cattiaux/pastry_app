@@ -7,7 +7,7 @@ from django.db.models import UniqueConstraint
 from django.conf import settings
 from django.contrib.auth import get_user_model
 User = get_user_model()
-from pastry_app.tests.utils import normalize_case
+from pastry_app.utils import normalize_case
 from .constants import UNIT_CHOICES
 
 class BaseModel(models.Model):

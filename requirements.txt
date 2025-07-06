@@ -52,4 +52,4 @@ typing_extensions==4.7.1
 uritemplate==4.1.1
 wcwidth==0.2.6
 wheel==0.38.4
-python-dotenv
+python-dotenv==1.1.1

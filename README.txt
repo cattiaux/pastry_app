@@ -22,6 +22,18 @@ Dette Technique à Prévoir :
 - En production, ajouter `unique=True` sur `ingredient_name` dans `models.py` pour garantir l’unicité des catégories en base.
 - Ne pas oublier d’exécuter `makemigrations` et `migrate` lors du passage en production.
 
+### Django settings en production
+Contexte : 
+Les paramètres de Django autorisent actuellement toute origine CORS et laissent ALLOWED_HOSTS vide, 
+ce qui n'est pas sûr pour un déploiement en production.
+
+A faire :
+- Remplir ALLOWED_HOSTS : Edit enchante/settings.py pour que ALLOWED_HOSTS liste les domaines de prod 
+(ex: ALLOWED_HOSTS = [“api.example.com”, “www.example.com”])
+- Remplacer CORS_ALLOW_ALL_ORIGINS = True par les origines spécifiques autorisées à appeler l'API
+(ex : CORS_ALLOWED_ORIGINS = ["https://frontend.example.com", "https://another-site.example.com"])
+- S'assurer que DEBUG est false et que SECRET_KEY est chargé de manière sécurisée à partir d'une variable d'environnement.
+
 
 ### Mapping entre Noms de Modèles (Singulier) et URLs (Pluriel)
 - Problème actuel :

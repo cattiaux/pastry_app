@@ -6,7 +6,7 @@ from django.db.models import Max, Q
 from django.utils.timezone import now
 from .models import *
 from .constants import UNIT_CHOICES
-from pastry_app.tests.utils import normalize_case
+from pastry_app.utils import normalize_case
 
 class StoreSerializer(serializers.ModelSerializer):
     """ Sérialise les magasins où sont vendus les ingrédients. """
