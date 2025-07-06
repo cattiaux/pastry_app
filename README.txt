@@ -94,6 +94,26 @@ Nota Bene :
 Pour la robustesse, garde les contraintes d’unicité essentielles en base (UniqueConstraint), même si tu les valides aussi côté API.
 
 
+### Gestion de la précision d’arrondi pour certains ingrédients sensibles
+Constat :
+Dans la logique d’adaptation et de scaling des quantités, l’arrondi est actuellement appliqué à deux chiffres 
+après la virgule pour tous les ingrédients (ex : farine, sucre, beurre, etc.).
+Or, la majorité des ingrédients en pâtisserie n’exigent pas une telle précision ; 
+un seul chiffre après la virgule suffit (ex : 123,4 g de farine).
+Cependant, certains ingrédients dits “sensibles” ou techniques (ex : pectine, gélatine, agar-agar, levures) 
+nécessitent un dosage très précis : il faut alors garder deux décimales (ex : 2,13 g de pectine).
+
+Objectif à terme
+- Par défaut : Arrondir toutes les quantités à 1 chiffre après la virgule
+- Sauf pour une liste d’ingrédients sensibles : arrondir à 2 chiffres après la virgule
+- Centraliser cette logique dans une fonction utilitaire pour éviter la duplication
+
+À faire
+- Remplacer les appels à round(..., 2) par la fonction smart_round(...)
+- Faire évoluer la liste SENSITIVE_PRECISION_INGREDIENTS au fil des retours utilisateurs ou des cas métiers
+- Ajouter un test automatique pour garantir la précision sur ces cas sensibles
+
+
 ### Ajout des allergènes dans une recette. Penser à la structure de données pour ça.
 
 ### Ajout module IA, agent AI, MCP
