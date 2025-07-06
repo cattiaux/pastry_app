@@ -1,5 +1,6 @@
 import pytest
 from rest_framework import status
+from django.contrib.auth import get_user_model
 from pastry_app.tests.base_api_test import api_client, base_url
 from pastry_app.tests.utils import *
 from pastry_app.serializers import IngredientSerializer, IngredientPriceSerializer, StoreSerializer
@@ -8,6 +9,11 @@ from pastry_app.serializers import IngredientSerializer, IngredientPriceSerializ
 model_name = "stores"
 
 pytestmark = pytest.mark.django_db
+User = get_user_model()
+
+@pytest.fixture
+def user():
+    return User.objects.create_user(username="user1", password="testpass123")
 
 @pytest.mark.parametrize("field_name", ["store_name"])
 def test_required_fields_store_api(api_client, base_url, field_name):
@@ -42,15 +48,16 @@ def test_normalized_fields_store_api(api_client, base_url, field_name, raw_value
     validate_field_normalization_api(api_client, base_url, model_name, field_name, raw_value, **valid_data)
 
 @pytest.mark.parametrize("fields", [("store_name", "city", "zip_code")])
-def test_update_store_to_duplicate_api(api_client, base_url, fields):
+def test_update_store_to_duplicate_api(api_client, base_url, fields, user):
     """ Vérifie qu'on ne peut PAS modifier un Store pour lui donner un store (défini par ses champs unique_together) déjà existant """
+    api_client.force_authenticate(user=user)
     # Définir des valeurs initiales pour chaque champ unique
     values1 = ["Monoprix", "Lyon", "69001"]
     values2 = ["Carrefour", "Lyon", "69002"]
     # Construire dynamiquement `valid_data1` et `valid_data2`
     valid_data1 = dict(zip(fields, values1))
     valid_data2 = dict(zip(fields, values2))
-    validate_update_to_duplicate_api(api_client, base_url, model_name, valid_data1, valid_data2, create_initiate=False)
+    validate_update_to_duplicate_api(api_client, base_url, model_name, valid_data1, valid_data2, create_initiate=False, user=user)
 
 @pytest.mark.parametrize("related_models", [
     [

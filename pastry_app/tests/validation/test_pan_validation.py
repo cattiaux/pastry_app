@@ -1,11 +1,17 @@
 import pytest, json, re
 from rest_framework import status
+from django.contrib.auth import get_user_model
 from pastry_app.tests.utils import *
 from pastry_app.tests.base_api_test import api_client, base_url
 from pastry_app.models import Pan
 
 model_name = "pans"
 pytestmark = pytest.mark.django_db
+User = get_user_model()
+ 
+@pytest.fixture
+def user():
+    return User.objects.create_user(username="user1", password="testpass123")
 
 @pytest.fixture
 def pan(db):
@@ -73,12 +79,14 @@ def test_clean_validation_errors_pan_api(api_client, base_url, invalid_combo, ex
     flat_messages = " ".join([msg for messages in response.json().values() for msg in messages])
     assert expected_error.lower() in flat_messages.lower()
 
-def test_update_to_duplicate_name_api(api_client, base_url):
+def test_update_to_duplicate_name_api(api_client, base_url, user):
     """Vérifie qu'on ne peut PAS modifier un Pan pour lui attribuer un nom déjà existant"""
-    pan1 = Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="Original")
-    pan2 = Pan.objects.create(pan_type="CUSTOM", volume_raw=800, unit="cm3", pan_name="Unique")
+    api_client.force_authenticate(user=user)
+    pan1 = Pan.objects.create(user=user, pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="Original")
+    pan2 = Pan.objects.create(user=user, pan_type="CUSTOM", volume_raw=800, unit="cm3", pan_name="Unique")
     url = base_url(model_name) + f"{pan2.id}/"
     response = api_client.patch(url, data={"pan_name": "Original"}, format="json")
+    print(response.json())  # Pour débogage
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "pan_name" in response.json()
 
@@ -134,18 +142,20 @@ def test_post_exclusive_fields_pan_api(api_client, base_url, pan_type, extra_fie
     flat_messages = " ".join(msg for field_errors in response.json().values() for msg in field_errors)
     assert expected_error.lower() in flat_messages.lower()
 
-def test_patch_exclusive_fields_pan_api(api_client, base_url):
+def test_patch_exclusive_fields_pan_api(api_client, base_url, user):
     """Vérifie qu’on ne peut pas PATCH un Pan pour lui ajouter un champ incohérent avec son type"""
-    pan = Pan.objects.create(pan_type="ROUND", diameter=16, height=5)
+    api_client.force_authenticate(user=user)
+    pan = Pan.objects.create(user=user, pan_type="ROUND", diameter=16, height=5)
     url = base_url(model_name) + f"{pan.id}/"
     patch_data = {"volume_raw": 1000}  # volume pas autorisé pour ROUND
     response = api_client.patch(url, data=patch_data, format="json")
     assert response.status_code == 400
     assert "volume" in json.dumps(response.json()).lower()
 
-def test_patch_partial_fields_api(api_client, base_url):
+def test_patch_partial_fields_api(api_client, base_url, user):
     """Vérifie qu’un PATCH partiel est accepté et ne casse pas les champs non fournis"""
-    pan = Pan.objects.create(pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="Test Pan")
+    api_client.force_authenticate(user=user)    
+    pan = Pan.objects.create(user=user, pan_type="CUSTOM", volume_raw=1000, unit="cm3", pan_name="Test Pan")
     url = base_url("pans") + f"{pan.id}/"
     patch_data = {"pan_brand": "Debuyer"}
     response = api_client.patch(url, data=json.dumps(patch_data), content_type="application/json")

@@ -162,7 +162,6 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         mother = original
         while mother.parent_recipe:
             mother = mother.parent_recipe
-        print("mother : ", mother)
 
         # Récupère les données de la recette d'origine
         data = RecipeSerializer(original).data
@@ -187,14 +186,11 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         # Crée la nouvelle recette d'adaptation (flag spécial pour éviter l’erreur de validation sur les ingrédients à ce stade)
         context = self.get_serializer_context()
         context["is_adapt_recipe"] = True
-        print("verification du user de la request :")
-        print(data["user"])
         user = request.user if request.user.is_authenticated else None
         guest_id = request.headers.get("X-Guest-Id") if not user else None
         serializer = self.get_serializer(data=data, context=context)        
         serializer.is_valid(raise_exception=True)
         new_recipe = serializer.save(user=user, guest_id=guest_id)
-        print("New adaptation id:", new_recipe.id, "user:", new_recipe.user_id)
 
         # Copie les ingrédients (RecipeIngredient)
         for ri in original.recipe_ingredients.all():
@@ -238,7 +234,6 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         - Si query param `parent_recipe`, filtre uniquement les adaptations de cette recette mère.
         """
         # Étape 1 : Récupère le queryset de base (incluant user/guest_id/public/de base)
-        print("All recipes ids in DB:", list(Recipe.objects.all().values_list("id", flat=True)))
         qs = super().get_queryset()
         user = self.request.user
         guest_id = (
@@ -251,11 +246,9 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         # Étape 2 : Exclure les recettes explicitement masquées par ce user ou guest_id
         if user.is_authenticated:
             hidden_ids = UserRecipeVisibility.objects.filter(user=user, visible=False).values_list("recipe_id", flat=True)
-            print("hidden_ids pour user", user, ":", list(hidden_ids))
             qs = qs.exclude(id__in=hidden_ids)
         elif guest_id:
             hidden_ids = UserRecipeVisibility.objects.filter(guest_id=guest_id, visible=False).values_list("recipe_id", flat=True)
-            print("hidden_ids pour guest_id", guest_id, ":", list(hidden_ids))
             qs = qs.exclude(id__in=hidden_ids)
 
         # Étape 3 : Si on filtre sur une recette mère, ne garder que ses adaptations (variations)
@@ -263,8 +256,6 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         if parent_recipe:
             qs = qs.filter(parent_recipe=parent_recipe)
 
-        # Optionnel pour debug :
-        print("Queryset pour", user, ":", list(qs.values_list("id", flat=True)))
         return qs
         
     def destroy(self, request, *args, **kwargs):
@@ -273,12 +264,9 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         - Pour les recettes de base (is_default=True), ne les supprime jamais vraiment, mais les masque pour le user ou guest_id courant ("soft-hide").
         - Retourne une erreur métier explicite.
         """
-        print("on entre dans le destroy de RecipeViewSet")
         instance = self.get_object()
-        print("instance id:", instance.id, "is_default:", instance.is_default)
         # Cas 1 : Recette de base → soft-hide pour ce user ou guest_id
         if instance.is_default:
-            print("on entre dans le cas 1 du destroy")
             user = request.user if request.user.is_authenticated else None
             guest_id = (
                 request.headers.get("X-Guest-Id")
@@ -300,13 +288,11 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
 
         # Cas 2 : Blocage si adaptations (versions)
         if instance.versions.exists():
-            print("on entre dans le cas 2 du destroy")
             return Response({"detail": "Impossible de supprimer cette recette : au moins une adaptation existe."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Cas 3 : Blocage si utilisée comme sous-recette (intégrité)
         try:
             self.perform_destroy(instance)
-            print("on entre dans le cas 3 du destroy")
 
         except ProtectedError:
             return Response({"detail": "Cannot delete this recipe because it is used in another recipe."}, status=status.HTTP_400_BAD_REQUEST)
@@ -314,7 +300,6 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Cas normal : suppression réussie
-        print("on entre dans le cas normal du destroy")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 class IngredientViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):

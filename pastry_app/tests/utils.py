@@ -130,9 +130,12 @@ def validate_unique_together_api(api_client, base_url, model_name, valid_data, e
     assert response2.status_code == status.HTTP_400_BAD_REQUEST  # Doit échouer
     assert any(error_message in msg for msg in response2.json().get("non_field_errors", [])) # Vérifier l'erreur attendue
 
-def validate_update_to_duplicate_api(api_client, base_url, model_name, valid_data1, valid_data2, create_initiate=True):
+def validate_update_to_duplicate_api(api_client, base_url, model_name, valid_data1, valid_data2, create_initiate=True, user=None):
     """ Vérifie qu'on ne peut PAS modifier un objet pour lui donner des valeurs déjà existantes sur un autre objet. """
     url = base_url(model_name)
+
+    if user:
+        api_client.force_authenticate(user=user)
 
     # Création de deux objets distincts
     if not create_initiate:

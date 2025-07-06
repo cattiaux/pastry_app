@@ -41,8 +41,9 @@ class GuestUserRecipeMixin:
         user = self.request.user if self.request.user.is_authenticated else None
         guest_id = self.get_guest_id() if not user else None
         visibility = self.request.data.get("visibility")
-        # Forçage privé par défaut pour invité
-        if not user:
-            if not visibility or visibility != "public":
-                visibility = "private"
-        serializer.save(user=user, guest_id=guest_id, visibility=visibility)
+
+        # Par défaut toujours "private", sauf si explicitement public
+        if not visibility or visibility != "public":
+            visibility = "private"
+        save_kwargs = dict(user=user, guest_id=guest_id, visibility=visibility)
+        serializer.save(**save_kwargs)

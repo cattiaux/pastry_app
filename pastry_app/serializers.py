@@ -21,7 +21,7 @@ class StoreSerializer(serializers.ModelSerializer):
     # Utilisateur et visibilité
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     guest_id = serializers.CharField(read_only=True)
-    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')])
+    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')], required=False, default='private')
     is_default = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -309,7 +309,7 @@ class IngredientSerializer(serializers.ModelSerializer):
     # Utilisateur et visibilité
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     guest_id = serializers.CharField(read_only=True)
-    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')])
+    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')], required=False, default='private')
     is_default = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -575,7 +575,7 @@ class RecipeSerializer(serializers.ModelSerializer):
     # Utilisateur et visibilité
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     guest_id = serializers.CharField(read_only=True)
-    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')])
+    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')], required=False, default='private')
     is_default = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -811,7 +811,7 @@ class PanSerializer(serializers.ModelSerializer):
     # Utilisateur et visibilité
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     guest_id = serializers.CharField(read_only=True)
-    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')])
+    visibility = serializers.ChoiceField(choices=[('private', 'Privée'), ('public', 'Publique')], required=False, default='private')
     is_default = serializers.BooleanField(read_only=True)
 
     class Meta:
