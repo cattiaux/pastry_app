@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import IntegrityError
-from django.db.models import Max, Q
+from django.db.models import Max
 from django.utils.timezone import now
 from .models import *
 from .constants import UNIT_CHOICES
@@ -562,6 +562,7 @@ class RecipeSerializer(serializers.ModelSerializer):
     servings_max = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     parent_recipe_name = serializers.SerializerMethodField()
     adaptation_note = serializers.CharField(allow_blank=True, allow_null=True, required=False)
+    tags = serializers.ListField(child=serializers.CharField(max_length=50), required=False, allow_empty=True)
 
     # Relations simples
     pan = serializers.PrimaryKeyRelatedField(queryset=Pan.objects.all(), allow_null=True, required=False)
@@ -582,7 +583,7 @@ class RecipeSerializer(serializers.ModelSerializer):
         model = Recipe
         fields = ["id", 
                   "recipe_name", "chef_name", "context_name", 
-                  "source", "recipe_type", "parent_recipe", "parent_recipe_name", "adaptation_note",
+                  "source", "recipe_type", "parent_recipe", "parent_recipe_name", "adaptation_note", "tags",
                   "servings_min", "servings_max", "description", "trick", "image", 
                   "pan", "categories", "labels", "ingredients", "steps", "sub_recipes", 
                   "created_at", "updated_at",

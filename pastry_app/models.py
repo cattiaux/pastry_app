@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import UniqueConstraint
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.postgres.fields import ArrayField
 from .utils_pure import normalize_case
 from .constants import UNIT_CHOICES
 
@@ -176,7 +177,6 @@ class Category(models.Model):
     category_name = models.CharField(max_length=200,  verbose_name="category_name")#, unique=True) #unique=True à activer en production
     category_type = models.CharField(max_length=10, choices=CATEGORY_CHOICES, blank=False, null=False)
     parent_category = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="subcategories")
-    is_default = models.BooleanField(default=False)
 
     def __str__(self):
         return self.category_name
@@ -245,7 +245,6 @@ class Label(models.Model):
     # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
     label_name = models.CharField(max_length=200,  verbose_name="label_name", unique=True) #unique=True à activer en production
     label_type = models.CharField(max_length=10, choices=LABEL_CHOICES, default='both')
-    is_default = models.BooleanField(default=False)
 
     def __str__(self):
         return self.label_name
@@ -335,7 +334,8 @@ class Recipe(models.Model):
     description = models.TextField(blank=True, null=True)
     trick = models.TextField(null=True, blank=True)
     image = models.ImageField(upload_to="recipes/", null=True, blank=True)
-    adaptation_note = models.CharField(max_length=255, blank=True, null=True) 
+    adaptation_note = models.CharField(max_length=255, blank=True, null=True)
+    tags = ArrayField(models.CharField(max_length=50), default=list, blank=True)
 
     # Tracking
     created_at = models.DateTimeField(auto_now_add=True)

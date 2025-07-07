@@ -94,12 +94,6 @@ class SubRecipeAdmin(admin.ModelAdmin):
 class PanAdmin(admin.ModelAdmin):
     list_display = ('pan_name', 'id')
 
-# class RoundPanAdmin(admin.ModelAdmin):
-#     list_display = ('pan_name', 'id')
-
-# class SquarePanAdmin(admin.ModelAdmin):
-#     list_display = ('pan_name', 'id')
-
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ("category_name", "category_type", "parent_category")
     search_fields = ('category_name',)
@@ -123,12 +117,12 @@ class LabelAdmin(admin.ModelAdmin):
 
 
 admin.site.register(Recipe, RecipeAdmin)
-admin.site.register(RecipeStep, RecipeStepAdmin)
-admin.site.register(SubRecipe, SubRecipeAdmin)
+# admin.site.register(RecipeStep, RecipeStepAdmin)
+# admin.site.register(SubRecipe, SubRecipeAdmin)
 admin.site.register(Ingredient, IngredientAdmin)
-admin.site.register(IngredientPrice, IngredientPriceAdmin)
+# admin.site.register(IngredientPrice, IngredientPriceAdmin)
 # admin.site.register(IngredientPriceHistory, IngredientPriceHistoryAdmin)
-admin.site.register(RecipeIngredient, RecipeIngredientAdmin)
+# admin.site.register(RecipeIngredient, RecipeIngredientAdmin)
 admin.site.register(Pan, PanAdmin)
 admin.site.register(Category, CategoryAdmin)
 admin.site.register(Label, LabelAdmin)

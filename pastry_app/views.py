@@ -346,8 +346,8 @@ class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all().order_by('category_name')
     serializer_class = CategorySerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["category_name", "parent_category"]
-    search_fields = ['category_name']
+    filterset_fields = ["category_name", "parent_category", "tags"]
+    search_fields = ['category_name', 'tags']
     ordering_fields = ["category_name", "parent_category"]
     ordering = ["category_name"]  # ordre par défaut
     permission_classes = []  # On définit les permissions dans `get_permissions`
