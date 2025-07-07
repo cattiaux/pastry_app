@@ -821,7 +821,7 @@ class PanSerializer(serializers.ModelSerializer):
             "id", "pan_name", "pan_type", "pan_brand", 'units_in_mold',
             "diameter", "height",
             "length", "width", "rect_height",
-            "volume_raw", "unit",
+            "volume_raw", "unit", "is_total_volume",
             "volume_cm3", "volume_cm3_cache",
             "user", "guest_id", "visibility", "is_default"
         ]
@@ -852,7 +852,18 @@ class PanSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
+        # getattr(self.instance, ...) pour gérer le cas des updates partiels (PATCH).
         pan_type = data.get("pan_type", getattr(self.instance, "pan_type", None))
+        units_in_mold = data.get('units_in_mold', getattr(self.instance, 'units_in_mold', None))
+        is_total_volume = data.get('is_total_volume', getattr(self.instance, 'is_total_volume', None))
+
+        # Règle : units_in_mold > 1 seulement pour les CUSTOM
+        if pan_type != 'CUSTOM' and units_in_mold != 1:
+            raise serializers.ValidationError({"units_in_mold": "Ce champ ne peut être différent de 1 que pour les moules de type CUSTOM."})
+
+        # Force is_total_volume à True si units_in_mold == 1
+        if units_in_mold == 1:
+            data['is_total_volume'] = True
 
         # Champs requis par type
         if pan_type == "ROUND":

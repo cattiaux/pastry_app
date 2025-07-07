@@ -99,6 +99,14 @@ class Pan(models.Model):
         if self.pan_brand:
             self.pan_brand = normalize_case(self.pan_brand)
 
+        # units_in_mold n'existe que pour les moules CUSTOM
+        if self.pan_type != 'CUSTOM' and self.units_in_mold != 1:
+            raise ValidationError("units_in_mold ne doit être différent de 1 que pour les moules CUSTOM.")
+    
+        # Si une seule unité dans le moule, alors c'est forcément le volume total
+        if self.units_in_mold == 1:
+            self.is_total_volume = True
+
         # Nettoyage des champs incohérents selon le type
         if self.pan_type == 'ROUND':
             self.length = None

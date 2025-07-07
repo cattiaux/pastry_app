@@ -92,26 +92,14 @@ class SubRecipeAdmin(admin.ModelAdmin):
     subrecipe_name.short_description = 'Subrecipe Name'
 
 class PanAdmin(admin.ModelAdmin):
-    list_display = ('pan_name', 'id')
+    list_display = ('pan_name', 'id', 'pan_brand', 'pan_type', 'units_in_mold', 'visibility', 'is_default')
+
+    class Media:
+        js = ('pastry_app/admin/pan_admin.js',)
 
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ("category_name", "category_type", "parent_category")
     search_fields = ('category_name',)
-
-    def delete_model(self, request, obj):
-        # Blocage si catégorie utilisée
-        if obj.recipecategory_set.exists() or obj.ingredientcategory_set.exists():
-            messages.error(request, "Impossible de supprimer cette catégorie : elle est utilisée par une recette ou un ingrédient.")
-            return
-
-        subcategories = obj.subcategories.all()
-        if subcategories.exists():
-            sub_names = ', '.join([sc.category_name for sc in subcategories])
-            messages.error(request, f"Impossible de supprimer cette catégorie : elle possède des sous-catégories ({sub_names}).")
-            return
-        
-        # Suppression normale si pas d'enfants ni d'utilisation
-        super().delete_model(request, obj)
 
     # Surcharge de la vue de suppression pour contrôler les messages et empêcher le double message succès/erreur
     def delete_view(self, request, object_id, extra_context=None):
@@ -154,6 +142,12 @@ class LabelAdmin(admin.ModelAdmin):
     list_display = ('label_name', 'label_type')
     search_fields = ('label_name',)
 
+    def delete_model(self, request, obj):
+        # Refuse la suppression si le label est utilisé
+        if obj.recipelabel_set.exists() or obj.ingredientlabel_set.exists():
+            messages.error(request, "Impossible de supprimer ce label : il est utilisé par une recette ou un ingrédient.")
+            return
+        super().delete_model(request, obj)
 
 admin.site.register(Recipe, RecipeAdmin)
 # admin.site.register(RecipeStep, RecipeStepAdmin)

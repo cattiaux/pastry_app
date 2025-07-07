@@ -35,6 +35,12 @@ A faire :
 - S'assurer que DEBUG est false et que SECRET_KEY est chargé de manière sécurisée à partir d'une variable d'environnement.
 
 
+
+### Uniformiser height/rect_height
+Pan : avoir juste un champ height pour tous les types de moule
+
+
+
 ### Mapping entre Noms de Modèles (Singulier) et URLs (Pluriel)
 - Problème actuel :
 Actuellement, dans nos tests et nos méthodes génériques (create_related_models_api notamment), 

@@ -48,7 +48,7 @@ def test_unique_constraint_api(api_client, base_url):
 def test_normalized_fields_pan_api(api_client, base_url, field_name, raw_value):
     """Vérifie que `pan_name` et `pan_brand` sont bien normalisés via l’API"""
     url = base_url(model_name)
-    data = {"pan_type": "CUSTOM", "volume_raw": 1000, "unit": "cm3"}
+    data = {"pan_type": "CUSTOM", "volume_raw": 1000, "unit": "cm3", "is_total_volume": True}
     data[field_name] = raw_value
     response = api_client.post(url, data=json.dumps(data), content_type="application/json")
     assert response.status_code == status.HTTP_201_CREATED
@@ -75,7 +75,6 @@ def test_clean_validation_errors_pan_api(api_client, base_url, invalid_combo, ex
     url = base_url(model_name)
     response = api_client.post(url, data=json.dumps(invalid_combo), content_type="application/json")
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    # assert expected_error.lower() in json.dumps(response.json()).lower()
     flat_messages = " ".join([msg for messages in response.json().values() for msg in messages])
     assert expected_error.lower() in flat_messages.lower()
 
@@ -91,7 +90,7 @@ def test_update_to_duplicate_name_api(api_client, base_url, user):
 
 def test_read_only_volume_cm3_api(api_client, base_url):
     url = base_url(model_name)
-    data = {"pan_type": "CUSTOM", "volume_raw": 1000, "unit": "cm3", "volume_cm3": 9999} # tentative d'écrasement
+    data = {"pan_type": "CUSTOM", "volume_raw": 1000, "unit": "cm3", "volume_cm3": 9999, "is_total_volume": True} # tentative d'écrasement
     response = api_client.post(url, data=json.dumps(data), content_type="application/json")
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()["volume_cm3"] != 9999
@@ -198,3 +197,18 @@ def test_api_auto_removes_fields_when_type_changes(api_client, base_url):
     assert pan_data["length"] is None
     assert pan_data["width"] is None
     assert pan_data["rect_height"] is None
+
+def test_api_forces_is_total_volume_true(client, base_url):
+    url = base_url(model_name)
+    data = {"pan_name": "TestAPI", "pan_type": "ROUND", "diameter": 18, "height":5, "units_in_mold": 1}
+    resp = client.post(url, data, format="json")
+    print(resp.json())
+    assert resp.status_code == 201
+    assert resp.json()["is_total_volume"] is True
+
+def test_api_blocks_units_in_mold_non_custom(client, base_url):
+    url = base_url(model_name)
+    data = {"pan_name": "TestAPI2", "pan_type": "ROUND", "diameter": 18, "height":5, "units_in_mold": 2}
+    resp = client.post(url, data, format="json")
+    assert resp.status_code == 400
+    assert "units_in_mold" in resp.json()

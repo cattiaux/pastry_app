@@ -135,3 +135,13 @@ def test_update_type_reset_fields_db():
     assert pan.length is None
     assert pan.width is None
     assert pan.rect_height is None
+
+def test_is_total_volume_forced_true_for_units_1():
+    pan = Pan(pan_name="Test", pan_type="ROUND", diameter=18, height=5, units_in_mold=1, is_total_volume=False)
+    pan.clean()
+    assert pan.is_total_volume is True
+
+def test_units_in_mold_only_custom():
+    pan = Pan(pan_name="Test", pan_type="ROUND", diameter=18, height=5, units_in_mold=2, is_total_volume=True)
+    with pytest.raises(ValidationError):
+        pan.clean()
