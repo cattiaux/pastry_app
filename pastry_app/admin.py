@@ -99,17 +99,56 @@ class CategoryAdmin(admin.ModelAdmin):
     search_fields = ('category_name',)
 
     def delete_model(self, request, obj):
-        subcategories = Category.objects.filter(parent_category=obj)
+        # Blocage si catégorie utilisée
+        if obj.recipecategory_set.exists() or obj.ingredientcategory_set.exists():
+            messages.error(request, "Impossible de supprimer cette catégorie : elle est utilisée par une recette ou un ingrédient.")
+            return
 
+        subcategories = obj.subcategories.all()
         if subcategories.exists():
-            # Demande à l'utilisateur s'il veut supprimer aussi les sous-catégories
-            if "delete_subcategories" in request.POST:
-                subcategories.delete()  # Supprime toutes les sous-catégories
-            else:
-                subcategories.update(parent_category=None)  # Délie les sous-catégories
+            sub_names = ', '.join([sc.category_name for sc in subcategories])
+            messages.error(request, f"Impossible de supprimer cette catégorie : elle possède des sous-catégories ({sub_names}).")
+            return
+        
+        # Suppression normale si pas d'enfants ni d'utilisation
+        super().delete_model(request, obj)
 
-        obj.delete()
-        messages.success(request, f"La catégorie '{obj.category_name}' a été supprimée.")
+    # Surcharge de la vue de suppression pour contrôler les messages et empêcher le double message succès/erreur
+    def delete_view(self, request, object_id, extra_context=None):
+        """
+        Cette méthode est surchargée pour :
+        - Empêcher la suppression d'une catégorie si elle possède des sous-catégories ou est utilisée,
+        - Afficher un message d'erreur (et uniquement celui-ci),
+        - Rediriger vers la liste sans afficher le message de succès natif du Django admin,
+        - Éviter l'affichage simultané d'un message de succès (inexact) et d'un message d'erreur métier.
+        """
+        obj = self.get_object(request, object_id)
+        # Cas de blocage par enfants ou utilisation
+        if obj:
+            if obj.recipecategory_set.exists() or obj.ingredientcategory_set.exists():
+                messages.error(request, "Impossible de supprimer cette catégorie : elle est utilisée par une recette ou un ingrédient.")
+                return redirect('..')
+            subcategories = obj.subcategories.all()
+            if subcategories.exists():
+                sub_names = ', '.join([sc.category_name for sc in subcategories])
+                messages.error(
+                    request,
+                    f"Impossible de supprimer cette catégorie : elle possède des sous-catégories ({sub_names})."
+                )
+                return redirect('..')
+        return super().delete_view(request, object_id, extra_context)
+
+    # Action admin : suppression parent + enfants
+    def delete_with_children(self, request, queryset):
+        for obj in queryset:
+            subcategories = obj.subcategories.all()
+            count = subcategories.count()
+            subcategories.delete()
+            obj.delete()
+            messages.success(request, f"Catégorie '{obj.category_name}' et ses {count} sous-catégories supprimées.")
+
+    delete_with_children.short_description = "Supprimer catégorie + sous-catégories"
+    actions = [delete_with_children]
 
 class LabelAdmin(admin.ModelAdmin):
     list_display = ('label_name', 'label_type')

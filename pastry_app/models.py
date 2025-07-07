@@ -178,6 +178,9 @@ class Category(models.Model):
     category_type = models.CharField(max_length=10, choices=CATEGORY_CHOICES, blank=False, null=False)
     parent_category = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="subcategories")
 
+    class Meta:
+        verbose_name_plural = "categories"
+
     def __str__(self):
         return self.category_name
 
