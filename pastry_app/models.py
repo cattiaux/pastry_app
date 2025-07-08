@@ -641,7 +641,7 @@ class Ingredient(models.Model):
         super().save(*args, **kwargs)  # Une seule sauvegarde pour éviter `IntegrityError`
 
 class Store(models.Model):
-    store_name = models.CharField(max_length=200, null=False, blank=False) #default="Non renseigné")
+    store_name = models.CharField(max_length=200) #default="Non renseigné")
     city = models.CharField(max_length=100, null=True, blank=True)
     zip_code = models.CharField(max_length=10, null=True, blank=True)
     address = models.CharField(max_length=200, blank=True, null=True)
@@ -836,6 +836,7 @@ class IngredientPriceHistory(models.Model):
         constraints = [UniqueConstraint(
                 fields=["ingredient", "store", "brand_name", "quantity", "unit"],
                 name="unique_ingredient_price_history")]
+        verbose_name_plural = "ingredient prices history"
 
     def __str__(self):
         """ Affichage clair du prix de l’ingrédient """

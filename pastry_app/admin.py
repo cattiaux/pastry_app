@@ -3,33 +3,71 @@ from django.contrib import messages
 from django.shortcuts import redirect
 from .models import *
 
-# @admin.register(IngredientPrice)
+
+class StoreCityListFilter(admin.SimpleListFilter):
+    """
+    Class pour filter par city dans l'admin de Django.
+    """
+    title = 'Ville du magasin'
+    parameter_name = 'store_city'
+
+    def lookups(self, request, model_admin):
+        # Liste des villes présentes dans les stores liés à IngredientPrice
+        cities = set(Store.objects.exclude(city__isnull=True).exclude(city__exact="").values_list('city', flat=True))
+        return [(city, city) for city in cities]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(store__city=self.value())
+        return queryset
+
+class StoreNameListFilter(admin.SimpleListFilter):
+    """
+    Class pour filter par nom de magasin dans l'admin de Django.
+    """
+    title = 'Nom du magasin'
+    parameter_name = 'store_store_name'
+
+    def lookups(self, request, model_admin):
+        # Liste des store_name présentes dans les stores liés à IngredientPrice
+        store_names = set(Store.objects.exclude(store_name__isnull=True).exclude(store_name__exact="").values_list('store_name', flat=True))
+        return [(store_name, store_name) for store_name in store_names]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(store__store_name=self.value())
+        return queryset
+
+@admin.register(IngredientPrice)
 class IngredientPriceAdmin(admin.ModelAdmin):
     list_display = ("id", "ingredient", "brand_name", "store", "quantity", "unit", "price", "is_promo", "promotion_end_date", "date")
-    list_filter = ("store", "brand_name", "is_promo")
+    list_filter = ("brand_name", "is_promo", StoreCityListFilter, StoreNameListFilter)
     search_fields = ("ingredient__ingredient_name", "brand_name", "store__store_name")
+
+    class Media:
+        css = {'all': ('pastry_app/admin/required_fields.css',)}
 
 class IngredientPriceInline(admin.StackedInline):
     model = IngredientPrice
     extra = 1  # number of extra forms to display
 
-# @admin.register(IngredientPriceHistory)
-# class IngredientPriceHistoryAdmin(admin.ModelAdmin):
-#     list_display = ("id", "ingredient", "brand_name", "store", "quantity", "unit", "price", "is_promo", "promotion_end_date", "date")
-#     list_filter = ("store", "brand_name", "is_promo")
-#     search_fields = ("ingredient__ingredient_name", "brand_name", "store__store_name")
+@admin.register(IngredientPriceHistory)
+class IngredientPriceHistoryAdmin(admin.ModelAdmin):
+    list_display = ("id", "ingredient", "brand_name", "store", "quantity", "unit", "price", "is_promo", "promotion_end_date", "date")
+    list_filter = ("brand_name", "is_promo", StoreCityListFilter, StoreNameListFilter)
+    search_fields = ("ingredient__ingredient_name", "brand_name", "store__store_name")
     
-#     def has_add_permission(self, request):
-#         """ Empêche l'ajout manuel d'entrées historiques sauf pour les super-utilisateurs. """
-#         return request.user.is_superuser
+    def has_add_permission(self, request):
+        """ Empêche l'ajout manuel d'entrées historiques sauf pour les super-utilisateurs. """
+        return request.user.is_superuser
 
-#     def has_change_permission(self, request, obj=None):
-#         """ Empêche la modification d'entrées historiques sauf pour les super-utilisateurs. """
-#         return request.user.is_superuser
+    def has_change_permission(self, request, obj=None):
+        """ Empêche la modification d'entrées historiques sauf pour les super-utilisateurs. """
+        return request.user.is_superuser
 
-#     def has_delete_permission(self, request, obj=None):
-#         """ Empêche la suppression d'entrées historiques sauf pour les super-utilisateurs. """
-#         return request.user.is_superuser
+    def has_delete_permission(self, request, obj=None):
+        """ Empêche la suppression d'entrées historiques sauf pour les super-utilisateurs. """
+        return request.user.is_superuser
 
 class IngredientAdmin(admin.ModelAdmin):
     inlines = [IngredientPriceInline]
@@ -111,10 +149,15 @@ class PanAdmin(admin.ModelAdmin):
 
     class Media:
         js = ('pastry_app/admin/pan_admin.js',)
+        css = {'all': ('pastry_app/admin/required_fields.css',)}
 
+@admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ("category_name", "category_type", "parent_category")
     search_fields = ('category_name',)
+
+    class Media:
+        css = {'all': ('pastry_app/admin/required_fields.css',)}
 
     # Surcharge de la vue de suppression pour contrôler les messages et empêcher le double message succès/erreur
     def delete_view(self, request, object_id, extra_context=None):
@@ -153,9 +196,13 @@ class CategoryAdmin(admin.ModelAdmin):
     delete_with_children.short_description = "Supprimer catégorie + sous-catégories"
     actions = [delete_with_children]
 
+@admin.register(Label)
 class LabelAdmin(admin.ModelAdmin):
     list_display = ('label_name', 'label_type')
     search_fields = ('label_name',)
+
+    class Media:
+        css = {'all': ('pastry_app/admin/required_fields.css',)}
 
     def delete_model(self, request, obj):
         # Refuse la suppression si le label est utilisé
@@ -164,17 +211,23 @@ class LabelAdmin(admin.ModelAdmin):
             return
         super().delete_model(request, obj)
 
+@admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
-    list_display = ('store_name', 'id', 'city', 'zip_code', 'visibility', 'is_default')
+    list_display = ('store_name', 'id', 'city', 'zip_code', 'address', 'visibility', 'is_default')
+
+    fieldsets = (
+        ('Caractéristiques du magasin', {
+            'fields': ('store_name', 'city', 'zip_code', 'address')
+        }),
+        ('Gestion / Droits', {
+            'fields': ('visibility', 'is_default', 'user', 'guest_id'),
+            'description': "Champs relatifs à la visibilité, aux droits, ou à la gestion multi-utilisateur."
+        }),
+    )
+
+    class Media:
+        css = {'all': ('pastry_app/admin/required_fields.css',)}
 
 admin.site.register(Recipe, RecipeAdmin)
-# admin.site.register(RecipeStep, RecipeStepAdmin)
-# admin.site.register(SubRecipe, SubRecipeAdmin)
 admin.site.register(Ingredient, IngredientAdmin)
-# admin.site.register(IngredientPrice, IngredientPriceAdmin)
-# admin.site.register(IngredientPriceHistory, IngredientPriceHistoryAdmin)
-admin.site.register(Store, StoreAdmin)
-# admin.site.register(RecipeIngredient, RecipeIngredientAdmin)
-admin.site.register(Pan, PanAdmin)
-admin.site.register(Category, CategoryAdmin)
-admin.site.register(Label, LabelAdmin)
+

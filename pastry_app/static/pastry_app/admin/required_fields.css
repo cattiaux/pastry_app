@@ -1,0 +1,7 @@
+/* Ajoute un astérisque rouge après chaque label obligatoire dans les formulaires admin Django */
+fieldset .required label.required:after,
+fieldset label.required:after {
+    content: " *" ! important;
+    color: #cc0000 !important;
+    font-weight: bold !important;
+}
