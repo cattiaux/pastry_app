@@ -94,6 +94,21 @@ class SubRecipeAdmin(admin.ModelAdmin):
 class PanAdmin(admin.ModelAdmin):
     list_display = ('pan_name', 'id', 'pan_brand', 'pan_type', 'units_in_mold', 'visibility', 'is_default')
 
+    fieldsets = (
+        ('Caractéristiques du moule', {
+            'fields': (
+                'pan_name', 'pan_type', 'pan_brand', 
+                'diameter', 'height', 
+                'length', 'width', 'rect_height', 
+                'volume_raw', 'is_total_volume', 'unit'
+            )
+        }),
+        ('Gestion / Droits', {
+            'fields': ('visibility', 'is_default', 'user', 'guest_id'),
+            'description': "Champs relatifs à la visibilité, aux droits, ou à la gestion multi-utilisateur."
+        }),
+    )
+    
     class Media:
         js = ('pastry_app/admin/pan_admin.js',)
 
