@@ -16,7 +16,10 @@ class StoreSerializer(serializers.ModelSerializer):
         error_messages={"blank": "This field cannot be blank.", "required": "This field is required.", "null": "This field may not be null."}
     )
     city = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    zip_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)    
+    zip_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)   
+    address = serializers.CharField(required=False, allow_blank=True, allow_null=True, 
+                                    help_text="Optionnel : précisez la rue ou le quartier pour différencier deux magasins identiques dans la même ville.")
+ 
 
     # Utilisateur et visibilité
     user = serializers.PrimaryKeyRelatedField(read_only=True)
@@ -26,7 +29,7 @@ class StoreSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Store
-        fields = ["id", "store_name", "city", "zip_code", "user", "guest_id", "visibility", "is_default"]
+        fields = ["id", "store_name", "city", "zip_code", "address", "user", "guest_id", "visibility", "is_default"]
 
     def validate_store_name(self, value):
         """ Normalisation et validation du nom du magasin. """
@@ -45,31 +48,42 @@ class StoreSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Le nom de la ville doit contenir au moins 2 caractères.")
         return value
 
+    def validate_address(self, value):
+        """ Normalisation + Vérifie que l'adresse a au moins 2 caractères """
+        if not value:  # Gérer None et les valeurs vides
+            return value  # Laisser DRF gérer l'erreur si nécessaire
+
+        value = normalize_case(value)  # Maintenant, on est sûr que value n'est pas None
+        if len(value) < 2:
+            raise serializers.ValidationError("L'adresse doit contenir au moins 2 caractères.")
+        return value
+
     def validate(self, data):
         """
         Vérifie, lors de la création ou de la mise à jour d'un Store :
-        - Qu'au moins une ville (`city`) ou un code postal (`zip_code`) est renseigné,
-        - Que le magasin (défini par le triplet `store_name`, `city`, `zip_code`) n'existe pas déjà en base.
+        - Qu'au moins une ville (`city`), un code postal (`zip_code`) ou une addresse (`address`) est renseigné,
+        - Que le magasin (défini par le tuple `store_name`, `city`, `zip_code`, `address`) n'existe pas déjà en base.
         La validation s'applique aussi bien en création (POST) qu'en modification partielle ou complète (PATCH/PUT).
         """        
         # Récupérer les valeurs actuelles (instance) si absentes de data (cas PATCH)
         store_name = data.get("store_name", getattr(self.instance, "store_name", ""))
         city = data.get("city", getattr(self.instance, "city", ""))
         zip_code = data.get("zip_code", getattr(self.instance, "zip_code", ""))
+        address = data.get("address", getattr(self.instance, "address", ""))
 
         # Appliquer la normalisation car le champ PATCH peut ne pas passer par validate_<field>
         store_name = normalize_case(store_name) if store_name else ""
         city = normalize_case(city) if city else ""
+        address = normalize_case(address) if address else ""
 
-        # Validation métier : il faut au moins une city OU un zip_code
-        if not city and not zip_code:
+        # Validation métier : il faut au moins une city OU un zip_code OU une address
+        if not city and not zip_code and not address:
             raise serializers.ValidationError(
-                "Si un magasin est renseigné, vous devez indiquer une ville ou un code postal.",
-                code="missing_location"
-            )
+                "Si un magasin est renseigné, vous devez indiquer une ville ou un code postal ou une adresse.",
+                code="missing_location")
 
         # Vérification de l'unicité, même pour PATCH (mise à jour partielle)
-        qs = Store.objects.filter(store_name=store_name, city=city, zip_code=zip_code)
+        qs = Store.objects.filter(store_name=store_name, city=city, zip_code=zip_code, address=address)
         if self.instance:
             qs = qs.exclude(id=self.instance.id)
         if qs.exists():

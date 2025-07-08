@@ -108,7 +108,7 @@ class PanAdmin(admin.ModelAdmin):
             'description': "Champs relatifs à la visibilité, aux droits, ou à la gestion multi-utilisateur."
         }),
     )
-    
+
     class Media:
         js = ('pastry_app/admin/pan_admin.js',)
 
@@ -164,12 +164,16 @@ class LabelAdmin(admin.ModelAdmin):
             return
         super().delete_model(request, obj)
 
+class StoreAdmin(admin.ModelAdmin):
+    list_display = ('store_name', 'id', 'city', 'zip_code', 'visibility', 'is_default')
+
 admin.site.register(Recipe, RecipeAdmin)
 # admin.site.register(RecipeStep, RecipeStepAdmin)
 # admin.site.register(SubRecipe, SubRecipeAdmin)
 admin.site.register(Ingredient, IngredientAdmin)
 # admin.site.register(IngredientPrice, IngredientPriceAdmin)
 # admin.site.register(IngredientPriceHistory, IngredientPriceHistoryAdmin)
+admin.site.register(Store, StoreAdmin)
 # admin.site.register(RecipeIngredient, RecipeIngredientAdmin)
 admin.site.register(Pan, PanAdmin)
 admin.site.register(Category, CategoryAdmin)

@@ -644,6 +644,7 @@ class Store(models.Model):
     store_name = models.CharField(max_length=200, null=False, blank=False) #default="Non renseigné")
     city = models.CharField(max_length=100, null=True, blank=True)
     zip_code = models.CharField(max_length=10, null=True, blank=True)
+    address = models.CharField(max_length=200, blank=True, null=True)
 
     # Utilisateur
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="stores", blank=True, null=True)  # null=True pour migrer en douceur
@@ -652,7 +653,7 @@ class Store(models.Model):
     is_default = models.BooleanField(default=False)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["store_name", "city", "zip_code"], name="unique_store_per_location")]
+        constraints = [models.UniqueConstraint(fields=["store_name", "city", "zip_code", "address"], name="unique_store_per_location")]
         indexes = [models.Index(fields=["store_name", "city", "zip_code"])]  # Ajout d'un index pour accélérer les requêtes sur (store_name, city, zip_code)
 
     def __str__(self):
@@ -660,22 +661,25 @@ class Store(models.Model):
 
     def clean(self):
         # Vérifie que le magasin a une localisation valide
-        if self.store_name and not (self.city or self.zip_code):
-            raise ValidationError("Si un magasin est renseigné, vous devez indiquer une ville ou un code postal.")
+        if self.store_name and not (self.city or self.zip_code or self.address):
+            raise ValidationError("Si un magasin est renseigné, vous devez indiquer une ville, un code postal ou une adresse.")
         if not self.store_name :
             raise ValidationError("field cannot be null")
-        # Vérifie que le nom du magasin et de la ville ont une longueur minimale
+        # Vérifie que le nom du magasin, de la ville et l'addresse ont une longueur minimale
         if len(self.store_name) < 2:
             raise ValidationError("Le nom du magasin doit contenir au moins 2 caractères.")
         if self.city and len(self.city) < 2:
             raise ValidationError("Le nom de la ville doit contenir au moins 2 caractères.")
+        if self.address and len(self.address) < 2:
+            raise ValidationError("L'adresse doit contenir au moins 2 caractères.")
 
         # Normalisation des noms avant validation
         self.store_name = normalize_case(self.store_name)
         self.city = normalize_case(self.city)
+        self.address = normalize_case(self.address)
 
-        # Vérifie l’unicité en base sur (store_name, city, zip_code)
-        if Store.objects.filter(store_name=self.store_name, city=self.city, zip_code=self.zip_code).exclude(id=self.id).exists():
+        # Vérifie l’unicité en base sur (store_name, city, zip_code, address)
+        if Store.objects.filter(store_name=self.store_name, city=self.city, zip_code=self.zip_code, address=self.address).exclude(id=self.id).exists():
             raise ValidationError("Ce magasin existe déjà.")
         
     def save(self, *args, **kwargs):
