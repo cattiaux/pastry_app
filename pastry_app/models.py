@@ -186,7 +186,7 @@ class Category(models.Model):
         verbose_name_plural = "categories"
 
     def __str__(self):
-        return self.category_name
+        return f"{self.category_name} [{self.category_type}]"
 
     def clean(self):
         """ Vérifie les règles métier lors de la création et de l’update. """

@@ -1,5 +1,5 @@
-from django.contrib import admin
-from django.contrib import messages
+from django.contrib import admin, messages
+from django import forms
 from django.shortcuts import redirect
 from .models import *
 
@@ -38,6 +38,12 @@ class StoreNameListFilter(admin.SimpleListFilter):
             return queryset.filter(store__store_name=self.value())
         return queryset
 
+class CategoryAdminForm(forms.ModelForm):
+    """ formulaire personnalisé pour Category"""
+    class Meta:
+        model = Category
+        fields = "__all__"
+
 @admin.register(IngredientPrice)
 class IngredientPriceAdmin(admin.ModelAdmin):
     list_display = ("id", "ingredient", "brand_name", "store", "quantity", "unit", "price", "is_promo", "promotion_end_date", "date")
@@ -68,10 +74,12 @@ class IngredientPriceHistoryAdmin(admin.ModelAdmin):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
+    form = CategoryAdminForm
     list_display = ("category_name", "category_type", "parent_category")
     search_fields = ('category_name',)
 
     class Media:
+        js = ('pastry_app/admin/category_admin.js',)
         css = {'all': ('pastry_app/admin/required_fields.css',)}
 
     # Surcharge de la vue de suppression pour contrôler les messages et empêcher le double message succès/erreur

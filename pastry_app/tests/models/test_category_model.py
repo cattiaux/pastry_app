@@ -21,7 +21,7 @@ def test_category_creation(category):
 
 def test_category_str_method(category):
     """ Vérifie que `__str__()` retourne bien le `category_name`"""
-    assert str(category) == normalize_case(category.category_name)
+    assert str(category) == f"{normalize_case(category.category_name)} [{normalize_case(category.category_type)}]"  # Vérifie que la méthode __str__ retourne le nom de la catégorie en minuscule
 
 def test_category_update(category):
     """ Vérifie que `category_name` peut être modifié uniquement vers une nouvelle valeur et que `category_type` ne change pas automatiquement. """
