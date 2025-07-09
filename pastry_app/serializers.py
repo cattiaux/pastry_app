@@ -228,6 +228,24 @@ class CategorySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"`category_type` doit être l'une des valeurs suivantes : {', '.join(valid_choices)}.")
         return value
 
+    def validate(self, data):
+        """
+        - Une catégorie 'ingredient' ne peut avoir pour parent qu'une catégorie 'ingredient' ou 'both' ou rien.
+        - Une catégorie 'recipe' ne peut avoir pour parent qu'une catégorie 'recipe' ou 'both' ou rien.
+        - Une catégorie 'both' ne peut avoir pour parent qu'une catégorie 'both' ou rien.
+        """
+        parent = data.get('parent_category') or getattr(self.instance, 'parent_category', None)
+        category_type = data.get('category_type') or getattr(self.instance, 'category_type', None)
+        if parent:
+            parent_type = parent.category_type
+            if category_type == "both" and parent_type != "both":
+                raise serializers.ValidationError("Une catégorie 'both' ne peut avoir qu'une catégorie parente 'both' ou aucune.")
+            if category_type in ("ingredient", "recipe") and parent_type not in (category_type, "both"):
+                raise serializers.ValidationError(
+                    f"Une catégorie '{category_type}' ne peut avoir pour parent qu'une catégorie '{category_type}' ou 'both', jamais '{parent_type}'."
+                )
+        return data
+
     def create(self, validated_data):
         """ Seuls les admins peuvent créer une catégorie. """
         request = self.context.get("request")

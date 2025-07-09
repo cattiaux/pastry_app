@@ -175,11 +175,7 @@ class Category(models.Model):
     - Actuellement, `category_name` N'A PAS `unique=True` pour éviter les conflits en développement.
     - Une fois en production, AJOUTER `unique=True` sur `category_name`.
     """
-    CATEGORY_CHOICES = [
-        ('ingredient', 'Ingrédient'),
-        ('recipe', 'Recette'),
-        ('both', 'Les deux'),
-    ]
+    CATEGORY_CHOICES = [('ingredient', 'Ingrédient'), ('recipe', 'Recette'), ('both', 'Les deux'),]
     # Note : `unique=True` dans le field 'category_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
     # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
     category_name = models.CharField(max_length=200,  verbose_name="category_name")#, unique=True) #unique=True à activer en production
@@ -213,6 +209,17 @@ class Category(models.Model):
             raise ValidationError("Le champ `category_type` est obligatoire pour une nouvelle catégorie.")
         elif self.category_type not in dict(self.CATEGORY_CHOICES):
             raise ValidationError(f"`category_type` doit être l'une des valeurs suivantes: {', '.join(dict(self.CATEGORY_CHOICES).keys())}.")
+
+        # Vérification type parent
+        if self.parent_category:
+            parent_type = self.parent_category.category_type
+            this_type = self.category_type
+            # Catégorie BOTH : parent obligatoirement BOTH ou None
+            if this_type == "both" and parent_type != "both":
+                raise ValidationError("Une catégorie 'both' ne peut avoir qu'une catégorie parente 'both' ou aucune.")
+            # Catégorie INGREDIENT ou RECIPE : parent = même type ou BOTH ou None
+            if this_type in ("ingredient", "recipe") and parent_type not in (this_type, "both"):
+                raise ValidationError(f"Une catégorie '{this_type}' ne peut avoir pour parent qu'une catégorie '{this_type}' ou 'both', jamais '{parent_type}'.")
 
         # Vérifier qu'on ne met pas à jour un `category_name` existant
         existing_category = Category.objects.exclude(id=self.id).filter(category_name__iexact=self.category_name).exists()

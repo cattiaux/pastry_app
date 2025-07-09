@@ -7,6 +7,7 @@ from django.contrib.auth.models import User
 
 # Définir model_name pour les tests de Label
 model_name = "labels"
+pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def admin_client(api_client, db):
@@ -21,7 +22,6 @@ def label(db):
     return Label.objects.create(label_name="Bio", label_type="recipe")
 
 @pytest.mark.parametrize("field_name", ["label_name"])
-@pytest.mark.django_db
 def test_unique_constraint_label_api(admin_client, base_url, field_name, label):
     """ Vérifie que les contraintes `unique=True` sont bien respectées via l’API. """
     valid_data = {"label_name": label.label_name, "label_type": label.label_type} 
@@ -29,14 +29,12 @@ def test_unique_constraint_label_api(admin_client, base_url, field_name, label):
     assert field_name in response.json()
 
 @pytest.mark.parametrize("field_name", ["label_name", "label_type"])
-@pytest.mark.django_db
 def test_required_fields_label_api(admin_client, base_url, field_name):
     """ Vérifie que les champs obligatoires sont bien requis via l'API """
     expected_errors = ["This field is required.", "This field may not be null.", "This field cannot be blank.", "This field may not be blank.", "\"\" is not a valid choice."]
     for invalid_value in [None, ""]:  # Teste `None` et `""`
         validate_constraint_api(admin_client, base_url, model_name, field_name, expected_errors, **{field_name: invalid_value})
 
-@pytest.mark.django_db
 @pytest.mark.parametrize("field_name, raw_value", [
     ("label_name", " Label Rouge  "),
     ("label_type", "RECIPE"),
@@ -50,7 +48,6 @@ def test_normalized_fields_label_api(admin_client, base_url, field_name, raw_val
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()[field_name] == normalize_case(raw_value)  # Vérifie la normalisation
 
-@pytest.mark.django_db
 def test_create_duplicate_label_api(admin_client, base_url):
     """Vérifie qu'on ne peut PAS créer deux Label avec le même `label_name` via l'API, peu importe la casse"""
     url = base_url(model_name)
@@ -66,7 +63,6 @@ def test_create_duplicate_label_api(admin_client, base_url):
     assert "label_name" in response2.json()
 
 @pytest.mark.parametrize("invalid_label_type", ["invalid", "123"])
-@pytest.mark.django_db
 def test_create_label_invalid_type(admin_client, base_url, invalid_label_type):
     """ Vérifie qu'on ne peut PAS créer une Label avec un `label_type` invalide """
     url = base_url(model_name)
@@ -82,14 +78,12 @@ def test_create_label_invalid_type(admin_client, base_url, invalid_label_type):
 # 1️. Tester l'unicité dans l'API avec `validate_label_name()` dans `serializers.py` (sans `unique=True`).
 # 2️. En production, remettre `unique=True` dans `models.py` pour sécuriser la base, mais NE PAS tester cela avec pytest.
 #    Si ces tests échouent avec `unique=True`, c'est normal et tu peux ignorer l'erreur !
-@pytest.mark.django_db
 def test_update_label_to_duplicate_api(admin_client, base_url, label):
     """ Vérifie qu'on ne peut PAS modifier une Label pour lui donner un `label_name` déjà existant via l'API. """
     valid_data1 = {"label_name": label.label_name, "label_type": label.label_type}
     valid_data2 = {"label_name": "Vegan", "label_type": "recipe"}
     validate_update_to_duplicate_api(admin_client, base_url, model_name, valid_data1, valid_data2)
 
-@pytest.mark.django_db
 def test_non_admin_cannot_create_label(api_client, base_url):
     """ Vérifie qu'un utilisateur non admin ne peut pas créer une Label. """
     url = base_url(model_name)

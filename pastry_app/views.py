@@ -138,8 +138,8 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     permission_classes = [CanSoftHideRecipeOrIsOwnerOrGuest]
 
     filter_backends = [SearchFilter, DjangoFilterBackend, OrderingFilter]
-    search_fields = ["recipe_name", "chef_name", "context_name"]
-    filterset_fields = ["recipe_type", "chef_name", "categories", "labels", "pan", "parent_recipe"]
+    search_fields = ["recipe_name", "chef_name", "context_name", "tags"]
+    filterset_fields = ["recipe_type", "chef_name", "categories", "labels", "pan", "parent_recipe", "tags"]
     ordering_fields = ["recipe_name", "chef_name", "recipe_type", "created_at", "parent_recipe"]
     ordering = ["recipe_name", "chef_name"]
 
@@ -346,8 +346,8 @@ class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all().order_by('category_name')
     serializer_class = CategorySerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["category_name", "parent_category", "tags"]
-    search_fields = ['category_name', 'tags']
+    filterset_fields = ["category_name", "parent_category"]
+    search_fields = ['category_name']
     ordering_fields = ["category_name", "parent_category"]
     ordering = ["category_name"]  # ordre par défaut
     permission_classes = []  # On définit les permissions dans `get_permissions`
