@@ -19,6 +19,7 @@ Création d’une catégorie avec un parent_category invalide	                  
 Création d’une catégorie avec un parent_category valide	                            -> test_parent_category_validation
 Détachement d’une sous-catégorie (parent_category=None)                         	-> test_parent_category_is_optional
 Vérification de la normalisation de category_type (ex: uppercase ➝ lowercase)      	-> test_normalized_fields_category_api
+Règle parent_category / category_type                                               -> test_category_parent_type_model, test_category_parent_type_api
 
 
 Contraintes Métier :
@@ -35,6 +36,11 @@ Contraintes Métier :
         ◦ Si défini, doit être un category_name existant.
         ◦ Peut être modifié via PATCH.
         ◦ Une sous-catégorie peut être détachée de son parent (parent_category=None).
+    Cohérence type parent/enfant :
+        ◦ Une catégorie de type 'ingredient' ne peut avoir pour parent qu'une catégorie 'ingredient' ou 'both'.
+        ◦ Une catégorie de type 'recipe' ne peut avoir pour parent qu'une catégorie 'recipe' ou 'both'.
+        ◦ Une catégorie de type 'both' ne peut avoir pour parent qu'une catégorie 'both' ou aucun parent.
+        ◦ Si le parent est 'both', il peut avoir des enfants de tout type.
 
 Contraintes Techniques :
     1. Type de Données :
@@ -56,9 +62,10 @@ Contraintes d'Intégrité :
         ◦ Vérification ajoutée dans destroy() de CategoryViewSet
 
 Gestion de la Suppression d'une Catégorie avec des Sous-Catégories
-    Suppression d'une catégorie sans sous-catégories        -> Suppression directe
+    Suppression d'une catégorie sans sous-catégories                                    -> Suppression directe
     Suppression d'une catégorie avec des sous-catégories (on_delete=models.SET_NULL)    -> parent_category des sous-catégories devient NULL
-    Suppression avec ?delete_subcategories=true     -> Supprime aussi les sous-catégories
+    Suppression avec ?delete_subcategories=true                                         -> Supprime aussi les sous-catégories
+    Suppression impossible si la catégorie est liée à une recette ou un ingrédient
 
 Préparation pour la Production :
     Ajout de unique=True sur category_name en production :
