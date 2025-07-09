@@ -358,19 +358,33 @@ class IngredientSerializer(serializers.ModelSerializer):
         return value
 
     def validate_categories(self, value):
-        """ Personnalise le message d'erreur si une catégorie n'existe pas. """
+        """
+        Vérifie :
+        - Que toutes les catégories existent en base (par ID)
+        - Que leur type est bien 'ingredient' ou 'both'
+        """
         existing_categories_ids = set(Category.objects.values_list("id", flat=True))
         for category in value:
             if category.id not in existing_categories_ids:
                 raise serializers.ValidationError(f"La catégorie '{category.category_name}' n'existe pas. Veuillez la créer d'abord.")
+            # Vérification sur le type de catégorie
+            if category.category_type not in ("ingredient", "both"):
+                raise serializers.ValidationError(f"La catégorie '{category.category_name}' (type '{category.category_type}') n'est pas valide pour un ingrédient.")
         return value
 
     def validate_labels(self, value):
-        """ Personnalise le message d'erreur si un label n'existe pas """
+        """
+        Vérifie :
+        - Que tous les labels existent en base (par ID)
+        - Que leur type est bien 'ingredient' ou 'both'
+        """
         existing_labels_ids = set(Label.objects.values_list("id", flat=True))
         for label in value:
             if label.id not in existing_labels_ids:
                 raise serializers.ValidationError(f"Le label '{label.label_name}' n'existe pas. Veuillez le créer d'abord.")
+            # Vérification sur le type de label
+            if label.label_type not in ("ingredient", "both"):
+                raise serializers.ValidationError(f"Le label '{label.label_name}' (type '{label.label_type}') n'est pas valide pour un ingrédient.")
         return value
 
     def validate(self, data):

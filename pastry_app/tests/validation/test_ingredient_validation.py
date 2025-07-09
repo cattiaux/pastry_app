@@ -2,7 +2,7 @@ import pytest, json
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from rest_framework import status
-from pastry_app.models import Ingredient
+from pastry_app.models import Ingredient, Category
 from pastry_app.tests.utils import normalize_case
 from pastry_app.tests.base_api_test import api_client, base_url
 
@@ -177,3 +177,21 @@ def test_ingredient_name_is_normalized():
     ingredient_name = "  Chocolat  Noir "
     ingredient = Ingredient.objects.create(ingredient_name=ingredient_name)
     assert ingredient.ingredient_name == normalize_case(ingredient_name)
+
+def test_category_type_for_ingredient_api(api_client, base_url, user):
+    # Création des catégories
+    cat_ingredient = Category.objects.create(category_name="Cat Ingredient", category_type="ingredient")
+    cat_recipe = Category.objects.create(category_name="Cat Recipe", category_type="recipe")
+    cat_both = Category.objects.create(category_name="Cat Both", category_type="both")
+
+    api_client.force_authenticate(user=user)     # Création d'un user admin pour pouvoir POST
+    url = base_url(model_name)
+    
+    data = {"ingredient_name": "My Ingredient", "categories": [cat_ingredient.id, cat_recipe.id]}  # Ajoute une catégorie de type interdit
+    response = api_client.post(url, data, format="json")
+    assert response.status_code == 400   # Doit être refusé par la validation DRF
+    assert "n'est pas valide pour un ingrédient" in str(response.data)
+
+    data2 = {"ingredient_name": "My Ingredient", "categories": [cat_ingredient.id, cat_both.id]}
+    response = api_client.post(url, data2, format="json")
+    assert response.status_code in [200, 201]

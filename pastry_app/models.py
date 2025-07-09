@@ -607,16 +607,23 @@ class Ingredient(models.Model):
         if not self.pk:
             return
         
+        # Vérifie que toutes les catégories et labels associées existent en base
         existing_categories = set(Category.objects.values_list("id", flat=True))
         existing_labels = set(Label.objects.values_list("id", flat=True))
 
         for category in self.categories.all():
             if category.id not in existing_categories:
                 raise ValidationError(f"La catégorie '{category.category_name}' n'existe pas en base.")
+            # Vérifie que la catégorie est bien de type 'ingredient' ou 'both'
+            if category.category_type not in ("ingredient", "both"):
+                raise ValidationError(f"La catégorie '{category.category_name}' (type '{category.category_type}') n'est pas valide pour un ingrédient.")
 
         for label in self.labels.all():
             if label.id not in existing_labels:
                 raise ValidationError(f"Le label '{label.label_name}' n'existe pas en base.")
+            # Vérifie que le label est bien de type 'ingredient' ou 'both'
+            if label.label_type not in ("ingredient", "both"):
+                raise ValidationError(f"Le label '{label.label_name}' (type '{label.label_type}') n'est pas valide pour un ingrédient.")
 
         # Vérifier que le nom est correct, normalisé
         self.ingredient_name = normalize_case(self.ingredient_name)

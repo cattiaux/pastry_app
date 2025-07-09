@@ -74,3 +74,21 @@ def test_ingredient_name_cannot_be_null():
         Ingredient.objects.create(ingredient_name=None)
     assert 'ingredient_name' in str(excinfo.value)
     assert 'cannot be null' in str(excinfo.value)
+
+def test_ingredient_cannot_have_recipe_only_category():
+    # Création des catégories
+    cat_ingredient = Category.objects.create(category_name="Cat Ingredient", category_type="ingredient")
+    cat_both = Category.objects.create(category_name="Cat Both", category_type="both")
+    cat_recipe = Category.objects.create(category_name="Cat Recipe", category_type="recipe")
+
+    # Création de l'ingrédient
+    ing = Ingredient.objects.create(ingredient_name="My Ingredient")
+    ing.categories.add(cat_ingredient, cat_both)
+    ing.full_clean()  # Doit passer sans erreur
+
+    # Test avec une catégorie "recipe" (interdit)
+    ing.categories.add(cat_recipe)
+    with pytest.raises(ValidationError) as excinfo:
+        ing.full_clean()
+    assert "n'est pas valide pour un ingrédient" in str(excinfo.value)
+

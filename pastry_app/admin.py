@@ -49,6 +49,7 @@ class IngredientPriceAdmin(admin.ModelAdmin):
     list_display = ("id", "ingredient", "brand_name", "store", "quantity", "unit", "price", "is_promo", "promotion_end_date", "date")
     list_filter = ("brand_name", "is_promo", StoreCityListFilter, StoreNameListFilter)
     search_fields = ("ingredient__ingredient_name", "brand_name", "store__store_name")
+    autocomplete_fields = ['ingredient', 'store']
 
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',)}
@@ -77,6 +78,7 @@ class CategoryAdmin(admin.ModelAdmin):
     form = CategoryAdminForm
     list_display = ("category_name", "category_type", "parent_category")
     search_fields = ('category_name',)
+    list_filter = ('category_type',)
 
     class Media:
         js = ('pastry_app/admin/category_admin.js',)
@@ -137,6 +139,8 @@ class LabelAdmin(admin.ModelAdmin):
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
     list_display = ('store_name', 'id', 'city', 'zip_code', 'address', 'visibility', 'is_default')
+    search_fields = ('store_name', 'city')
+    list_filter = ('city', 'visibility')
 
     fieldsets = (
         ('Caractéristiques du magasin', {
@@ -174,13 +178,53 @@ class PanAdmin(admin.ModelAdmin):
         js = ('pastry_app/admin/pan_admin.js',)
         css = {'all': ('pastry_app/admin/required_fields.css',)}
 
-class IngredientPriceInline(admin.StackedInline):
+# Pour l’affichage des catégories et labels sous forme de string
+def categories_display(obj):
+    return ", ".join([c.category_name for c in obj.categories.all()])
+categories_display.short_description = "Catégories"
+
+def labels_display(obj):
+    return ", ".join([l.label_name for l in obj.labels.all()])
+labels_display.short_description = "Labels"
+
+def prices_count(obj):
+    return obj.prices.count()
+prices_count.short_description = "Nb Prix"
+
+class IngredientPriceInline(admin.TabularInline):
     model = IngredientPrice
     extra = 1  # number of extra forms to display
+    min_num = 0
+    show_change_link = True  # pour avoir un lien direct vers la fiche prix si besoin
 
+@admin.register(Ingredient)
 class IngredientAdmin(admin.ModelAdmin):
     inlines = [IngredientPriceInline]
-    list_display = ('ingredient_name', 'id')
+    list_display = ('ingredient_name', 'id', categories_display, labels_display, 'visibility', 'is_default', prices_count)
+    search_fields = ('ingredient_name',)
+    list_filter = ('categories','labels', 'visibility')
+
+    # Pour mieux ordonner les champs et regrouper les sections
+    fieldsets = (
+        ('Informations principales', {
+            'fields': ('ingredient_name', 'categories', 'labels')
+        }),
+        ('Gestion', {
+            'fields': ('visibility', 'is_default', 'user', 'guest_id')
+        }),
+    )
+
+    # Pour afficher les catégories/labels sous forme de widget horizontal
+    filter_horizontal = ('categories', 'labels')
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        """
+        Permet de filtrer dynamiquement les catégories affichées dans le widget admin.
+        Ici, on restreint la sélection aux catégories de type 'ingredient' ou 'both'.
+        """
+        if db_field.name == "categories":
+            kwargs["queryset"] = Category.objects.filter(category_type__in=["ingredient", "both"])
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
 
     # To see only the categories for the selected ingredient in the django admin site
     # def formfield_for_manytomany(self, db_field, request, **kwargs):
@@ -240,5 +284,4 @@ class SubRecipeAdmin(admin.ModelAdmin):
 
 
 admin.site.register(Recipe, RecipeAdmin)
-admin.site.register(Ingredient, IngredientAdmin)
 
