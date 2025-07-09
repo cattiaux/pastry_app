@@ -226,15 +226,6 @@ class IngredientAdmin(admin.ModelAdmin):
             kwargs["queryset"] = Category.objects.filter(category_type__in=["ingredient", "both"])
         return super().formfield_for_manytomany(db_field, request, **kwargs)
 
-    # To see only the categories for the selected ingredient in the django admin site
-    # def formfield_for_manytomany(self, db_field, request, **kwargs):
-    #     if db_field.name == "categories":
-    #         if 'change' in request.path:
-    #             ingredient_id = request.path.split('/')[-3]
-    #             ingredient = Ingredient.objects.get(id=ingredient_id)
-    #             kwargs["queryset"] = Category.objects.filter(ingredients=ingredient)
-    #     return super().formfield_for_manytomany(db_field, request, **kwargs)
-
 class RecipeIngredientInline(admin.TabularInline):
     model = RecipeIngredient
     extra = 1

@@ -5,6 +5,8 @@ from pastry_app.tests.utils import *
 # Définir model_name pour les tests de Label
 model_name = "labels"
 
+pytestmark = pytest.mark.django_db
+
 @pytest.fixture()
 def label():
     """Créer plusieurs labels de test pour assurer la cohérence des tests."""
@@ -12,18 +14,15 @@ def label():
     Label.objects.create(label_name="Label Rouge", label_type="ingredient")
     return Label.objects.get(label_name="bio")  # Retourne un label pour le test
 
-@pytest.mark.django_db
 def test_label_creation(label):
     """ Vérifie que l'on peut créer un objet Label"""
     assert isinstance(label, Label)
     assert label.label_name == normalize_case(label.label_name)  # Vérifie la normalisation en minuscule
 
-@pytest.mark.django_db
 def test_label_str_method(label):
     """ Vérifie que `__str__()` retourne bien le `label_name`"""
-    assert str(label) == normalize_case(label.label_name)
+    assert str(label) == f"{normalize_case(label.label_name)} [{normalize_case(label.label_type)}]"  # Vérifie que la méthode __str__ retourne le nom du label en minuscule
 
-@pytest.mark.django_db
 def test_label_update(label):
     """ Vérifie que `label_name` peut être modifié uniquement vers une nouvelle valeur et que `label_type` ne change pas automatiquement. """
     new_label_name = "Nouveau Label"
@@ -45,7 +44,6 @@ def test_label_update(label):
     with pytest.raises(ValidationError, match="`label_type` doit être l'une des valeurs suivantes: ingredient, recipe, both."):
         label.save()
 
-@pytest.mark.django_db
 def test_label_deletion(label):
     """ Vérifie que l'on peut supprimer un Label"""
     label_id = label.id
@@ -53,7 +51,6 @@ def test_label_deletion(label):
     assert not Label.objects.filter(id=label_id).exists()
 
 @pytest.mark.parametrize("field_name", ["label_name", "label_type"])
-@pytest.mark.django_db
 def test_required_fields_label(field_name, label):
     """ Vérifie que les champs obligatoires ne peuvent pas être vides """
     expected_error = ["field cannot be null", "This field cannot be blank."]
@@ -61,7 +58,6 @@ def test_required_fields_label(field_name, label):
         validate_constraint(Label, field_name, invalid_value, expected_error, label_type=label.label_type)
 
 @pytest.mark.parametrize("field_name", ["label_name"])
-@pytest.mark.django_db
 def test_unique_constraint_label(field_name, label):
     """Vérifie que deux Label ne peuvent pas avoir le même `label_name`."""
     valid_data = {"label_name": label.label_name, "label_type": label.label_type}
@@ -73,7 +69,6 @@ def test_unique_constraint_label(field_name, label):
     error_messages = str(exc_info.value)
     assert expected_error_1 in error_messages or expected_error_2 in error_messages
 
-@pytest.mark.django_db
 @pytest.mark.parametrize("invalid_label_type", ["invalid", "123"])
 def test_label_type_must_be_valid_choice(invalid_label_type):
     """Vérifie qu'une erreur est levée si `label_type` contient une valeur non autorisée."""

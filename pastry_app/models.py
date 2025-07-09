@@ -265,7 +265,7 @@ class Label(models.Model):
     label_type = models.CharField(max_length=10, choices=LABEL_CHOICES, default='both')
 
     def __str__(self):
-        return self.label_name
+        return f"{self.label_name} [{self.label_type}]"
 
     def clean(self):
         """ Vérifie les règles métier lors de la création et de l’update. """
