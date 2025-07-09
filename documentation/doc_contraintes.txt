@@ -227,7 +227,7 @@ Longueur minimale de store_name et city                                     -> t
 Mise à jour du store_name                                                   -> test_store_update, test_update_store_to_duplicate_api
 Suppression d’un store existant                                             -> test_store_deletion
 Interdiction de créer deux stores identiques (unique_together)              -> test_unique_constraint_store, test_unique_together_store_api
-Erreur 400 si city et zip_code sont absents                                 -> test_store_requires_city_or_zip_code, test_store_requires_city_or_zip_code_api
+Erreur 400 si city et zip_code sont absents                                 -> test_store_requires_city_or_zip_code_or_address, test_store_requires_city_or_zip_code_or_address_api
 Suppression bloquée si store utilisé dans un prix d’ingrédient              -> test_delete_store_used_in_prices
 
 
@@ -236,19 +236,20 @@ Contraintes Métier:
     ◦ Doit être obligatoirement renseigné.
     ◦ Doit contenir au moins 2 caractères.
     ◦ Normalisé en minuscule sans espaces superflus.
-2. Ville (city) et Code Postal (zip_code)
-    ◦ Au moins l’un des deux doit être renseigné.
+2. Ville (city), Code Postal (zip_code) et Adresse (address)
+    ◦ Au moins l’un des trois doit être renseigné.
     ◦ Peuvent être vides individuellement mais pas ensemble.
 3. Unicité
-    ◦ Deux magasins ne peuvent pas avoir simultanément le même store_name, city et zip_code.
+    ◦ Deux magasins ne peuvent pas avoir simultanément le même store_name, city, zip_code et address.
 4. Suppression sécurisée
     ◦ Un magasin ne peut pas être supprimé s’il est utilisé dans un IngredientPrice.
 
 Contraintes Techniques:
 1. Type de Donnée
     ◦ store_name : CharField (normalisé en minuscule, sans espaces superflus).
-    ◦ city : CharField (optionnel si zip_code est présent).
-    ◦ zip_code : CharField (optionnel si city est présent).
+    ◦ city : CharField (optionnel si zip_code ou address est présent).
+    ◦ zip_code : CharField (optionnel si city ou address est présent).
+    ◦ address : CharField (optionnel si city ou zip_code est présent).    
 2. Indexation	
     ◦ Index sur (store_name, city, zip_code) pour optimiser la recherche et garantir l’unicité logique.
 
@@ -258,14 +259,14 @@ Contraintes d’Intégrité :
     ◦ Si un Store est utilisé dans IngredientPrice, sa suppression est interdite (on_delete=PROTECT)
 2. Cohérence des Données :
     ◦ Unicité d’un store : Validation métier en API et en base (full_clean() avant save()).
-    ◦ Un store doit toujours avoir une city ou un zip_code.
+    ◦ Un store doit toujours avoir une city ou un zip_code ou une address.
     ◦ Un store ne peut pas être supprimé s'il est référencé dans IngredientPrice.
     ◦ Suppression : Vérifié via les tests CRUD
     ◦ Normalisation des noms : Vérifié via test_store_fields_are_normalized
 
 Préparation à la Production : 
 1. Ajout de Contrainte d’Unicité
-    ◦ Actuellement, unique_together est appliqué via l’API, mais pas directement en base pour faciliter les tests.
+    ◦ Actuellement, uniqueConstraint est appliqué via l’API, mais pas directement en base pour faciliter les tests.
     ◦ En production, on pourra ajouter une contrainte unique en base de données.
 
 

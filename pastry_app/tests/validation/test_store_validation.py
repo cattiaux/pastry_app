@@ -73,7 +73,7 @@ def test_delete_store_used_in_prices(api_client, base_url, related_models, user)
     expected_error = "Ce magasin est associé à des prix d'ingrédients et ne peut pas être supprimé."
     validate_protected_delete_api(api_client, base_url, model_name, related_models, expected_error, user=user)
 
-def test_store_requires_city_or_zip_code_api(api_client, base_url):
+def test_store_requires_city_or_zip_code_or_address_api(api_client, base_url):
     """ Vérifie qu'un store ne peut pas être créé sans au moins une `city` ou `zip_code` ou `address` en API. """
     url = base_url(model_name)
     store_data = {"store_name": "Auchan", "city": None, "zip_code": None, "address": None}  # Manque city et zip_code et address
