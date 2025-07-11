@@ -141,7 +141,13 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        """ Vérifie les contraintes métier (promotions, cohérence des données, etc.). """
+        """ 
+        Vérifie les contraintes métier (promotions, cohérence des données, etc.). 
+        1. Lors de la création :
+           - Si tuple existe déjà → erreur.
+        2. Lors de l’update :
+           - Interdit de modifier un champ du tuple unique.
+        """
         if data.get("promotion_end_date") and not data.get("is_promo"):
             raise serializers.ValidationError("Une date de fin de promotion nécessite que `is_promo=True`.")
         
@@ -149,35 +155,51 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
         if "date" not in data:
             data["date"] = now().date()  # Assigner automatiquement la date du jour
 
+        instance = self.instance
         ### Validation personnalisée pour gérer l'unicité sans bloquer DRF.
         # Récupérer les champs qui définissent l’unicité
-        ingredient = data.get("ingredient")
-        store = data.get("store")
-        brand_name = data.get("brand_name", "")
-        quantity = data.get("quantity")
-        unit = data.get("unit")
-        price = data.get("price")
-        is_promo = data.get("is_promo", False)
-        promo_end_date = data.get("promotion_end_date")
+        ingredient = data.get("ingredient", getattr(instance, "ingredient", None))
+        store = data.get("store", getattr(instance, "store", None))
+        brand_name = data.get("brand_name", getattr(instance, "brand_name", None))
+        quantity = data.get("quantity", getattr(instance, "quantity", None))
+        unit = data.get("unit", getattr(instance, "unit", None))
 
-        # Vérifier si un `IngredientPrice` existe déjà pour cette combinaison
-        existing_price = IngredientPrice.objects.filter(
-            ingredient=ingredient, store=store, brand_name=brand_name, quantity=quantity, unit=unit
-        ).first()
-
-        if existing_price:
-            if price != existing_price.price or is_promo != existing_price.is_promo:  # Cas où le prix ou `is_promo` change → Archivage + Nouveau prix
-                pass  # Ne pas lever d'erreur, car ce sera géré dans `create()` de la `view`
-            elif promo_end_date != existing_price.promotion_end_date:  # Cas où seule `promotion_end_date` change → Mise à jour directe
-                pass  # Pas d'erreur, la vue mettra à jour directement `promotion_end_date`
-            else:  # Cas où l'on essaie de créer un duplicata strict
-                raise serializers.ValidationError("must make a unique set.")
-        
+        # Vérifie le tuple unique pour une création
+        if instance is None:
+            # Create : on refuse si le tuple existe déjà
+            if IngredientPrice.objects.filter(ingredient=ingredient, store=store, brand_name=brand_name, quantity=quantity, unit=unit).exists():
+                raise serializers.ValidationError(
+                    "must make a unique set. Un prix existe déjà pour cet ingrédient, ce magasin, cette marque, cette quantité et cette unité. Faites une mise à jour plutôt."
+                )
+        else:
+            # Update : on refuse si le tuple change
+            fields = ["ingredient", "store", "brand_name", "quantity", "unit"]
+            for field in fields:
+                old = getattr(instance, field)
+                new = data.get(field, old)
+                if old != new:
+                    raise serializers.ValidationError(f"Le champ {field} ne peut pas être modifié. Créez un nouvel IngredientPrice si besoin.")
         return data
 
     def update(self, instance, validated_data):
-        """ Désactive la mise à jour des prix, impose la création d'un nouvel enregistrement. """
-        raise serializers.ValidationError("Les prix des ingrédients ne peuvent pas être modifiés. Créez un nouvel enregistrement.")
+        """
+        - Applique les changements sur l’instance
+        - L’archivage est totalement délégué au modèle (via .save())
+        """
+        # Interdiction de modification du tuple unique (métier)
+        tuple_fields = ["ingredient", "store", "brand_name", "quantity", "unit"]
+        for field in tuple_fields:
+            old_value = getattr(instance, field)
+            new_value = validated_data.get(field, old_value)
+            if old_value != new_value:
+                raise serializers.ValidationError(
+                    f"Le champ '{field}' ne peut pas être modifié. Créez un nouveau IngredientPrice pour un nouveau tuple unique.")
+        # Suite : appliquer les modifs “soft”
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()   # Toute la logique d’archivage est dans le modèle !
+
+        return instance
 
 class IngredientPriceHistorySerializer(serializers.ModelSerializer):
     """ Gère la validation et la sérialisation de l'historique des prix d'ingrédients. """

@@ -12,12 +12,38 @@ from django.db.utils import IntegrityError
 from django.db.models import ProtectedError
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
+from django_filters import rest_framework as filters
 from django.shortcuts import get_object_or_404
 from .utils_pure import normalize_case
 from .utils import *
 from .models import *
 from .serializers import *
 from .mixins import GuestUserRecipeMixin
+
+class RecipeFilter(filters.FilterSet):
+    """
+    FilterSet personnalisé pour le modèle Recipe, permettant de filtrer
+    sur le champ tags (ArrayField). Supporte la recherche de plusieurs tags à la fois
+    via un paramètre de requête séparé par des virgules (ex: ?tags=vegan,healthy).
+
+    L'intérêt est de pouvoir utiliser l'API pour retourner toutes les recettes qui
+    contiennent tous les tags recherchés.
+    """
+    tags = filters.CharFilter(method='filter_tags')
+
+    class Meta:
+        model = Recipe
+        fields = ['recipe_type', 'chef_name', 'categories', 'labels', 'pan', 'parent_recipe', 'tags']
+
+    def filter_tags(self, queryset, name, value):
+        """
+        Permet de filtrer les recettes qui contiennent TOUS les tags donnés dans le paramètre.
+        Exemple : ?tags=vegan,healthy retournera les recettes qui ont au moins 'vegan' ET 'healthy' dans leur liste tags.
+        """
+        tags_list = [tag.strip() for tag in value.split(',') if tag.strip()]
+        for tag in tags_list:
+            queryset = queryset.filter(**{f"{name}__contains": [tag]})
+        return queryset
 
 class StoreViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     """ API CRUD pour gérer les magasins. """
@@ -56,7 +82,7 @@ class IngredientPriceViewSet(viewsets.ModelViewSet):
     serializer_class = IngredientPriceSerializer
 
     def create(self, request, *args, **kwargs):
-        """ Vérifie l'existence de l'ingrédient, gère l'historique et crée un prix d'ingrédient. """
+        """ Vérifie l'existence de l'ingrédient, et refuse la création si le tuple unique existe déjà. """
         ingredient_slug = request.data.get("ingredient")
 
         # Vérifier si l'ingrédient existe et récupérer son objet
@@ -77,44 +103,14 @@ class IngredientPriceViewSet(viewsets.ModelViewSet):
         brand_name = validated_data.get("brand_name", "")
         quantity = validated_data.get("quantity")
         unit = validated_data.get("unit")
-        new_price = validated_data.get("price")
-        new_is_promo = validated_data.get("is_promo", False)
-        new_promo_end_date = validated_data.get("promotion_end_date")
 
-        # Vérifier si un `IngredientPrice` existe déjà pour cet ingrédientPrice (combinaison unique)
-        existing_price = IngredientPrice.objects.filter(ingredient=ingredient, store=store, brand_name=brand_name, 
-                                                        quantity=quantity, unit=unit).first()
-
-        if existing_price:  # L’objet existait déjà → Vérifier s’il faut l’archiver
-            # Si le prix ou is_promo change, l'archivage est géré par `save()`
-            if existing_price.price != new_price or existing_price.is_promo != new_is_promo:
-                # Archiver l'ancien prix
-                IngredientPriceHistory.objects.create(ingredient=existing_price.ingredient, store=existing_price.store, 
-                                                      brand_name=existing_price.brand_name, quantity=existing_price.quantity, unit=existing_price.unit, date=existing_price.date, 
-                                                      price=existing_price.price, is_promo=existing_price.is_promo, promotion_end_date=existing_price.promotion_end_date)
-               
-                # Supprimer l'ancien prix pour éviter `UniqueConstraint`
-                existing_price.delete()  
-
-                # Créer un nouveau IngredientPrice
-                request.data["ingredient"] = ingredient.ingredient_name
-                return super().create(request, *args, **kwargs)
-
-            # Si seule la `promotion_end_date` change, on met à jour directement
-            elif existing_price.promotion_end_date != new_promo_end_date:
-                existing_price.promotion_end_date = new_promo_end_date
-                existing_price.save()
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            
-            else:
-                return Response({"non_field_errors": ["Un prix identique existe déjà."]}, status=status.HTTP_400_BAD_REQUEST)
+        # Vérifie si un IngredientPrice existe déjà pour ce tuple 
+        exists = IngredientPrice.objects.filter(ingredient=ingredient, store=store, brand_name=brand_name, quantity=quantity, unit=unit).exists()
+        if exists:
+            return Response(
+                {"error": "Un prix existe déjà pour ce tuple. Veuillez le modifier plutôt que d’en créer un nouveau."}, status=status.HTTP_400_BAD_REQUEST)
             
         return super().create(request, *args, **kwargs)
-
-    def update(self, request, *args, **kwargs):
-        """ Désactive la mise à jour des prix pour conserver l'historique. """
-        return Response({"error": "La mise à jour des prix est interdite. Créez un nouvel enregistrement."},
-                        status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 class IngredientPriceHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     """ API en lecture seule pour l'historique des prix d'ingrédients. """
@@ -137,6 +133,7 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     serializer_class = RecipeSerializer
     permission_classes = [CanSoftHideRecipeOrIsOwnerOrGuest]
 
+    filterset_class = RecipeFilter
     filter_backends = [SearchFilter, DjangoFilterBackend, OrderingFilter]
     search_fields = ["recipe_name", "chef_name", "context_name", "tags"]
     filterset_fields = ["recipe_type", "chef_name", "categories", "labels", "pan", "parent_recipe", "tags"]

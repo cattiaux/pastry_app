@@ -44,6 +44,24 @@ class CategoryAdminForm(forms.ModelForm):
         model = Category
         fields = "__all__"
 
+class IngredientAdminForm(forms.ModelForm):
+    """
+    Formulaire admin personnalisé pour Ingredient.
+
+    Affiche une erreur claire sur le champ 'ingredient_name' si le nom existe déjà,
+    au lieu d'une page d'erreur générale. Améliore l'UX admin pour la contrainte unique.
+    """
+    class Meta:
+        model = Ingredient
+        fields = '__all__'
+
+    def clean_ingredient_name(self):
+        # On normalise comme en prod
+        value = self.cleaned_data["ingredient_name"].strip().lower()
+        if Ingredient.objects.exclude(pk=self.instance.pk).filter(ingredient_name__iexact=value).exists():
+            raise ValidationError("Un ingrédient avec ce nom existe déjà.")
+        return value
+
 @admin.register(IngredientPrice)
 class IngredientPriceAdmin(admin.ModelAdmin):
     list_display = ("id", "ingredient", "brand_name", "store", "quantity", "unit", "price", "is_promo", "promotion_end_date", "date")
@@ -193,12 +211,13 @@ prices_count.short_description = "Nb Prix"
 
 class IngredientPriceInline(admin.TabularInline):
     model = IngredientPrice
-    extra = 1  # number of extra forms to display
+    extra = 0  # number of extra forms to display
     min_num = 0
     show_change_link = True  # pour avoir un lien direct vers la fiche prix si besoin
 
 @admin.register(Ingredient)
 class IngredientAdmin(admin.ModelAdmin):
+    form = IngredientAdminForm
     inlines = [IngredientPriceInline]
     list_display = ('ingredient_name', 'id', categories_display, labels_display, 'visibility', 'is_default', prices_count)
     search_fields = ('ingredient_name',)

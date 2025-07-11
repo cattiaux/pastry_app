@@ -51,7 +51,7 @@ def category():
 @pytest.fixture
 def label():
     """Crée un label valide pour les tests."""
-    return Label.objects.create(label_name="Bio", label_type="recipe")
+    return Label.objects.create(label_name="Bio", label_type="both")
 
 @pytest.fixture
 def recipe():
@@ -64,7 +64,6 @@ def test_create_ingredient(api_client, base_url):
     ingredient_name = "Noisette"
     data = {"ingredient_name": ingredient_name}
     response = api_client.post(url, data=json.dumps(data), content_type="application/json")
-
     assert response.status_code == status.HTTP_201_CREATED
     assert Ingredient.objects.filter(ingredient_name=normalize_case(ingredient_name)).exists()
 
@@ -163,7 +162,7 @@ def test_update_ingredient_remove_label(api_client, base_url, setup_ingredient, 
     setup_ingredient.labels.add(label)  # Ajouter le label initialement
     url = base_url(model_name) + f"{setup_ingredient.id}/"
     data = {"labels": []}  # On vide la liste
-
+ 
     response = api_client.patch(url, data=json.dumps(data), content_type="application/json")
     assert response.status_code == status.HTTP_200_OK
     setup_ingredient.refresh_from_db()

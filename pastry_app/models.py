@@ -585,7 +585,7 @@ class Ingredient(models.Model):
     """
     # Note : `unique=True` dans le field 'label_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
     # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
-    ingredient_name = models.CharField(max_length=200) #unique=True à activer en production
+    ingredient_name = models.CharField(max_length=200, unique=True)
     categories = models.ManyToManyField(Category, related_name='ingredients', blank=True)
     labels = models.ManyToManyField(Label, related_name='ingredients', blank=True)
 
@@ -707,15 +707,14 @@ class IngredientPrice(models.Model):
     quantity = models.FloatField(validators=[MinValueValidator(0)])       # Quantité
     unit = models.CharField(max_length=50, choices=UNIT_CHOICES)          # Unité de mesure
     price = models.FloatField(validators=[MinValueValidator(0)])          # Prix normal
-    date = models.DateField(null=True, blank=True, default=now)    # Date d'enregistrement du prix
+    date = models.DateField(null=True, blank=True, default=now)           # Date d'enregistrement du prix
 
     is_promo = models.BooleanField(default=False)  # Indique si c'est un prix promo
     promotion_end_date = models.DateField(null=True, blank=True)  # Date de fin de promo, Facultatif
 
     class Meta:
         constraints = [UniqueConstraint(
-                fields=["ingredient", "store", "brand_name", "quantity", "unit"],
-                name="unique_ingredient_price")]
+                fields=["ingredient", "store", "brand_name", "quantity", "unit"], name="unique_ingredient_price")]
 
     def __str__(self):
         """ Affichage clair du prix de l’ingrédient """
@@ -729,22 +728,6 @@ class IngredientPrice(models.Model):
         
         if self.unit:  # Vérifier que `unit` n'est pas vide
             self.unit = normalize_case(self.unit)  # Appliquer la normalisation
-
-    def delete(self, *args, **kwargs):
-        """ Archive le prix dans IngredientPriceHistory avant suppression. """
-        IngredientPriceHistory.objects.create(
-            ingredient=self.ingredient,
-            ingredient_name=self.ingredient.ingredient_name if self.ingredient else None,  # Sauvegarde le nom
-            store=self.store,
-            brand_name=self.brand_name,
-            quantity=self.quantity,
-            unit=self.unit,
-            price=self.price,
-            is_promo=self.is_promo,
-            promotion_end_date=self.promotion_end_date,
-            date=self.date
-        )
-        super().delete(*args, **kwargs)  # Supprime l’entrée après archivage
 
     def clean(self):
         """ Validation des contraintes métier avant sauvegarde """
@@ -792,45 +775,76 @@ class IngredientPrice(models.Model):
         if self.promotion_end_date and self.promotion_end_date < now().date():
             raise ValidationError("La date de fin de promo ne peut pas être dans le passé.")
 
-        # Vérifier que si `is_promo=True`, le prix promo est inférieur au dernier prix normal
+        # Vérifier que si `is_promo=True`, le prix promo n'est pas supérieur au dernier prix normal
         if self.is_promo:
             last_price = (
                 IngredientPrice.objects.filter(ingredient=self.ingredient, store=self.store)
                 .exclude(is_promo=True)  # Exclure les anciens prix promo
                 .order_by("-date").first())
-            if last_price and self.price >= last_price.price:
+            if last_price and self.price > last_price.price:
                 raise ValidationError(f"Le prix promo ({self.price}€) doit être inférieur au dernier prix normal ({last_price.price}€).")
 
+        # Vérifier l'unicité du tuple (ingredient, store, brand_name, quantity, unit) : Sert à afficher un message d'erreur plus UX-friendly
+        if IngredientPrice.objects.exclude(pk=self.pk).filter(ingredient=self.ingredient, store=self.store, brand_name=self.brand_name, 
+                                                              quantity=self.quantity, unit=self.unit).exists():
+            raise ValidationError("Un prix existe déjà pour ce tuple. Pas de doublons autorisés.")
+    
     def save(self, *args, **kwargs):
-        """ Archive l'ancien prix dans `IngredientPriceHistory` avant modification. """
-        self.clean()  # Valide l’objet avant sauvegarde
+        """
+        Archivage de l'ancien prix **seulement si** :
+          - update (pas create)
+          - le prix change (pas un update sur date/is_promo/promotion_end_date uniquement)
+        Respecte la logique métier décrite dans le serializer DRF :
+            - Si la date modifiée est plus récente ou égale à la ligne existante, on archive l'ancienne.
+            - Si la date modifiée est antérieure à l'existant, on archive la nouvelle valeur (rétroactif).
+        """
+        is_create = self.pk is None
 
-        if self.pk:
-            old_instance = IngredientPrice.objects.get(pk=self.pk)
+        self.full_clean()  # Valide l’objet avant sauvegarde
 
-            # Vérifier si on modifie bien le même tuple (ingredient, store, brand_name, quantity, unit)
-            if (
-                old_instance.ingredient == self.ingredient and
-                old_instance.store == self.store and
-                old_instance.brand_name == self.brand_name and
-                old_instance.quantity == self.quantity and
-                old_instance.unit == self.unit
-            ):
+        if not is_create:
+            # L’objet existe déjà, donc update potentiel
+            old = IngredientPrice.objects.get(pk=self.pk)
 
-                # Vérifier si le prix ou l'état promo a changé (mais PAS promotion_end_date seule)
-                if old_instance.price != self.price or old_instance.is_promo != self.is_promo:
-                    # Vérifier qu'on n'archive pas déjà cet enregistrement pour éviter les doublons
-                    if not IngredientPriceHistory.objects.filter(ingredient=old_instance.ingredient, store=old_instance.store, brand_name=old_instance.brand_name, 
-                                                                 quantity=old_instance.quantity, unit=old_instance.unit, price=old_instance.price, is_promo=old_instance.is_promo, 
-                                                                 promotion_end_date=old_instance.promotion_end_date, date=old_instance.date
-                                                                 ).exists():
-                        # Archiver l'ancien prix avec les anciennes valeurs
-                        IngredientPriceHistory.objects.create(ingredient=self.ingredient, store=self.store, brand_name=self.brand_name, 
-                                                              quantity=self.quantity, unit=self.unit, price=old_instance.price, is_promo=old_instance.is_promo, 
-                                                              promotion_end_date=old_instance.promotion_end_date, date=old_instance.date)
+            # Check du tuple unique (interdiction de le modifier)
+            for field in ["ingredient", "store", "brand_name", "quantity", "unit"]:
+                if getattr(old, field) != getattr(self, field):
+                    raise ValidationError(f"Modification du champ '{field}' interdite après création. Veuillez plutôt créer un nouvel objet")
 
-        # Met à jour la date du prix actif pour marquer la nouvelle modification
-        self.date = now().date()
+            prix_change = (old.price != self.price)
+
+            # Si changement de prix :
+            if prix_change:
+                # Si la nouvelle date est plus récente ou égale, archive l'ancien prix
+                if self.date is None or old.date is None or self.date >= old.date:
+                    # Archive l'ancien avant update
+                    IngredientPriceHistory.objects.create(
+                        ingredient=old.ingredient,
+                        store=old.store,
+                        brand_name=old.brand_name,
+                        quantity=old.quantity,
+                        unit=old.unit,
+                        price=old.price,
+                        is_promo=old.is_promo,
+                        promotion_end_date=old.promotion_end_date,
+                        date=old.date,
+                    )
+                else:
+                    # Si la date est antérieure (update rétroactif), on archive la nouvelle donnée,
+                    # mais on ne modifie pas la ligne existante
+                    IngredientPriceHistory.objects.create(
+                        ingredient=self.ingredient,
+                        store=self.store,
+                        brand_name=self.brand_name,
+                        quantity=self.quantity,
+                        unit=self.unit,
+                        price=self.price,
+                        is_promo=self.is_promo,
+                        promotion_end_date=self.promotion_end_date,
+                        date=self.date,
+                    )
+                    # On ne modifie pas la ligne existante
+                    return  # stoppe le save
 
         super().save(*args, **kwargs)
 
