@@ -12,7 +12,7 @@ User = get_user_model()
 
 @pytest.fixture
 def pan():
-    return Pan.objects.create(pan_name="Cercle 18cm", pan_type="ROUND", diameter=18, height=4.5, units_in_mold=6)
+    return Pan.objects.create(pan_name="Cercle 18cm", pan_type="ROUND", diameter=18, height=4.5, units_in_mold=1)
 
 @pytest.fixture
 def recipe(pan):
