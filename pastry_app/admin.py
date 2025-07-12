@@ -74,7 +74,7 @@ class IngredientPriceAdmin(admin.ModelAdmin):
 
 @admin.register(IngredientPriceHistory)
 class IngredientPriceHistoryAdmin(admin.ModelAdmin):
-    list_display = ("id", "ingredient", "brand_name", "store", "quantity", "unit", "price", "is_promo", "promotion_end_date", "date")
+    list_display = ("id", "ingredient_name", "brand_name", "store", "quantity", "unit", "price", "is_promo", "promotion_end_date", "date")
     list_filter = ("brand_name", "is_promo", StoreCityListFilter, StoreNameListFilter)
     search_fields = ("ingredient__ingredient_name", "brand_name", "store__store_name")
     date_hierarchy = 'date'

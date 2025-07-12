@@ -206,7 +206,7 @@ class IngredientPriceHistorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = IngredientPriceHistory
-        fields = ['id', 'ingredient', 'brand_name', 'store', 'date', 'quantity', 'unit', 'price', "is_promo", "promotion_end_date"]
+        fields = ['id', 'ingredient', 'ingredient_name', 'brand_name', 'store', 'date', 'quantity', 'unit', 'price', "is_promo", "promotion_end_date"]
         read_only_fields = fields  # Empêche toute modification via l'API
     
 class CategorySerializer(serializers.ModelSerializer):

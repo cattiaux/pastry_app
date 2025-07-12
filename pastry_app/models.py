@@ -870,7 +870,8 @@ class IngredientPriceHistory(models.Model):
         """ Affichage clair du prix de l’ingrédient """
         promo_text = " (Promo)" if self.is_promo else ""
         store_name = str(self.store) if self.store else "Non renseigné"
-        return f"{self.ingredient.ingredient_name} - {self.brand_name} @ {store_name} ({self.quantity}{self.unit} pour {self.price}€{promo_text})"
+        ingredient_display = self.ingredient.ingredient_name if self.ingredient else self.ingredient_name or "Ingrédient supprimé"
+        return f"{ingredient_display} - {self.brand_name} @ {store_name} ({self.quantity}{self.unit} pour {self.price}€{promo_text})"
 
     def __init__(self, *args, **kwargs):
         """ Normalise l'unité de mesure immédiatement après l'instanciation. """
@@ -931,7 +932,7 @@ class IngredientPriceHistory(models.Model):
                 IngredientPriceHistory.objects.filter(ingredient=self.ingredient, store=self.store)
                 .exclude(is_promo=True)  # Exclure les anciens prix promo
                 .order_by("-date").first())
-            if last_price and self.price >= last_price.price:
+            if last_price and self.price > last_price.price:
                 raise ValidationError(f"Le prix promo ({self.price}€) doit être inférieur au dernier prix normal ({last_price.price}€).")
 
     def save(self, *args, **kwargs):
