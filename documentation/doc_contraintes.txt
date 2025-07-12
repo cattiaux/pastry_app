@@ -276,17 +276,22 @@ Synthèse des Contraintes pour le Modèle IngredientPrice
 
 
         CONTRAINTES	                                                                                 TEST CORRESPONDANT
-Création d’un IngredientPrice valide	                                                        -> test_create_ingredientprice_api
-Vérifie que ingredient, store, price, quantity, unit sont obligatoires	                        -> test_required_fields_ingredientprice_db, test_required_fields_ingredientprice_api
-Vérifie que unit est bien dans UNIT_CHOICES et normalisé	                                    -> test_invalid_choice_fields_ingredientprice_db, test_invalid_choice_fields_ingredientprice_api, test_normalized_fields_ingredientprice_db, test_normalized_fields_ingredientprice_api
-Vérifie que brand_name et unit sont bien normalisés	                                            -> test_normalized_fields_ingredientprice_db, test_normalized_fields_ingredientprice_api
-Vérifie que price et quantity doivent être strictement positifs	                                -> test_positive_values_ingredientprice_db, test_positive_values_ingredientprice_api
-Vérifie qu’un IngredientPrice est unique (même ingredient, store, brand_name, quantity, unit)	-> test_unique_constraint_ingredientprice_db, test_unique_together_ingredientprice_api
-Vérifie qu’on ne peut pas modifier un IngredientPrice	                                        -> test_update_ingredientprice_api_forbidden
-Vérifie que la mise à jour d’un prix crée un nouvel IngredientPrice et archive l’ancien	        -> test_price_update_creates_new_ingredientprice
-Vérifie qu’un IngredientPrice peut être supprimé	                                            -> test_delete_ingredientprice_api
-Vérifie qu’on ne peut pas supprimer un IngredientPrice utilisé dans IngredientPriceHistory	    -> test_delete_ingredientprice_api_forbidden
-Vérifie que la suppression d’un Ingredient supprime bien ses prix actuels                       -> test_ingredient_deletion_removes_prices
+Création d’un IngredientPrice valide	                                                -> test_create_ingredientprice
+Création doublon interdit (unicité)                                                     -> test_create_duplicate_ingredientprice, test_unique_ingredientprice_db, test_unique_together_ingredientprice_api
+IngredientPrice peut être supprimé et sans archivage	                                -> test_delete_ingredientprice_api, test_api_delete_no_archive, test_no_archive_on_delete
+Ingredient, store, price, quantity, unit sont obligatoires	                            -> test_required_fields_ingredientprice_db, test_required_fields_ingredientprice_api
+Unit est bien dans UNIT_CHOICES et normalisé	                                        -> test_invalid_choice_fields_ingredientprice_db, test_invalid_choice_fields_ingredientprice_api, test_unit_must_be_valid_db, test_normalized_fields_ingredientprice_db, test_normalized_fields_ingredientprice_api
+Brand_name et unit sont bien normalisés	                                                -> test_normalized_fields_ingredientprice_db, test_normalized_fields_ingredientprice_api
+Brand_name a une longueur minimale                                                      -> test_min_length_ingredientprice_db, test_min_length_fields_ingredientprice_api
+Price et quantity doivent être strictement positifs	                                    -> test_positive_values_ingredientprice_db, test_invalid_number_fields_ingredientprice_api
+IngredientPrice est unique (même ingredient, store, brand_name, quantity, unit)         -> test_unique_constraint_ingredientprice_db, test_unique_together_ingredientprice_api
+Impossibilité de modifier le tuple unique (ingr, store, brand, quantity, unit)          -> test_patch_tuple_unique_field_forbidden, test_update_tuple_unique_forbidden
+Mise à jour du prix (date plus récente) archive l’ancienne valeur                       -> test_patch_price_api_archives_old_version, test_price_update_creates_history_when_newer
+Mise à jour rétroactive du prix (date plus ancienne) archive la nouvelle valeur         -> test_patch_price_api_archives_new_value_if_older, test_price_update_archives_new_value_when_older
+Mise à jour de certains champs ("soft fields") sans archivage                           -> test_patch_soft_fields_ok
+Suppression d’un Ingredient supprime bien ses prix actuels                              -> test_ingredient_deletion_removes_prices
+Promotion : cohérence is_promo/promotion_end_date                                       -> test_promotion_requires_consistency_api, test_promotion_requires_consistency_db, test_promotion_end_date_constraints_db
+Prix promo ne doit pas être supérieur au prix normal                                    -> test_promo_price_must_be_lower_than_normal_price_db
 
 Contraintes Métier:
 1. Obligations des Champs
@@ -297,23 +302,32 @@ Contraintes Métier:
     ◦ price et quantity doivent être strictement positifs.
     ◦ unit doit appartenir à UNIT_CHOICES et est normalisé ("Kg" → "kg").
 3. Unicité
-    ◦ Un IngredientPrice est unique sur (ingredient, store, brand_name, quantity, unit).
-    ◦ Si le prix change pour un même ingrédient, l’ancien est archivé dans IngredientPriceHistory.
-4. Mise à Jour
-    ◦ Pas d’update d’un IngredientPrice (nouvel enregistrement à chaque changement).
-    ◦ Seule la modification de promotion_end_date est autorisée.
-5. Suppression Sécurisée
-    ◦ Un IngredientPrice supprimé est automatiquement archivé dans IngredientPriceHistory.
+    ◦ Un IngredientPrice est unique sur (ingredient, store, brand_name, quantity, unit) : 
+    il n’est pas possible de créer deux prix différents pour la même combinaison.
+    ◦ L’unicité est garantie en base de données (UniqueConstraint) et via validation métier dans le modèle.
+4. Archivage et Historique
+    ◦ Tout changement de prix (via update) est historisé automatiquement dans IngredientPriceHistory, selon la logique suivante :
+        - Si la date du nouvel enregistrement est plus récente ou égale à l'existant, l'ancien prix est archivé avant la modification.
+        - Si la date est antérieure à la date courante de l'objet, la nouvelle valeur (du passé) est archivée sans modifier la version active.
+    ◦ Les modifications des champs "soft" (is_promo, promotion_end_date, date) ne créent pas d’archive : 
+    seul le prix (et rétroactivité date) déclenchent l’archivage.
+5. Règle métier forte : immuabilité du tuple unique
+    ◦ Il est interdit de modifier un champ du tuple unique (ingredient, store, brand_name, quantity, unit) après création.
+    ◦ Toute tentative de modification de l’un de ces champs lève une ValidationError.
+    ◦ Pour modifier ces champs, il faut créer une nouvelle entrée puis supprimer l’ancienne.
+6. Suppression
+    ◦ La suppression d’un IngredientPrice est définitive (pas d’archivage à la suppression).
+    ◦ L’historique métier est basé sur l’évolution des prix (update), pas sur la suppression.
 
 Contraintes Techniques:
 1. Type de Données
-    ◦ price et quantity sont stockés en DecimalField, mais acceptent des int (convertis en float).
+    ◦ price et quantity sont stockés en FloatField (ou DecimalField si précision requise); ils acceptent des entiers en saisie (cast auto).
     ◦ unit est un CharField avec des choix limités (UNIT_CHOICES).
 2. Indexation
     ◦ Index sur (ingredient, store, brand_name, quantity, unit) pour optimiser les requêtes.
     ◦ Index sur date pour les recherches temporelles.
-3. Gestion des suppressions
-    on_delete=models.CASCADE sur l'ingrédient → Supprime les prix actifs avec l’ingrédient.
+3. Gestion des suppressions liées
+    on_delete=models.CASCADE sur l'ingrédient → supprimer un ingrédient entraîne la suppression de tous ses prix actifs.
 
 
 
