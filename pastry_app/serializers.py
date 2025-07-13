@@ -621,7 +621,7 @@ class RecipeSerializer(serializers.ModelSerializer):
     # Champs simples
     recipe_name = serializers.CharField()
     chef_name = serializers.CharField()
-    context_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    context_name = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
     source = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     trick = serializers.CharField(required=False, allow_blank=True, allow_null=True)

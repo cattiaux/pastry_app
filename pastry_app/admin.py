@@ -1,5 +1,6 @@
 from django.contrib import admin, messages
 from django import forms
+from django.forms.models import BaseInlineFormSet
 from django.shortcuts import redirect
 from .models import *
 
@@ -223,6 +224,9 @@ class IngredientAdmin(admin.ModelAdmin):
     search_fields = ('ingredient_name',)
     list_filter = ('categories','labels', 'visibility')
 
+    class Media:
+        css = {'all': ('pastry_app/admin/required_fields.css',)}
+
     # Pour mieux ordonner les champs et regrouper les sections
     fieldsets = (
         ('Informations principales', {
@@ -247,21 +251,61 @@ class IngredientAdmin(admin.ModelAdmin):
 
 class RecipeIngredientInline(admin.TabularInline):
     model = RecipeIngredient
-    extra = 1
+    extra = 0
 
 class RecipeStepInline(admin.TabularInline):
     model = RecipeStep
-    extra = 1
+    extra = 0
 
 class SubRecipeInline(admin.TabularInline):
     model = SubRecipe
     fk_name = 'recipe'
-    extra = 1
+    extra = 0
 
 class RecipeAdmin(admin.ModelAdmin):
     inlines = [RecipeIngredientInline, RecipeStepInline, SubRecipeInline]
-    list_display = ('recipe_name', 'id', 'chef_name')
+    list_display = ('recipe_name', 'id', 'chef_name', 'context_name', 'parent_recipe', 'tags', 'visibility', 'is_default')
+    list_filter = ('recipe_type',)
     exclude = ('content_type', 'object_id',)
+
+    class Media:
+        css = {'all': ('pastry_app/admin/required_fields.css',)}
+        js = ('pastry_app/admin/recipe_admin.js',)
+
+    fieldsets = (
+        ('Caractéristiques principales de la recette', {
+            'fields': ('recipe_type', 'recipe_name', 'chef_name', 'parent_recipe', 'servings_min', 'servings_max', 'pan_quantity')
+        }),
+        ('Contenu', {
+            'fields': ('description', 'trick', 'image', 'adaptation_note', 'tags')
+        }),
+        ('Source de la recette', {
+            'fields': ('context_name', 'source')
+        }),
+        ('Gestion / Droits', {
+            'fields': ('visibility', 'is_default', 'user', 'guest_id'),
+            'description': "Champs relatifs à la visibilité, aux droits, ou à la gestion multi-utilisateur."
+        }),
+    )
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        recipe = form.instance
+        # On vérifie la présence d'au moins un ingrédient ou une sous-recette
+        has_ingredients = recipe.recipe_ingredients.exists()
+        has_subrecipes = recipe.main_recipes.exists()
+        has_steps = recipe.steps.exists()
+        if not (has_ingredients or has_subrecipes):
+            self.message_user(
+                request, "❌ Une recette doit contenir au moins un ingrédient ou une sous-recette.", level="error")
+            # Supprimer la recette créée pour éviter la base incohérente
+            recipe.delete()
+            return
+        if not (has_steps or has_subrecipes):
+            self.message_user(
+                request, "❌ Une recette doit contenir au moins une étape ou une sous-recette.", level="error")
+            recipe.delete()
+            return
 
 class RecipeIngredientAdmin(admin.ModelAdmin):
     list_display = ('recipe_name', 'ingredient_name', 'id')
@@ -274,13 +318,15 @@ class RecipeIngredientAdmin(admin.ModelAdmin):
         return obj.ingredient.ingredient_name
     ingredient_name.short_description = 'Ingredient Name'  # Sets column name in admin site
 
+@admin.register(RecipeStep)
 class RecipeStepAdmin(admin.ModelAdmin):
-    list_display = ('recipe_name', 'id')
+    list_display = ('recipe_name', 'id', 'step_number')
 
     def recipe_name(self, obj):
         return obj.recipe.recipe_name
     recipe_name.short_description = 'Recipe Name'
 
+# @admin.register(SubRecipe)
 class SubRecipeAdmin(admin.ModelAdmin):
     list_display = ('recipe_name', 'subrecipe_name', 'id')
 

@@ -691,6 +691,15 @@ Contraintes Techniques :
 4. Suppression protégée
     ◦ Impossible de supprimer une recette si elle est utilisée comme sous-recette (on_delete=PROTECT sur SubRecipe)
 
+# Validation des Recettes “non-vides” (au moins un ingrédient ou une sous-recette) :
+Contexte : Une recette doit toujours contenir au moins un ingrédient OU une sous-recette (et au moins une étape).
+Cette contrainte est essentielle pour garantir la cohérence et l’utilité de chaque recette, 
+et pour éviter les recettes “vides” (non exploitables en front ou par l’utilisateur).
+
+NB : Pour garantir la cohérence métier, la création ou la modification d’une recette doit TOUJOURS se faire via l’API (serializer) ou via l’admin Django configuré (avec validation post-inlines).
+En shell/ORM pur, la contrainte “au moins un ingrédient ou une sous-recette” ne peut pas être vérifiée lors de la création (limitation Django),
+donc il est impératif de compléter les liens juste après le save, ou d’utiliser les outils métiers prévus (API/admin).
+
 
 
 ### Gestion des Endpoints Imbriqués pour les Sous-éléments de Recette

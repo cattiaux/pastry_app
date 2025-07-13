@@ -334,7 +334,7 @@ class Recipe(models.Model):
     parent_recipe = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="versions")
     recipe_name = models.CharField(max_length=200)
     chef_name = models.CharField(max_length=100, null=True, blank=True)
-    context_name = models.CharField(max_length=100, null=True, blank=True)
+    context_name = models.CharField(max_length=100, null=True, blank=True, default="")
     source = models.CharField(max_length=255, null=True, blank=True)
     recipe_type = models.CharField(max_length=20, choices=RECIPE_TYPE_CHOICES, default="BASE")
     servings_min = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
@@ -368,8 +368,9 @@ class Recipe(models.Model):
     class Meta:
         ordering = ['recipe_name', 'chef_name']
         constraints = [
-            models.UniqueConstraint(fields=["recipe_name", "chef_name"], name="unique_recipe_chef"),
-            models.UniqueConstraint(fields=["recipe_name", "chef_name", "context_name"], name="unique_recipe_per_context")]
+            models.UniqueConstraint(fields=["recipe_name", "chef_name", "context_name"], name="unique_recipe_per_context"),
+            # models.UniqueConstraint(fields=["recipe_name", "chef_name"], name="unique_recipe_chef")
+            ]
 
     def __str__(self):
         base = f"{self.recipe_name} ({self.chef_name})"
@@ -456,6 +457,28 @@ class Recipe(models.Model):
             self.servings_max = self.servings_min
         if self.servings_max and not self.servings_min:
             self.servings_min = self.servings_max
+
+        # --- Unicité nom/chef/context vide ---
+        # Empêcher les doublons sur (nom, chef) quand context_name est NULL ou vide
+        normalized_context = self.context_name or ""
+        if normalized_context == "":
+            doublon = Recipe.objects.exclude(pk=self.pk).filter(
+                recipe_name__iexact=self.recipe_name, chef_name__iexact=self.chef_name,
+            ).filter(models.Q(context_name__isnull=True) | models.Q(context_name="")).exists()
+            if doublon:
+                raise ValidationError("Il existe déjà une recette de ce nom et chef sans contexte. Ajoutez un contexte pour différencier.")
+
+        # Si une parent_recipe est renseignée, le type doit être VARIATION
+        if self.parent_recipe and self.recipe_type != "VARIATION":
+            raise ValidationError("Une recette avec un parent doit être de type VARIATION.")
+
+        # Si le type est VARIATION, il faut une parent_recipe
+        if self.recipe_type == "VARIATION" and not self.parent_recipe:
+            raise ValidationError("Une recette de type VARIATION doit avoir une parent_recipe.")
+
+        # Note adaptation que si il existe un parent_recipe
+        if self.adaptation_note and not self.parent_recipe:
+            raise ValidationError({"adaptation_note": "Ce champ n'est permis que pour une adaptation (parent_recipe doit être défini)."})
 
         # Anti boucle directe
         if self.parent_recipe and self.parent_recipe == self:

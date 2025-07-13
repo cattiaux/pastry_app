@@ -51,7 +51,7 @@ def test_unique_constraint_recipe_db(recipe, pan):
     with pytest.raises(Exception) as exc_info:
         Recipe.objects.create(recipe_name=recipe.recipe_name, chef_name=recipe.chef_name, recipe_type=recipe.recipe_type, 
                               context_name=recipe.context_name, source=recipe.source, servings_min=6, servings_max=8, pan=pan)
-    assert "Recipe with this Recipe name and Chef name already exists." in str(exc_info.value)
+    assert "Il existe déjà une recette de ce nom et chef sans contexte." in str(exc_info.value)
 
 @pytest.mark.parametrize("field_name, raw_value", [("recipe_name", "  TARTE citron  "), 
                                                    ("chef_name", "  cédric GROLET "), 
@@ -99,13 +99,15 @@ def test_servings_min_max_coherence_recipe_db(recipe, s_min, s_max, should_raise
 
 def test_parent_recipe_cannot_be_itself_db(recipe):
     recipe.parent_recipe = recipe
+    recipe.recipe_type = "VARIATION"
     with pytest.raises(ValidationError, match="sa propre version précédente"):
         recipe.full_clean()
 
 def test_cycle_detection_db(recipe):
-    child = Recipe.objects.create(recipe_name="Child", chef_name="Chef", recipe_type="BASE",
+    child = Recipe.objects.create(recipe_name="Child", chef_name="Chef", recipe_type="VARIATION",
                                   servings_min=4, servings_max=4, parent_recipe=recipe, pan=recipe.pan)
     recipe.parent_recipe = child
+    recipe.recipe_type = "VARIATION"
     with pytest.raises(ValidationError, match="Cycle détecté"):
         recipe.full_clean()
 
@@ -119,7 +121,7 @@ def test_auto_fill_servings_from_pan_db(recipe):
 
 def test_context_is_auto_filled_if_missing(recipe):
     """Vérifie que context_name est automatiquement généré à partir de parent_recipe si manquant."""
-    child = Recipe.objects.create(recipe_name="Tarte Citron revisitée", chef_name="Chef Junior", recipe_type="BASE", 
+    child = Recipe.objects.create(recipe_name="Tarte Citron revisitée", chef_name="Chef Junior", recipe_type="VARIATION", 
                                   servings_min=4, servings_max=4, parent_recipe=recipe, pan=recipe.pan)
     assert child.context_name == f"Variante de {recipe.recipe_name}"
 
@@ -170,6 +172,41 @@ def test_servings_are_scaled_by_pan_quantity(recipe):
     recipe.full_clean()
     assert recipe.servings_min == recipe.pan.units_in_mold * 3
     assert recipe.servings_max == recipe.pan.units_in_mold * 3
+
+@pytest.mark.parametrize("existing_context,new_context", [(None, ""), ("", None)])
+def test_no_duplicate_recipe_same_name_chef_no_context(existing_context, new_context, pan):
+    """Impossible de créer deux recettes même nom/chef avec context_name vide ou null."""
+    Recipe.objects.create(recipe_name="Flan", chef_name="Michalak", recipe_type="BASE", servings_min=6, servings_max=6, pan=pan, context_name=existing_context)
+    with pytest.raises(ValidationError, match="Il existe déjà une recette de ce nom et chef sans contexte"):
+        r = Recipe(recipe_name="Flan", chef_name="Michalak", recipe_type="BASE", servings_min=6, servings_max=6, pan=pan, context_name=new_context)
+        r.full_clean()
+
+@pytest.mark.parametrize("data,expected_msg", [
+    ({"recipe_type": "VARIATION", "parent_recipe": None, "adaptation_note": None}, "doit avoir une parent_recipe"),
+    ({"recipe_type": "BASE", "parent_recipe": 1, "adaptation_note": None}, "doit être de type VARIATION"),
+    ({"recipe_type": "BASE", "parent_recipe": None, "adaptation_note": "Adaptation"}, "Ce champ n'est permis que pour une adaptation"),
+])
+def test_recipe_adaptation_rules(recipe, pan, data, expected_msg):
+    """Vérifie les règles d'adaptation (VARIATION, parent_recipe, adaptation_note)."""
+    # On récupère une recette existante pour tester parent_recipe
+    parent = recipe if data.get("parent_recipe") else None
+    r = Recipe(
+        recipe_name="Recette Test", chef_name="Chef Test",
+        servings_min=1, servings_max=1, pan=pan,
+        recipe_type=data["recipe_type"],
+        parent_recipe=parent,
+        adaptation_note=data.get("adaptation_note"),
+    )
+    with pytest.raises(ValidationError, match=expected_msg):
+        r.full_clean()
+
+def test_valid_variation_with_adaptation_note(recipe, pan):
+    """VARIATION avec parent_recipe ET adaptation_note : OK."""
+    r = Recipe(recipe_name="Variante Flan", chef_name="Michalak", recipe_type="VARIATION", servings_min=3, servings_max=3, 
+               pan=pan, parent_recipe=recipe, adaptation_note="Test")
+    r.full_clean()
+    r.save()
+    assert r.id is not None
 
 # --- test pour UserRecipeVisibility ---
 
