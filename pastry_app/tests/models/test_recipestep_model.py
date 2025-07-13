@@ -67,7 +67,7 @@ def test_unique_constraint_recipestep(recipe_step):
     # Vérifier que l'erreur attendue est bien présente
     assert expected_error in error_messages, (f"Erreur attendue '{expected_error}' non trouvée dans '{error_messages}'")
 
-@pytest.mark.parametrize("field_name", ["recipe", "instruction", "step_number"])
+@pytest.mark.parametrize("field_name", ["recipe", "instruction"])
 def test_required_fields_recipestep(field_name, recipe_step):
     """ Vérifie que les champs obligatoires ne peuvent pas être vides """
     # Si le champ est un `ForeignKey` ou `IntegerField`, on ne teste que `None`
@@ -93,7 +93,7 @@ def test_step_number_must_be_strictly_increasing(recipe_step):
 def test_min_length_instruction_recipestep(instruction, recipe_step):
     """Vérifie que `instruction` doit avoir au moins 2 caractères."""
     min_length = 5
-    expected_error="Instruction must be at least 2 characters long."
+    expected_error="L'instruction doit contenir au moins 5 caractères."
     validate_constraint(RecipeStep, "instruction", "A" * (min_length - 1), expected_error, recipe=recipe_step.recipe, step_number=1)
 
 @pytest.mark.parametrize("field_name", ["trick"])
@@ -111,3 +111,34 @@ def test_step_number_auto_increment(recipe):
     step1 = RecipeStep.objects.create(recipe=recipe, step_number=1, instruction="Première étape.")
     step2 = RecipeStep.objects.create(recipe=recipe, instruction="Deuxième étape.")  # `step_number` absent
     assert step2.step_number == step1.step_number + 1  # Vérifie que step2 = 2
+
+
+
+def test_auto_increment_step_number(recipe):
+    """Si step_number est None à la création, il est auto-attribué au max+1."""
+    RecipeStep.objects.create(recipe=recipe, instruction="Étape 1")
+    step2 = RecipeStep.objects.create(recipe=recipe, instruction="Étape 2")
+    assert step2.step_number == 2
+
+def test_cannot_set_step_number_none_on_update(recipe_step):
+    """Impossible de mettre step_number à None sur un step existant."""
+    recipe_step.step_number = None
+    with pytest.raises(ValidationError, match="Impossible de vider le numéro d'étape"):
+        recipe_step.full_clean()
+
+@pytest.mark.parametrize("step_number, instruction, expected", [
+    (None, "Etape auto", True),            # auto-increment
+    (2, "Etape manuelle", True),           # manual assign, ok
+    (0, "Etape invalide", False),          # interdit < 1
+    (-1, "Etape négative", False),         # interdit < 1
+    (None, "Shrt", False),                 # instruction trop courte
+])
+def test_step_number_and_instruction_validation(recipe, step_number, instruction, expected):
+    """Test divers cas de création de RecipeStep (auto, manuel, invalides)."""
+    step = RecipeStep(recipe=recipe, step_number=step_number, instruction=instruction)
+    if expected:
+        step.full_clean()
+    else:
+        with pytest.raises(ValidationError):
+            step.full_clean()
+

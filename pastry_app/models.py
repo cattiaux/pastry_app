@@ -517,7 +517,7 @@ class Recipe(models.Model):
 
 class RecipeStep(models.Model):
     recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name="steps")
-    step_number = models.IntegerField(validators=[MinValueValidator(1)])
+    step_number = models.IntegerField(validators=[MinValueValidator(1)], null=True, blank=True)
     instruction = models.TextField(max_length=250)
     trick = models.TextField(max_length=100, null=True, blank=True)
 
@@ -548,21 +548,33 @@ class RecipeStep(models.Model):
             return  # On stoppe la validation pour éviter toute erreur
     
         # Assigner automatiquement max(step_number) + 1 dans la recette si step_number n'est pas spécifié
-        if self.step_number is None:
-            max_step = RecipeStep.objects.filter(recipe=self.recipe).aggregate(models.Max("step_number"))["step_number__max"]
+        # --- 1. Si nouvelle étape (pas de pk), auto-attribution si absent ---
+        if not self.pk and self.step_number is None:
+            qs = RecipeStep.objects.filter(recipe=recipe)
+            max_step = qs.aggregate(models.Max("step_number"))["step_number__max"]
             self.step_number = 1 if max_step is None else max_step + 1
+        # --- 2. Si update, interdire step_number vide ---
+        if self.pk and self.step_number is None:
+            raise ValidationError("Impossible de vider le numéro d'étape sur une étape existante.")
+        # --- 3. Interdire plusieurs étapes sans numéro sur une même recette ---
+        if self.step_number is None:
+            exists_other = RecipeStep.objects.filter(recipe=recipe, step_number__isnull=True).exclude(pk=self.pk).exists()
+            if exists_other:
+                raise ValidationError("Impossible d'avoir plusieurs étapes sans numéro dans une recette.")
+
         # Vérifier que le numéro d'étape est strictement supérieur à 0
         if self.step_number < 1:
             raise ValidationError("Step number must start at 1.")
         
         # Vérifie que l'instruction a une longueur minimale
         if self.instruction and len(self.instruction) < 5:
-            raise ValidationError("L'instruction doit contenir au moins 2 caractères.")
+            raise ValidationError("L'instruction doit contenir au moins 5 caractères.")
         
         # Vérifier que le `step_number` est consécutif
-        existing_steps = RecipeStep.objects.filter(recipe=self.recipe).order_by("step_number")
-        if existing_steps.exists():
-            last_step_number = existing_steps.last().step_number
+        qs = RecipeStep.objects.filter(recipe=recipe).exclude(pk=self.pk)  # Exclure soi-même pour éviter le faux positif sur update
+        if qs.exists():
+            last_step_number = qs.aggregate(models.Max("step_number"))["step_number__max"]
+            # Le nouveau doit être exactement à la suite ou égal à un existant si on fait un update
             if self.step_number > last_step_number + 1:
                 raise ValidationError("Step numbers must be consecutive.")
 

@@ -148,7 +148,10 @@ class IngredientPriceSerializer(serializers.ModelSerializer):
         2. Lors de l’update :
            - Interdit de modifier un champ du tuple unique.
         """
-        if data.get("promotion_end_date") and not data.get("is_promo"):
+        promotion_end_date = data.get("promotion_end_date", getattr(self.instance, "promotion_end_date", None))
+        is_promo = data.get("is_promo", getattr(self.instance, "is_promo", False))
+
+        if promotion_end_date and not is_promo:
             raise serializers.ValidationError("Une date de fin de promotion nécessite que `is_promo=True`.")
         
         # Permettre à `date` d'être optionnel.
@@ -522,8 +525,8 @@ class RecipeStepSerializer(serializers.ModelSerializer):
         - Vérifie que `step_number` est consécutif.
         - Vérifie qu'il n'y a pas déjà une étape avec ce numéro pour cette recette (unicité recipe/step_number).
         """
-        recipe = data.get("recipe")
-        step_number = data.get("step_number")
+        recipe = data.get("recipe", getattr(self.instance, "recipe", None))
+        step_number = data.get("step_number", getattr(self.instance, "step_number", None))
 
         if recipe and step_number is not None:
             # Unicité : interdit de dupliquer une étape
@@ -549,6 +552,13 @@ class RecipeStepSerializer(serializers.ModelSerializer):
             validated_data["step_number"] = 1 if max_step is None else max_step + 1
 
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        """ Gère la mise à jour d'un `RecipeStep` en vérifiant que `step_number` est fourni. """
+        # Si step_number est explicitement fourni (dans la requête), il ne doit pas être null
+        if "step_number" in validated_data and validated_data.get("step_number") is None:
+            raise serializers.ValidationError("Le numéro d'étape est obligatoire en modification.")
+        return super().update(instance, validated_data)
 
 class SubRecipeSerializer(serializers.ModelSerializer):
     recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), required=False)
@@ -602,8 +612,8 @@ class SubRecipeSerializer(serializers.ModelSerializer):
         1. Une recette ne peut pas être sa propre sous-recette.
         2. Le champ `recipe` ne peut pas être modifié après création.
         """
-        recipe = data.get("recipe")
-        sub_recipe = data.get("sub_recipe")
+        recipe = data.get("recipe", getattr(self.instance, "recipe", None))
+        sub_recipe = data.get("sub_recipe", getattr(self.instance, "sub_recipe", None))
 
         # Interdiction d'une recette en sous-recette d'elle-même
         if recipe and sub_recipe and recipe.id == sub_recipe.id:

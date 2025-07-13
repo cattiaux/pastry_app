@@ -44,7 +44,6 @@ def test_partial_update_recipestep(api_client, base_url, setup_recipestep):
     url = base_url(model_name)+f"{setup_recipestep.id}/"
     updated_data = {"instruction": "Mélanger doucement."}
     response = api_client.patch(url, updated_data, format="json")
-    print(response.json())
     assert response.status_code == status.HTTP_200_OK  # Vérifie que la mise à jour fonctionne
 
     # Vérifie en base que la modification a bien été enregistrée
@@ -78,3 +77,23 @@ def test_get_nonexistent_recipestep(admin_client, base_url):
     url = base_url(model_name)+f"9999/" # ID inexistant
     response = admin_client.get(url)  
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_api_update_step_number_to_existing(api_client, base_url, setup_recipe, setup_recipestep):
+    """Impossible de modifier un step_number pour avoir un doublon dans la recette (API)."""
+    # Crée un second step
+    step2 = RecipeStep.objects.create(recipe=setup_recipe, instruction="Étape 2", step_number=2)
+    url = f"{base_url(model_name)}{step2.id}/"
+    response = api_client.patch(url, {"step_number": setup_recipestep.step_number}, format="json")
+    print(response.json())
+    assert response.status_code == 400
+    assert "existe déjà pour cette recette" in str(response.data).lower()
+
+def test_api_delete_last_step_forbidden(api_client, base_url, setup_recipe):
+    """Impossible de supprimer la dernière étape d'une recette (API)."""
+    step = RecipeStep.objects.create(recipe=setup_recipe, instruction="Dernière étape")
+    url = f"{base_url(model_name)}{step.id}/"
+    resp = api_client.delete(url)
+    assert resp.status_code in (400, 409)  # selon ta gestion, à adapter
+    assert "une recette doit contenir au moins une étape." in str(resp.data).lower()
+

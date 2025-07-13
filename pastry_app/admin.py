@@ -257,6 +257,26 @@ class RecipeStepInline(admin.TabularInline):
     model = RecipeStep
     extra = 0
 
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == "instruction":
+            kwargs["widget"] = forms.Textarea(attrs={"rows": 2, "cols": 40})
+        if db_field.name == "trick":
+            kwargs["widget"] = forms.Textarea(attrs={"rows": 1, "cols": 40})
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+    
+    def get_formset(self, request, obj=None, **kwargs):
+        """ Rend le champ step_number obligatoire en modification, mais facultatif en création. """
+        formset = super().get_formset(request, obj, **kwargs)
+        original_form_init = formset.form.__init__
+        def custom_init(form_self, *a, **kw):
+            original_form_init(form_self, *a, **kw)
+            if form_self.instance.pk:
+                form_self.fields["step_number"].required = True
+            else:
+                form_self.fields["step_number"].required = False
+        formset.form.__init__ = custom_init
+        return formset
+
 class SubRecipeInline(admin.TabularInline):
     model = SubRecipe
     fk_name = 'recipe'
@@ -337,9 +357,25 @@ class RecipeIngredientAdmin(admin.ModelAdmin):
 class RecipeStepAdmin(admin.ModelAdmin):
     list_display = ('recipe_name', 'id', 'step_number')
 
+    class Media:
+        css = {'all': ('pastry_app/admin/required_fields.css',)}
+
     def recipe_name(self, obj):
         return obj.recipe.recipe_name
     recipe_name.short_description = 'Recipe Name'
+
+    def get_form(self, request, obj=None, **kwargs):
+        """ Rend le champ step_number obligatoire en modification, mais facultatif en création. """
+        form = super().get_form(request, obj, **kwargs)
+        original_init = form.__init__
+        def custom_init(form_self, *a, **kw):
+            original_init(form_self, *a, **kw)
+            if obj:  # update
+                form_self.fields["step_number"].required = True
+            else:
+                form_self.fields["step_number"].required = False
+        form.__init__ = custom_init
+        return form
 
 # @admin.register(SubRecipe)
 class SubRecipeAdmin(admin.ModelAdmin):

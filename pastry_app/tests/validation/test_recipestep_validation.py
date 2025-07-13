@@ -18,7 +18,7 @@ def recipestep(recipe):
     """ Crée un RecipeStep de test associé à une recette existante. """
     return RecipeStep.objects.create(recipe=recipe, step_number=1, instruction="Mélanger la farine et le sucre.")
 
-@pytest.mark.parametrize("field_name", ["instruction"])
+@pytest.mark.parametrize("field_name", ["recipe", "instruction"])
 def test_required_fields_recipestep_api(admin_client, base_url, field_name, recipestep):
     """ Vérifie que les champs obligatoires sont bien requis via l'API """
     expected_errors = ["This field is required.", "This field may not be null.", "This field cannot be blank.", "This field may not be blank."]
@@ -90,3 +90,27 @@ def test_step_number_must_be_strictly_increasing_api(api_client, base_url, recip
     # Tentative de création d'un RecipeStep avec un step_number non consécutif
     valid_data = {"recipe": recipestep.recipe.id, "step_number": recipestep.step_number + 5, "instruction": "Étape non consécutive."}
     validate_constraint_api(api_client, base_url, model_name, "step_number", expected_errors, **valid_data)
+
+
+
+def test_api_patch_step_number_to_null_forbidden(api_client, base_url, recipestep):
+    """On ne peut pas PATCH une étape pour rendre son step_number null."""
+    url = f"{base_url(model_name)}{recipestep.id}/"
+    response = api_client.patch(url, {"step_number": None}, format="json")
+    assert response.status_code == 400
+    assert "this field may not be null" in str(response.data).lower()
+
+@pytest.mark.parametrize("step_number, instruction, expected_status", [
+    (None, "Étape correcte", 201),          # auto-incrément
+    (1, "Étape manuelle", 201),             # ok explicite
+    (0, "Étape nulle", 400),                # interdit < 1
+    (None, "Non", 400),                     # instruction trop courte
+])
+def test_api_step_number_and_instruction(api_client, base_url, recipe, step_number, instruction, expected_status):
+    """API : test divers cas création/validation RecipeStep."""
+    url = base_url(model_name)
+    payload = {"recipe": recipe.id, "instruction": instruction}
+    if step_number is not None:
+        payload["step_number"] = step_number
+    resp = api_client.post(url, payload, format="json")
+    assert resp.status_code == expected_status

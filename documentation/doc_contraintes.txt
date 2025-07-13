@@ -379,28 +379,30 @@ Contraintes Techniques:
 Synthèse des Contraintes pour le Modèle RecipeStep
 
         CONTRAINTES	                                                                                 TEST CORRESPONDANT
-Création d’une étape valide                             -> test_create_recipestep
-step_number unique par recette                          -> test_unique_constraint_recipestep et test_unique_value_api
-step_number doit être consécutif                       	-> test_step_number_must_be_strictly_increasing et test_step_number_must_be_strictly_increasing_api
-step_number >= 1                                    	-> test_step_number_must_start_at_1 et test_step_number_must_start_at_1_api
-Auto-incrémentation de step_number	                    -> test_step_number_auto_increment et test_create_step_auto_increment_api
-instruction obligatoire	                                -> test_required_fields_recipestep et test_required_fields_recipestep_api
-instruction longueur minimale                        	-> test_min_length_instruction_recipestep et test_min_length_fields_recipestep_api
-trick est un champ optionnel	                        -> test_optional_field_recipestep et test_trick_is_optional_api
-Mise à jour d’un RecipeStep	                            -> test_recipestep_update et test_partial_update_recipestep
-Suppression d’un RecipeStep	                            -> test_recipestep_deletion et test_delete_recipestep
-Suppression interdite du dernier RecipeStep	            -> test_cannot_delete_last_recipe_step et test_cannot_delete_last_recipestep_api
-Suppression d’un RecipeStep réorganise les numéros	    -> test_deleting_step_reorders_steps
-Suppression d’un RecipeStep inexistant	                -> test_delete_nonexistent_recipestep
-Récupération d’un RecipeStep existant	                -> test_get_recipestep
-Erreur 404 si RecipeStep inexistant	                    -> test_get_nonexistent_recipestep
+Création d’une étape valide                                             -> test_create_recipestep, test_recipestep_creation
+step_number unique par recette                                          -> test_unique_constraint_recipestep, test_api_update_step_number_to_existing et test_unique_value_api
+step_number doit être consécutif                                    	-> test_step_number_must_be_strictly_increasing, test_step_number_must_be_strictly_increasing_api, test_step_number_and_instruction_validation
+step_number >= 1                                                     	-> test_step_number_must_start_at_1, test_step_number_must_start_at_1_api, test_step_number_and_instruction_validation
+Auto-incrémentation de step_number	                                    -> test_step_number_auto_increment et test_create_step_auto_increment_api, test_step_number_auto_increment
+step_number non supprimable sur un RecipeStep existant (update PATCH)   -> test_cannot_set_step_number_none_on_update, test_api_patch_step_number_to_null_forbidden
+instruction obligatoire	                                                -> test_required_fields_recipestep et test_required_fields_recipestep_api
+instruction longueur minimale                                         	-> test_min_length_instruction_recipestep et test_min_length_fields_recipestep_api
+trick est un champ optionnel	                                        -> test_optional_field_recipestep et test_trick_is_optional_api
+Mise à jour d’un RecipeStep	                                            -> test_recipestep_update, test_partial_update_recipestep
+Suppression d’un RecipeStep	                                            -> test_recipestep_deletion et test_delete_recipestep
+Suppression interdite du dernier RecipeStep	                            -> test_cannot_delete_last_recipe_step et test_cannot_delete_last_recipestep_api, test_api_delete_last_step_forbidden
+Suppression d’un RecipeStep réorganise les numéros              	    -> test_deleting_step_reorders_steps
+Suppression d’un RecipeStep inexistant	                                -> test_delete_nonexistent_recipestep
+Récupération d’un RecipeStep existant	                                -> test_get_recipestep
+Erreur 404 si RecipeStep inexistant	                                    -> test_get_nonexistent_recipestep
 
 Contraintes Métier:
 1. step_number
     ◦ Doit être unique pour une même recette.
     ◦ Doit être consécutif (ex : 1 → 2 → 3, pas 1 → 3).
     ◦ Doit être ≥ 1.
-    ◦ Si non fourni, il est auto-incrémenté.
+    ◦ Facultatif à la création : Si non fourni, il est auto-incrémenté.
+    ◦ Obligatoire en modification (PUT/PATCH, sauf PATCH où il n’est pas modifié).
 2. instruction
     ◦ Obligatoire.
     ◦ Doit avoir au moins 5 caractères.
@@ -409,24 +411,24 @@ Contraintes Métier:
 
 Contraintes Techniques:
 1. Type de Données
-    ◦ recipe : ForeignKey(Recipe) -> Lié à Recipe, suppression en cascade (on_delete=models.CASCADE)
-    ◦ step_number : IntegerField -> MinValueValidator(1), unique avec recipe
-    ◦ instruction : TextField -> max_length=250
-    ◦ trick : TextField	-> max_length=100, null=True, blank=True
+    ◦ recipe      : ForeignKey(Recipe)  -> Lié à Recipe, suppression en cascade (on_delete=models.CASCADE)
+    ◦ step_number : IntegerField        -> nullable, MinValueValidator(1), unique avec recipe
+    ◦ instruction : TextField           -> max_length=250
+    ◦ trick       : TextField	        -> max_length=100, null=True, blank=True
 2. Indexation
-    ◦ step_number est indexé pour des recherches rapides.
-    ◦ Contrainte unique_together ("recipe", "step_number") appliquée en base.
+    ◦ index sur (recipe, step_number) pour requêtes rapides.
+    ◦ Contrainte d’unicité en base (recipe, step_number).
 
 Contraintes d'Intégrité :
 1. Références
-    ◦ RecipeStep est lié à Recipe.
+    ◦ Chaque RecipeStep est lié à une Recipe.
 2. Cohérence des Données
-    ◦ Mise à jour contrôlée (test_recipestep_update).
-    ◦ Suppression gérée avec précaution (test_cannot_delete_last_recipe_step).
-    ◦ Si le step_number n'est pas fourni il est calculé automatiquement.
+    ◦ Les modifications sont validées : unicité, consécutivité, valeurs minimales.
+    ◦ step_number auto-calculé à la création si non spécifié.
+    ◦ PATCH/PUT : step_number non modifiable à None sur un objet existant.
 3. Protection contre les suppressions invalides
-    ◦ Si une recette n’a qu’un seul RecipeStep, la suppression est bloquée.
-    ◦ Après suppression d’un RecipeStep, les step_number sont réorganisés.
+    ◦ Suppression interdite si c’est le dernier RecipeStep d’une recette.
+    ◦ Après suppression, les step_number sont automatiquement réorganisés pour rester consécutifs.
 
 
 
