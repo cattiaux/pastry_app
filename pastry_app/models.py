@@ -369,7 +369,6 @@ class Recipe(models.Model):
         ordering = ['recipe_name', 'chef_name']
         constraints = [
             models.UniqueConstraint(fields=["recipe_name", "chef_name", "context_name"], name="unique_recipe_per_context"),
-            # models.UniqueConstraint(fields=["recipe_name", "chef_name"], name="unique_recipe_chef")
             ]
 
     def __str__(self):
