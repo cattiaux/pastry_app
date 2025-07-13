@@ -266,7 +266,6 @@ class RecipeAdmin(admin.ModelAdmin):
     inlines = [RecipeIngredientInline, RecipeStepInline, SubRecipeInline]
     list_display = ('recipe_name', 'id', 'chef_name', 'context_name', 'parent_recipe', 'tags', 'visibility', 'is_default')
     list_filter = ('recipe_type',)
-    exclude = ('content_type', 'object_id',)
 
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',)}
@@ -274,7 +273,7 @@ class RecipeAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('Caractéristiques principales de la recette', {
-            'fields': ('recipe_type', 'recipe_name', 'chef_name', 'parent_recipe', 'servings_min', 'servings_max', 'pan_quantity')
+            'fields': ('recipe_type', 'recipe_name', 'chef_name', 'parent_recipe', 'servings_min', 'servings_max', 'pan', 'pan_quantity')
         }),
         ('Contenu', {
             'fields': ('description', 'trick', 'image', 'adaptation_note', 'tags')
@@ -288,7 +287,23 @@ class RecipeAdmin(admin.ModelAdmin):
         }),
     )
 
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        """
+        Ajuste la taille (hauteur/largeur) des champs texte 'description' et 'trick', 
+        pour avoir des champs moins envahissants et un rendu plus agréable.
+        """
+        if db_field.name == "description":
+            kwargs["widget"] = forms.Textarea(attrs={"rows": 2, "cols": 60})
+        if db_field.name == "trick":
+            kwargs["widget"] = forms.Textarea(attrs={"rows": 1, "cols": 60})
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+
     def save_related(self, request, form, formsets, change):
+        """
+        Valide les contraintes “au moins un ingrédient/sous-recette” après sauvegarde.
+        Évite l’écran jaune admin et affiche une erreur claire à l’utilisateur.
+        Nécessaire car l’admin ne gère pas ces règles lors de la création.
+        """
         super().save_related(request, form, formsets, change)
         recipe = form.instance
         # On vérifie la présence d'au moins un ingrédient ou une sous-recette
