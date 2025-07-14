@@ -522,11 +522,18 @@ class RecipeStepSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """
+        - Vérifie que si il n'y a qu'une seule étape pour la recette, `step_number` doit être 1.
         - Vérifie que `step_number` est consécutif.
         - Vérifie qu'il n'y a pas déjà une étape avec ce numéro pour cette recette (unicité recipe/step_number).
         """
         recipe = data.get("recipe", getattr(self.instance, "recipe", None))
         step_number = data.get("step_number", getattr(self.instance, "step_number", None))
+
+        # Si c'est le seul RecipeStep pour la recette, step_number doit être 1
+        if recipe is not None and step_number is not None:
+            count_other = RecipeStep.objects.filter(recipe=recipe).exclude(pk=getattr(self.instance, 'pk', None)).count()
+            if count_other == 0 and step_number != 1:
+                raise serializers.ValidationError({"step_number": "S'il n'y a qu'une seule étape, son numéro doit être 1."})
 
         if recipe and step_number is not None:
             # Unicité : interdit de dupliquer une étape
@@ -797,12 +804,17 @@ class RecipeSerializer(serializers.ModelSerializer):
         recipe.categories.set(categories)
         recipe.labels.set(labels)
 
-        # Création des ingrédients
-        RecipeIngredient.objects.bulk_create([RecipeIngredient(recipe=recipe, **ingredient) for ingredient in ingredients_data])
-        # Création des étapes
-        RecipeStep.objects.bulk_create([RecipeStep(recipe=recipe, **step) for step in steps_data])
-        # Création des sous-recettes via modèle intermédiaire
-        SubRecipe.objects.bulk_create([SubRecipe(recipe=recipe, **sub) for sub in subrecipes_data])
+        # Complétion automatique step_number, si nécessaire
+        # Ici, on force la consécutivité et l’ordre d’arrivée
+        for idx, step in enumerate(steps_data, start=1):
+            step["step_number"] = idx
+            RecipeStep.objects.create(recipe=recipe, **step)
+
+        for ingredient in ingredients_data:
+            RecipeIngredient.objects.create(recipe=recipe, **ingredient)
+
+        for sub in subrecipes_data:
+            SubRecipe.objects.create(recipe=recipe, **sub)
 
         return recipe
 
@@ -850,15 +862,16 @@ class RecipeSerializer(serializers.ModelSerializer):
             instance.steps.all().delete()
             instance.main_recipes.all().delete()
 
-            RecipeIngredient.objects.bulk_create([
-                RecipeIngredient(recipe=instance, **data) for data in ingredients_data
-            ])
-            RecipeStep.objects.bulk_create([
-                RecipeStep(recipe=instance, **data) for data in steps_data
-            ])
-            SubRecipe.objects.bulk_create([
-                SubRecipe(recipe=instance, **data) for data in subrecipes_data
-            ])
+            # Crée les RecipeStep en forçant step_number consécutif et dans l’ordre d’arrivée
+            for idx, step in enumerate(steps_data, start=1):
+                step["step_number"] = idx
+                RecipeStep.objects.create(recipe=instance, **step)
+
+            for ingredient in ingredients_data:
+                RecipeIngredient.objects.create(recipe=instance, **ingredient)
+                
+            for sub in subrecipes_data:
+                SubRecipe.objects.create(recipe=instance, **sub)
 
         return instance
 

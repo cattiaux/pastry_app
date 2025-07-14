@@ -91,8 +91,6 @@ def test_step_number_must_be_strictly_increasing_api(api_client, base_url, recip
     valid_data = {"recipe": recipestep.recipe.id, "step_number": recipestep.step_number + 5, "instruction": "Étape non consécutive."}
     validate_constraint_api(api_client, base_url, model_name, "step_number", expected_errors, **valid_data)
 
-
-
 def test_api_patch_step_number_to_null_forbidden(api_client, base_url, recipestep):
     """On ne peut pas PATCH une étape pour rendre son step_number null."""
     url = f"{base_url(model_name)}{recipestep.id}/"
@@ -114,3 +112,24 @@ def test_api_step_number_and_instruction(api_client, base_url, recipe, step_numb
         payload["step_number"] = step_number
     resp = api_client.post(url, payload, format="json")
     assert resp.status_code == expected_status
+
+@pytest.mark.parametrize("invalid_number", [2, 3, 99])
+def test_api_single_step_must_have_number_one(api_client, base_url, recipe, invalid_number):
+    """
+    Impossible de créer le seul RecipeStep d'une recette avec un step_number différent de 1.
+    """
+    url = base_url(model_name)
+    data = {"recipe": recipe.id, "step_number": invalid_number, "instruction": "Préparer la pâte."}
+    response = api_client.post(url, data, format="json")
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "step_number" in response.data
+    assert "doit être 1" in str(response.data["step_number"]).lower()
+
+def test_api_single_step_number_one_is_valid(api_client, base_url, recipe):
+    """
+    Créer un seul RecipeStep avec step_number=1 doit être accepté.
+    """
+    url = base_url(model_name)
+    data = {"recipe": recipe.id, "step_number": 1, "instruction": "Commencer la préparation."}
+    response = api_client.post(url, data, format="json")
+    assert response.status_code == status.HTTP_201_CREATED

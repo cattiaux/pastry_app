@@ -258,6 +258,8 @@ class RecipeStepInline(admin.TabularInline):
     extra = 0
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == "step_number":
+            kwargs["help_text"] = "⚠️ Dans l’admin, chaque numéro d’étape doit être rempli manuellement. Laisser vide peut provoquer des erreurs.",
         if db_field.name == "instruction":
             kwargs["widget"] = forms.Textarea(attrs={"rows": 2, "cols": 40})
         if db_field.name == "trick":
@@ -277,15 +279,45 @@ class RecipeStepInline(admin.TabularInline):
         formset.form.__init__ = custom_init
         return formset
 
+    def delete_model(self, request, obj):
+        """ Affiche les erreurs métier (ex: suppression du dernier step) comme message utilisateur."""
+        try:
+            obj.delete()
+        except ValidationError as e:
+            self.message_user(request, e.messages[0], level=messages.ERROR)
+
+    def save_formset(self, request, form, formset, change):
+        """ Réordonne automatiquement les step_number après modification/suppression. """
+        # Appel normal
+        super().save_formset(request, form, formset, change)
+        # Réordonner les steps
+        recipe = form.instance
+        steps = recipe.steps.order_by('step_number')
+        for i, step in enumerate(steps, start=1):
+            if step.step_number != i:
+                step.step_number = i
+                step.save()
+
 class SubRecipeInline(admin.TabularInline):
     model = SubRecipe
     fk_name = 'recipe'
     extra = 0
 
+class RecipeCategoryInline(admin.TabularInline):
+    model = RecipeCategory
+    extra = 0
+    autocomplete_fields = ['category']
+
+class RecipeLabelInline(admin.TabularInline):
+    model = RecipeLabel
+    extra = 0
+    autocomplete_fields = ['label']
+
+@admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
-    inlines = [RecipeIngredientInline, RecipeStepInline, SubRecipeInline]
+    inlines = [RecipeCategoryInline, RecipeLabelInline, RecipeIngredientInline, RecipeStepInline, SubRecipeInline]
     list_display = ('recipe_name', 'id', 'chef_name', 'context_name', 'parent_recipe', 'tags', 'visibility', 'is_default')
-    list_filter = ('recipe_type',)
+    list_filter = ('recipe_type', 'categories', 'labels', 'visibility')
 
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',)}
@@ -293,7 +325,8 @@ class RecipeAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('Caractéristiques principales de la recette', {
-            'fields': ('recipe_type', 'recipe_name', 'chef_name', 'parent_recipe', 'servings_min', 'servings_max', 'pan', 'pan_quantity')
+            'fields': ('recipe_type', 'recipe_name', 'chef_name', 'parent_recipe',
+                       'servings_min', 'servings_max', 'pan', 'pan_quantity')
         }),
         ('Contenu', {
             'fields': ('description', 'trick', 'image', 'adaptation_note', 'tags')
@@ -377,7 +410,27 @@ class RecipeStepAdmin(admin.ModelAdmin):
         form.__init__ = custom_init
         return form
 
-# @admin.register(SubRecipe)
+    def delete_view(self, request, object_id, extra_context=None):
+        """
+        Empêche la suppression du dernier step, affiche une erreur UX-friendly,
+        et évite l'écran jaune.
+        """
+        obj = self.get_object(request, object_id)
+        if obj:
+            total_steps = RecipeStep.objects.filter(recipe=obj.recipe).count()
+            if total_steps == 1:
+                self.message_user(request, "❌ Une recette doit avoir au moins une étape.", level=messages.ERROR)
+                return redirect(request.META.get('HTTP_REFERER', '/admin/pastry_app/recipestep/'))
+        return super().delete_view(request, object_id, extra_context)
+
+    def get_actions(self, request):
+        """ Déscactive l'action de suppression en masse pour éviter l'écran jaune d'erreur. """
+        actions = super().get_actions(request)
+        if "delete_selected" in actions:
+            del actions["delete_selected"]
+        return actions
+
+@admin.register(SubRecipe)
 class SubRecipeAdmin(admin.ModelAdmin):
     list_display = ('recipe_name', 'subrecipe_name', 'id')
 
@@ -388,7 +441,3 @@ class SubRecipeAdmin(admin.ModelAdmin):
     def subrecipe_name(self, obj):
         return obj.sub_recipe.recipe_name
     subrecipe_name.short_description = 'Subrecipe Name'
-
-
-admin.site.register(Recipe, RecipeAdmin)
-

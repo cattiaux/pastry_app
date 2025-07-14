@@ -289,6 +289,7 @@ def test_adaptation_permissions_guest(api_client, base_url, guest_id):
     assert resp3.status_code in [403, 404]
 
     # Invité A peut supprimer
+    print(f"Deleting fork with guest_id {guest_id}")
     resp4 = api_client.delete(fork_url, HTTP_X_GUEST_ID=guest_id)
     assert resp4.status_code in (204, 200)
 

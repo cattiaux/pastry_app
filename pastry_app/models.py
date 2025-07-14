@@ -7,6 +7,8 @@ from django.db.models import UniqueConstraint
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.fields import ArrayField
+from django.db.models.signals import pre_delete, post_delete
+from django.dispatch import receiver
 from .utils_pure import normalize_case
 from .constants import UNIT_CHOICES
 
@@ -319,6 +321,10 @@ class RecipeCategory(models.Model):
     recipe = models.ForeignKey("Recipe", on_delete=models.CASCADE)
     category = models.ForeignKey("Category", on_delete=models.PROTECT)  # Empêche la suppression d'une catégorie utilisée
 
+    class Meta:
+        verbose_name = "recipe category"
+        verbose_name_plural = "categories"
+
 class IngredientLabel(models.Model):
     ingredient = models.ForeignKey("Ingredient", on_delete=models.CASCADE)
     label = models.ForeignKey("Label", on_delete=models.PROTECT)  # Empêche la suppression d'une catégorie utilisée
@@ -326,6 +332,10 @@ class IngredientLabel(models.Model):
 class RecipeLabel(models.Model):
     recipe = models.ForeignKey("Recipe", on_delete=models.CASCADE)
     label = models.ForeignKey("Label", on_delete=models.PROTECT)  # Empêche la suppression d'une catégorie utilisée
+
+    class Meta:
+        verbose_name = "recipe labels"
+        verbose_name_plural = "labels"
 
 class Recipe(models.Model):
     RECIPE_TYPE_CHOICES = [("BASE", "Recette de base"), ("VARIATION", "Variante"),]
@@ -569,7 +579,12 @@ class RecipeStep(models.Model):
         # Vérifie que l'instruction a une longueur minimale
         if self.instruction and len(self.instruction) < 5:
             raise ValidationError("L'instruction doit contenir au moins 5 caractères.")
-        
+
+        # Si c’est le seul step de la recette, il doit obligatoirement être step_number == 1
+        if self.recipe and RecipeStep.objects.filter(recipe=self.recipe).exclude(pk=self.pk).count() == 0:
+            if self.step_number != 1:
+                raise ValidationError("S'il n'y a qu'une seule étape, son numéro doit être 1.")
+    
         # Vérifier que le `step_number` est consécutif
         qs = RecipeStep.objects.filter(recipe=recipe).exclude(pk=self.pk)  # Exclure soi-même pour éviter le faux positif sur update
         if qs.exists():
@@ -581,6 +596,15 @@ class RecipeStep(models.Model):
     def save(self, *args, **kwargs):
         self.clean() 
         super().save(*args, **kwargs)
+
+@receiver(post_delete, sender=RecipeStep)
+def reorder_step_numbers(sender, instance, **kwargs):
+    """ Réorganise les step_number après suppression (même en bulk_delete !) ."""
+    steps = RecipeStep.objects.filter(recipe=instance.recipe).order_by("step_number")
+    for idx, step in enumerate(steps, start=1):
+        if step.step_number != idx:
+            step.step_number = idx
+            step.save()
 
 class SubRecipe(models.Model):
     recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='main_recipes')

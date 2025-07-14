@@ -5,6 +5,30 @@
         (function($) {
             $(document).ready(function(){
 
+
+                // =======================
+                // AJOUT NOTA BENE RECETTE STEPS INLINE (que lors création !)
+                // =======================
+
+                // Vérifie qu'on est bien sur la page d'ajout et PAS modification
+                if (window.location.pathname.endsWith('/add/')) {
+                    // Cible le bloc d'inlines steps
+                    var $stepsGroup = $('#steps-group');
+                    if ($stepsGroup.length) {
+                        // Trouve le titre "Recipe steps"
+                        var $header = $stepsGroup.find('fieldset.module > h2').first();
+                        if ($header.length && $header.next('.step-warning').length === 0) {
+                            // Ajoute le message juste après le titre du bloc
+                            $header.after(
+                                `<div class="step-warning" style="margin-bottom:8px; color:#a67400; background:#fffbe5; border:1px solid #ffe58f; padding:7px 10px; border-radius:5px;">
+                                    <strong>Nota bene :</strong> Pour chaque étape, <b>renseignez explicitement le 'step_number'</b> lors de la création d'une recette dans l’admin.<br>
+                                    (L’attribution automatique n’est pas possible ici via l'admin. Laisser vide peut provoquer des erreurs.)
+                                </div>`
+                            );
+                        }
+                    }
+                }
+
                 // Fonction pour afficher/masquer la ligne du champ adaptation_note selon parent_recipe
                 function toggleAdaptationNote() {
                     // Récupère la valeur sélectionnée dans le champ parent_recipe (champ ForeignKey)

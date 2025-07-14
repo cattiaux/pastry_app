@@ -78,7 +78,6 @@ def test_get_nonexistent_recipestep(admin_client, base_url):
     response = admin_client.get(url)  
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
-
 def test_api_update_step_number_to_existing(api_client, base_url, setup_recipe, setup_recipestep):
     """Impossible de modifier un step_number pour avoir un doublon dans la recette (API)."""
     # Crée un second step

@@ -112,8 +112,6 @@ def test_step_number_auto_increment(recipe):
     step2 = RecipeStep.objects.create(recipe=recipe, instruction="Deuxième étape.")  # `step_number` absent
     assert step2.step_number == step1.step_number + 1  # Vérifie que step2 = 2
 
-
-
 def test_auto_increment_step_number(recipe):
     """Si step_number est None à la création, il est auto-attribué au max+1."""
     RecipeStep.objects.create(recipe=recipe, instruction="Étape 1")
