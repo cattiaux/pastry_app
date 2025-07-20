@@ -126,7 +126,7 @@ def test_cannot_set_step_number_none_on_update(recipe_step):
 
 @pytest.mark.parametrize("step_number, instruction, expected", [
     (None, "Etape auto", True),            # auto-increment
-    (2, "Etape manuelle", True),           # manual assign, ok
+    (2, "Etape manuelle", False),           # seule step donc doit être égal à 1
     (0, "Etape invalide", False),          # interdit < 1
     (-1, "Etape négative", False),         # interdit < 1
     (None, "Shrt", False),                 # instruction trop courte

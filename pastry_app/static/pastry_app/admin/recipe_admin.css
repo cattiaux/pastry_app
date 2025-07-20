@@ -1,0 +1,90 @@
+.recipe-columns-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    margin-top: 18px;
+    margin-bottom: 16px;
+}
+.recipe-card {
+    flex: 1 1 260px;
+    min-width: 220px;
+    max-width: 380px;
+    padding: 14px;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px #0002;
+    margin-bottom: 12px;
+}
+/* Force la couleur en mode dark admin Django */
+html[data-theme="dark"] .recipe-card {
+    background: #23272e;   /* plus doux et vraiment dark */
+    color: #fafafa;
+}
+html[data-theme="light"] .recipe-card {
+    background: #f8f9fa;
+    color: #212529;
+}
+
+/* Couleur titre principal/sub en dark/light */
+html[data-theme="dark"] .recipe-card h3.main-title,
+html[data-theme="dark"] .recipe-card h4.sub-title {
+    color: #74a5ec;
+}
+html[data-theme="light"] .recipe-card h3.main-title,
+html[data-theme="light"] .recipe-card h4.sub-title {
+    color: #31688e;
+}
+.recipe-card ul,
+.recipe-card ol {
+    margin-bottom: 8px;
+    padding-left: 20px;
+}
+@media (max-width: 950px) {
+    .recipe-card {
+        min-width: 98vw;
+        max-width: 99vw;
+    }
+    .recipe-columns-container {
+        gap: 6px;
+    }
+}
+
+/* Forcer le container flex à prendre toute la largeur dispo */
+.field-recipe_subrecipes_synthesis .readonly {
+    width: 100%;
+    display: block;
+}
+
+/* La colonne flex doit prendre toute la largeur dispo dans le formulaire admin */
+.field-recipe_subrecipes_synthesis .recipe-columns-container {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Pour éviter les marges ou padding parasites qui limitent la largeur */
+.field-recipe_subrecipes_synthesis {
+    width: 100%;
+    max-width: 100%;
+}
+
+.admin-inline-info {
+    font-size: 13px;
+    padding: 7px 12px;
+    margin: 8px 0 14px 0;
+    border-radius: 4px;
+}
+
+html[data-theme="light"] .admin-inline-info {
+    background: #f7f7e6;
+    color: #856404;
+    border: 1px solid #ffeeba;
+}
+html[data-theme="dark"] .admin-inline-info {
+    background: #23272e;
+    color: #ffe066;
+    border: 1px solid #7a7135;
+}
+
+/* Masque le label du champ synthèse si tu utilises la classe hide-label sur le fieldset */
+.hide-label label {
+    display: none !important;
+}

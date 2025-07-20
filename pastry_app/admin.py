@@ -2,6 +2,7 @@ from django.contrib import admin, messages
 from django import forms
 from django.forms.models import BaseInlineFormSet
 from django.shortcuts import redirect
+from django.utils.safestring import mark_safe
 from .models import *
 
 
@@ -252,32 +253,62 @@ class IngredientAdmin(admin.ModelAdmin):
 class RecipeIngredientInline(admin.TabularInline):
     model = RecipeIngredient
     extra = 0
+    readonly_fields = ['display_name'] 
+
+class RecipeStepInlineForm(forms.ModelForm):
+    """
+    Formulaire ModelForm custom pour RecipeStep Inline dans l'admin.
+    - Garantit que le step_number assigné dans cleaned_data est bien propagé sur l'instance avant sauvegarde.
+    """
+    def save(self, commit=True):
+        # Force la cohérence : ce qui est dans cleaned_data devient la vraie valeur de l'instance
+        step_number = self.cleaned_data.get('step_number')
+        if step_number is not None:
+            self.instance.step_number = step_number
+        return super().save(commit=commit)
+
+class RecipeStepInlineFormSet(BaseInlineFormSet):
+    """
+    Formset personnalisé pour la gestion des étapes de recette (RecipeStep) dans l'admin Django.
+
+    - Auto-recalcule TOUS les step_number consécutifs (1...N) après création, édition ou suppression.
+    - Aucun champ step_number n'est obligatoire côté admin.
+    - UX fluide, plus besoin de corriger à la main, ni de gérer les doublons ou les trous dans la séquence.
+    - Affiche les erreurs métier user-friendly dans l'admin (pas d'écran jaune).
+    """
+    def clean(self):
+        # Appelle la clean de base (qui va appeler clean() sur chaque form/instance)
+        super().clean()
+
+        # 1. Retire l'erreur métier "l'unique step doit être n°1" en mode admin, seulement en création admin
+        #    (souvent gênante lors des saisies multiples inline)
+        errors_to_skip = ["S'il n'y a qu'une seule étape, son numéro doit être 1."]
+        for form in self.forms:
+            if form.errors:
+                # Si la forme contient l'erreur métier ciblée, on la retire
+                # (utile uniquement lors de la création, pas lors de l'update d'une recette existante)
+                for error in errors_to_skip:
+                    form._errors.pop('__all__', None)
+
+        # 2. Récupère tous les forms valides (pas DELETE)
+        step_forms = [form for form in self.forms if form.cleaned_data and not form.cleaned_data.get('DELETE', False)]
+
+        # 3. Attribue à CHAQUE form un step_number consécutif en fonction de l'ordre visuel (formset)
+        for i, form in enumerate(step_forms, start=1):
+            form.cleaned_data['step_number'] = i
 
 class RecipeStepInline(admin.TabularInline):
     model = RecipeStep
-    extra = 0
+    extra = 1
+    form = RecipeStepInlineForm
+    formset = RecipeStepInlineFormSet
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
-        if db_field.name == "step_number":
-            kwargs["help_text"] = "⚠️ Dans l’admin, chaque numéro d’étape doit être rempli manuellement. Laisser vide peut provoquer des erreurs.",
         if db_field.name == "instruction":
             kwargs["widget"] = forms.Textarea(attrs={"rows": 2, "cols": 40})
         if db_field.name == "trick":
             kwargs["widget"] = forms.Textarea(attrs={"rows": 1, "cols": 40})
         return super().formfield_for_dbfield(db_field, request, **kwargs)
-    
-    def get_formset(self, request, obj=None, **kwargs):
-        """ Rend le champ step_number obligatoire en modification, mais facultatif en création. """
-        formset = super().get_formset(request, obj, **kwargs)
-        original_form_init = formset.form.__init__
-        def custom_init(form_self, *a, **kw):
-            original_form_init(form_self, *a, **kw)
-            if form_self.instance.pk:
-                form_self.fields["step_number"].required = True
-            else:
-                form_self.fields["step_number"].required = False
-        formset.form.__init__ = custom_init
-        return formset
 
     def delete_model(self, request, obj):
         """ Affiche les erreurs métier (ex: suppression du dernier step) comme message utilisateur."""
@@ -317,19 +348,25 @@ class RecipeLabelInline(admin.TabularInline):
 class RecipeAdmin(admin.ModelAdmin):
     inlines = [RecipeCategoryInline, RecipeLabelInline, RecipeIngredientInline, RecipeStepInline, SubRecipeInline]
     list_display = ('recipe_name', 'id', 'chef_name', 'context_name', 'parent_recipe', 'tags', 'visibility', 'is_default')
-    list_filter = ('recipe_type', 'categories', 'labels', 'visibility')
+    list_filter = ('recipe_type', 'categories', 'labels', 'visibility')    
+    readonly_fields = ['recipe_subrecipes_synthesis']
 
     class Media:
-        css = {'all': ('pastry_app/admin/required_fields.css',)}
-        js = ('pastry_app/admin/recipe_admin.js',)
-
+        css = {'all': ('pastry_app/admin/required_fields.css','pastry_app/admin/recipe_admin.css')}
+        js = ('pastry_app/admin/recipe_admin2.js',)
+    
     fieldsets = (
+        ('Synthèse', {
+            'fields': ('recipe_subrecipes_synthesis',),
+            'classes': ('hide-label',),
+            'description': "Vue synthétique ingrédients et étapes (recette + sous-recettes)."
+        }),
         ('Caractéristiques principales de la recette', {
-            'fields': ('recipe_type', 'recipe_name', 'chef_name', 'parent_recipe',
+            'fields': ('recipe_type', 'recipe_name', 'chef_name', 'parent_recipe', 'adaptation_note',
                        'servings_min', 'servings_max', 'pan', 'pan_quantity')
         }),
         ('Contenu', {
-            'fields': ('description', 'trick', 'image', 'adaptation_note', 'tags')
+            'fields': ('description', 'trick', 'image', 'tags')
         }),
         ('Source de la recette', {
             'fields': ('context_name', 'source')
@@ -339,6 +376,43 @@ class RecipeAdmin(admin.ModelAdmin):
             'description': "Champs relatifs à la visibilité, aux droits, ou à la gestion multi-utilisateur."
         }),
     )
+
+    def recipe_subrecipes_synthesis(self, obj):
+        html = "<div class='recipe-columns-container'>"
+
+        # Main recipe (always first column)
+        html += """
+        <div class='recipe-card'>
+        <h3 class='main-title'>Main recipe</h3>
+        <b>Ingredients:</b>
+        <ul>
+        """
+        for ri in obj.recipe_ingredients.all():
+            html += f"<li>{ri.quantity} {ri.unit} of <b>{ri.ingredient}</b></li>"
+        html += "</ul><b>Steps:</b><ol>"
+        for step in obj.steps.all().order_by('step_number'):
+            html += f"<li>{step.instruction}</li>"
+        html += "</ol></div>"
+
+        # Subrecipes (one column per subrecipe)
+        for sub in obj.main_recipes.all():
+            html += f"""
+            <div class='recipe-card'>
+                <h4 class='sub-title'>Sub-recipe: {sub.sub_recipe.recipe_name}</h4>
+                <b>Ingredients:</b>
+                <ul>
+            """
+            for ri in sub.sub_recipe.recipe_ingredients.all():
+                html += f"<li>{ri.quantity} {ri.unit} of <b>{ri.ingredient}</b></li>"
+            html += "</ul><b>Steps:</b><ol>"
+            for step in sub.sub_recipe.steps.all().order_by('step_number'):
+                html += f"<li>{step.instruction}</li>"
+            html += "</ol></div>"
+
+        html += "</div>"  # end of flex container
+
+        return mark_safe(html)
+    recipe_subrecipes_synthesis.short_description = ""
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         """
@@ -359,24 +433,29 @@ class RecipeAdmin(admin.ModelAdmin):
         """
         super().save_related(request, form, formsets, change)
         recipe = form.instance
-        # On vérifie la présence d'au moins un ingrédient ou une sous-recette
-        has_ingredients = recipe.recipe_ingredients.exists()
-        has_subrecipes = recipe.main_recipes.exists()
-        has_steps = recipe.steps.exists()
-        if not (has_ingredients or has_subrecipes):
-            self.message_user(
-                request, "❌ Une recette doit contenir au moins un ingrédient ou une sous-recette.", level="error")
-            # Supprimer la recette créée pour éviter la base incohérente
-            recipe.delete()
-            return
-        if not (has_steps or has_subrecipes):
-            self.message_user(
-                request, "❌ Une recette doit contenir au moins une étape ou une sous-recette.", level="error")
-            recipe.delete()
-            return
+
+        try :
+            # On vérifie la présence d'au moins un ingrédient ou une sous-recette
+            has_ingredients = recipe.recipe_ingredients.exists()
+            has_subrecipes = recipe.main_recipes.exists()
+            has_steps = recipe.steps.exists()
+            if not (has_ingredients or has_subrecipes):
+                raise ValidationError("Une recette doit contenir au moins un ingrédient ou une sous-recette.")
+            if not has_steps:
+                raise ValidationError("Une recette doit contenir au moins une étape.")
+        except ValidationError as e:
+            # Cas création (recette pas encore en BDD avant cette transaction)
+            if recipe._state.adding:
+                recipe.delete()
+                self.message_user(request, str(e), level=messages.ERROR)
+                # Ne pas raise: force le redirect à la liste
+            else:
+                # Cas édition, on ne supprime pas !
+                raise
 
 class RecipeIngredientAdmin(admin.ModelAdmin):
     list_display = ('recipe_name', 'ingredient_name', 'id')
+    readonly_fields = ['display_name'] 
 
     def recipe_name(self, obj):
         return obj.recipe.recipe_name

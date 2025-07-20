@@ -1073,20 +1073,25 @@ class RecipeIngredient(models.Model):
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        """ Empêche la suppression du dernier ingrédient d'une recette et réattribue les suffixes après suppression. """
+        """ 
+        Empêche la suppression du dernier ingrédient d'une recette *s'il n'y a pas de subrecipe*
+        et réattribue les suffixes après suppression. 
+        """
+        # Compte le nombre d'ingrédients ET vérifie les subrecipes
+        has_ingredients = self.recipe.recipe_ingredients.count()
+        has_subrecipes = self.recipe.main_recipes.exists()
 
-        # Vérifier si c'est le dernier ingrédient de la recette
-        if self.recipe.recipe_ingredients.count() == 1:
-            raise ValidationError("Une recette doit contenir au moins un ingrédient.")
-    
+        # Si c'est le dernier ingrédient ET qu'il n'y a pas de subrecipe => erreur
+        if has_ingredients == 1 and not has_subrecipes:
+            raise ValidationError("Une recette doit contenir au moins un ingrédient ou une sous-recette.")
+
         # Récupérer tous les ingrédients de la recette AVANT suppression
         recipe_ingredients = RecipeIngredient.objects.filter(
             recipe=self.recipe,
             ingredient=self.ingredient
         ).order_by('id')  # On trie pour avoir un ordre logique
-        
+    
         super().delete(*args, **kwargs)  # Suppression de l'objet actuel
-
         # Réattribuer les suffixes aux autres ingrédients de la même recette
         for index, ingredient in enumerate(recipe_ingredients, start=1):
             ingredient.display_name = f"{ingredient.ingredient.ingredient_name} {index}"

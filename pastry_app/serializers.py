@@ -774,8 +774,9 @@ class RecipeSerializer(serializers.ModelSerializer):
 
             if not (ingredients or sub_recipes):
                 raise serializers.ValidationError("Une recette doit contenir au moins un ingrédient ou une sous-recette.")
-            if not (steps or sub_recipes):
-                raise serializers.ValidationError("Une recette doit contenir au moins une étape ou une sous-recette.")
+            # if not (steps or sub_recipes):
+            if not steps :
+                raise serializers.ValidationError("Une recette doit contenir au moins une étape")
 
         # 6. Boucle indirecte parent (cycle)
         def has_cyclic_parent(instance, new_parent):
