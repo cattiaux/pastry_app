@@ -353,7 +353,7 @@ class RecipeAdmin(admin.ModelAdmin):
 
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css','pastry_app/admin/recipe_admin.css')}
-        js = ('pastry_app/admin/recipe_admin2.js',)
+        js = ('pastry_app/admin/recipe_admin.js',)
     
     fieldsets = (
         ('Synthèse', {
