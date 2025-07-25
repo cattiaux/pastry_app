@@ -429,6 +429,9 @@ class Recipe(models.Model):
     def clean(self):
         """ Vérifications métier avant sauvegarde. """
         # Validation basique
+        # if not self.user and not self.guest_id: # On ne peut pas avoir aucun user ni aucun guest_id
+        #     raise ValidationError("Une recette doit appartenir à un utilisateur ou à un invité (user ou guest_id obligatoire).")
+        # On ne peut pas avoir les deux
         if self.user and self.guest_id:
             raise ValidationError("Une recette ne peut pas avoir à la fois un user et un guest_id.")
     

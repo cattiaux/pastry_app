@@ -150,6 +150,12 @@ Solution cible :
 - Option : filtrer les tags proposés selon l’utilisateur connecté.
 
 
+### Obliger l'existence de soit user, soit guest_id.
+Validation dans le clean() du modèle de Recipe 
+commentée pour éviter de devoir actualiser tous les autres tests en ajoutant l'un ou l'autre
+Le test modèle existe, il faut juste changer le comportement attendu dans les paramètres pytest du test test_recipe_user_and_guest_id
+
+
 ### Ajout des allergènes dans une recette. Penser à la structure de données pour ça.
 
 ### Ajout module IA, agent AI, MCP

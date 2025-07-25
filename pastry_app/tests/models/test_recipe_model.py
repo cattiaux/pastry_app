@@ -216,7 +216,7 @@ def test_valid_variation_with_adaptation_note(recipe, pan):
         (True,  True,  True),   # Les deux → doit lever une erreur
         (True,  False, False),  # Uniquement user → ok
         (False, True,  False),  # Uniquement guest → ok
-        (False, False, False),  # Aucun → ok
+        (False, False, False),  # Aucun → ok (plus tard doit lever une erreur si on oblige l'un des 2 a exister)
     ]
 )
 def test_recipe_user_and_guest_id(user, with_user, with_guest_id, should_raise):

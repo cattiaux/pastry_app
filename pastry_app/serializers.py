@@ -740,6 +740,8 @@ class RecipeSerializer(serializers.ModelSerializer):
         guest_id = data.get('guest_id') or (request.headers.get('X-Guest-Id') if request else None)
 
         # 0. Vérification de la présence d'un user ou d'un guest_id, mais pas les deux
+        # if not user and not guest_id:
+        #     raise serializers.ValidationError("Une recette doit appartenir à un utilisateur ou à un invité (user ou guest_id obligatoire).")
         # if user and guest_id:
         #     raise serializers.ValidationError("Une recette ne peut pas avoir à la fois un user et un guest_id.")
 
