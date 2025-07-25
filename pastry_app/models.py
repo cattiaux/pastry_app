@@ -95,6 +95,9 @@ class Pan(models.Model):
 
     def clean(self):
         """Validation métier avant sauvegarde."""
+        if self.user and self.guest_id:
+            raise ValidationError("Une recette ne peut pas avoir à la fois un user et un guest_id.")
+
         # Normalisation
         if self.pan_name:
             self.pan_name = normalize_case(self.pan_name)
@@ -639,13 +642,6 @@ class SubRecipe(models.Model):
         return f"{self.quantity} {self.unit} de {self.sub_recipe.recipe_name} dans {self.recipe.recipe_name}"
 
 class Ingredient(models.Model):
-    """
-    ⚠️ IMPORTANT ⚠️
-    - Actuellement, `ingredient_name` N'A PAS `unique=True` pour éviter les conflits en développement.
-    - Une fois en production, AJOUTER `unique=True` sur `ingredient_name`.
-    """
-    # Note : `unique=True` dans le field 'label_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
-    # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
     ingredient_name = models.CharField(max_length=200, unique=True)
     categories = models.ManyToManyField(Category, related_name='ingredients', blank=True)
     labels = models.ManyToManyField(Label, related_name='ingredients', blank=True)
@@ -664,6 +660,9 @@ class Ingredient(models.Model):
 
     def clean(self):
         """ Vérifie que les `categories` et `labels` existent bien en base, sans les créer automatiquement. """
+        if self.user and self.guest_id:
+            raise ValidationError("Une recette ne peut pas avoir à la fois un user et un guest_id.")
+
         # Ignorer la validation des ManyToMany si l'objet n'est pas encore enregistré
         if not self.pk:
             return
@@ -735,6 +734,9 @@ class Store(models.Model):
         return f"{self.store_name} ({self.city or 'Ville non renseignée'})"
 
     def clean(self):
+        if self.user and self.guest_id:
+            raise ValidationError("Une recette ne peut pas avoir à la fois un user et un guest_id.")
+
         # Vérifie que le magasin a une localisation valide
         if self.store_name and not (self.city or self.zip_code or self.address):
             raise ValidationError("Si un magasin est renseigné, vous devez indiquer une ville, un code postal ou une adresse.")

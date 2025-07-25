@@ -1,6 +1,6 @@
 import pytest
-from django.db import IntegrityError
 from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
 from pastry_app.models import Ingredient, Category, Label
 from pastry_app.tests.utils import normalize_case
 
@@ -27,6 +27,11 @@ from pastry_app.tests.utils import normalize_case
 model_name = "ingredients"
 
 pytestmark = pytest.mark.django_db
+User = get_user_model()
+
+@pytest.fixture
+def user():
+    return User.objects.create_user(username="user1", password="testpass123")
 
 @pytest.fixture
 def ingredient(db):
@@ -92,3 +97,21 @@ def test_ingredient_cannot_have_recipe_only_category():
         ing.full_clean()
     assert "n'est pas valide pour un ingrédient" in str(excinfo.value)
 
+@pytest.mark.parametrize(
+    "with_user, with_guest_id, should_raise",
+    [
+        (True,  True,  True),   # Les deux → doit lever une erreur
+        (True,  False, False),  # Uniquement user → ok
+        (False, True,  False),  # Uniquement guest → ok
+        (False, False, False),  # Aucun → ok
+    ]
+)
+def test_ingredient_user_and_guest_id(user, with_user, with_guest_id, should_raise):
+    user_instance = user if with_user else None
+    guest_value = "guestid-xyz" if with_guest_id else None
+    ingredient = Ingredient(ingredient_name="citron", user=user_instance, guest_id=guest_value)
+    if should_raise:
+        with pytest.raises(ValidationError):
+            ingredient.full_clean()
+    else:
+        ingredient.full_clean()

@@ -1,9 +1,15 @@
 import pytest
 from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
 from pastry_app.models import Store
 from pastry_app.tests.utils import *
 
 pytestmark = pytest.mark.django_db
+User = get_user_model()
+
+@pytest.fixture
+def user():
+    return User.objects.create_user(username="user1", password="testpass123")
 
 @pytest.fixture
 def store():
@@ -70,3 +76,22 @@ def test_normalized_fields_store(field_name, raw_value):
     valid_data = {"store_name": "Monoprix", "city": "Lyon", "zip_code": "69001", "address": "1 boulevard de Fourmies"}  # Valeurs valides par défaut
     valid_data.pop(field_name)  # Supprimer dynamiquement le champ en cours de test
     validate_field_normalization(Store, field_name, raw_value, **valid_data)
+
+@pytest.mark.parametrize(
+    "with_user, with_guest_id, should_raise",
+    [
+        (True,  True,  True),   # Les deux → doit lever une erreur
+        (True,  False, False),  # Uniquement user → ok
+        (False, True,  False),  # Uniquement guest → ok
+        (False, False, False),  # Aucun → ok
+    ]
+)
+def test_ingredient_user_and_guest_id(user, with_user, with_guest_id, should_raise):
+    user_instance = user if with_user else None
+    guest_value = "guestid-xyz" if with_guest_id else None
+    store = Store(store_name="Monoprix", city="Marseille", zip_code="69001", address="3 rue champignon", user=user_instance, guest_id=guest_value)
+    if should_raise:
+        with pytest.raises(ValidationError):
+            store.full_clean()
+    else:
+        store.full_clean()

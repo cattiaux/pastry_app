@@ -1,11 +1,18 @@
 import pytest
 from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
 from math import isclose
 from pastry_app.models import Pan
 from pastry_app.tests.utils import *
 
 model_name = "pans"
 pytestmark = pytest.mark.django_db
+
+User = get_user_model()
+
+@pytest.fixture
+def user():
+    return User.objects.create_user(username="user1", password="testpass123")
 
 def test_create_roundpan_db():
     """ Vérifie la création d'un Pan de type ROUND avec volume calculé """
@@ -145,3 +152,22 @@ def test_units_in_mold_only_custom():
     pan = Pan(pan_name="Test", pan_type="ROUND", diameter=18, height=5, units_in_mold=2, is_total_volume=True)
     with pytest.raises(ValidationError):
         pan.clean()
+
+@pytest.mark.parametrize(
+    "with_user, with_guest_id, should_raise",
+    [
+        (True,  True,  True),   # Les deux → doit lever une erreur
+        (True,  False, False),  # Uniquement user → ok
+        (False, True,  False),  # Uniquement guest → ok
+        (False, False, False),  # Aucun → ok
+    ]
+)
+def test_pan_user_and_guest_id(user, with_user, with_guest_id, should_raise):
+    user_instance = user if with_user else None
+    guest_value = "guestid-xyz" if with_guest_id else None
+    pan = Pan(pan_type="ROUND", diameter=16, height=5, user=user_instance, guest_id=guest_value)
+    if should_raise:
+        with pytest.raises(ValidationError):
+            pan.full_clean()
+    else:
+        pan.full_clean()
