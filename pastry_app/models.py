@@ -426,6 +426,9 @@ class Recipe(models.Model):
     def clean(self):
         """ Vérifications métier avant sauvegarde. """
         # Validation basique
+        if self.user and self.guest_id:
+            raise ValidationError("Une recette ne peut pas avoir à la fois un user et un guest_id.")
+    
         if not self.recipe_name or len(self.recipe_name.strip()) < 3:
             raise ValidationError("Le nom de la recette doit contenir au moins 3 caractères.")
         if not self.chef_name or len(self.chef_name.strip()) < 3:

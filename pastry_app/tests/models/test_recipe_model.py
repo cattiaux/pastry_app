@@ -210,6 +210,25 @@ def test_valid_variation_with_adaptation_note(recipe, pan):
 
 # --- test pour UserRecipeVisibility ---
 
+@pytest.mark.parametrize(
+    "with_user, with_guest_id, should_raise",
+    [
+        (True,  True,  True),   # Les deux → doit lever une erreur
+        (True,  False, False),  # Uniquement user → ok
+        (False, True,  False),  # Uniquement guest → ok
+        (False, False, False),  # Aucun → ok
+    ]
+)
+def test_recipe_user_and_guest_id(user, with_user, with_guest_id, should_raise):
+    user_instance = user if with_user else None
+    guest_value = "guestid-xyz" if with_guest_id else None
+    recipe = Recipe(recipe_name="Tarte au citron", chef_name="Paul", servings_min=1, servings_max=1, user=user_instance, guest_id=guest_value)
+    if should_raise:
+        with pytest.raises(ValidationError):
+            recipe.full_clean()
+    else:
+        recipe.full_clean()
+
 def test_create_user_visibility(db, user, recipe):
     """On peut créer une UserRecipeVisibility pour un user et une recette."""
     v = UserRecipeVisibility.objects.create(user=user, recipe=recipe, visible=False)

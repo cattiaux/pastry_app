@@ -125,6 +125,35 @@ def test_update_to_duplicate_recipe_api(api_client, base_url, user):
 # Logique métier : parent, variation, cycles, contenu
 # ----------------------------------------
 
+# @pytest.mark.parametrize(
+#     "with_user, with_guest_id, should_error",
+#     [
+#         (True,  True,  True),    # user + guest_id → erreur attendu
+#         (True,  False, False),   # seulement user → OK
+#         (False, True,  False),   # seulement guest_id → OK
+#         (False, False, False),   # aucun des deux → OK
+#     ]
+# )
+# def test_api_recipe_user_and_guest_id(api_client, base_url, user, with_user, with_guest_id, should_error):
+#     url = base_url(model_name) 
+#     data = base_recipe_data() 
+
+#     if with_user:
+#         api_client.force_authenticate(user=user)
+#     else:
+#         api_client.force_authenticate(user=None)
+
+#     if with_guest_id:
+#         api_client.credentials(HTTP_X_GUEST_ID="guestid-xyz")
+
+#     response = api_client.post(url, data, format="json")
+#     print(response.json())
+#     if should_error:
+#         assert response.status_code == status.HTTP_400_BAD_REQUEST
+#         assert "Une recette ne peut pas avoir à la fois un user et un guest_id." in response.json()['non_field_errors']
+#     else:
+#         assert response.status_code in [status.HTTP_201_CREATED, status.HTTP_200_OK]
+
 def test_cannot_be_own_parent(api_client, base_url, user):
     api_client.force_authenticate(user=user)
     data = base_recipe_data()
@@ -272,6 +301,7 @@ def test_adaptation_permissions_guest(api_client, base_url, guest_id):
     # Crée la recette mère
     mother = api_client.post(url, base_recipe_data(visibility="public"), format="json").data
     # Invité A adapte la recette
+    api_client.force_authenticate(user=None)
     payload = base_recipe_data(recipe_name="forky", steps=[{"step_number": 1, "instruction": "Go"}])
     fork = api_client.post(f"{url}{mother['id']}/adapt/", payload, format="json", HTTP_X_GUEST_ID=guest_id).data
     fork_url = f"{url}{fork['id']}/"

@@ -735,6 +735,13 @@ class RecipeSerializer(serializers.ModelSerializer):
         """
         parent = data.get("parent_recipe", getattr(self.instance, "parent_recipe", None))
         rtype = data.get("recipe_type", getattr(self.instance, "recipe_type", "BASE"))
+        request = self.context.get('request')
+        user = request.user if request else None
+        guest_id = data.get('guest_id') or (request.headers.get('X-Guest-Id') if request else None)
+
+        # 0. Vérification de la présence d'un user ou d'un guest_id, mais pas les deux
+        # if user and guest_id:
+        #     raise serializers.ValidationError("Une recette ne peut pas avoir à la fois un user et un guest_id.")
 
         # 1. Règles d'adaptation (parent/type)
         if parent and parent == self.instance:
