@@ -1,8 +1,10 @@
+import json
 from django.contrib import admin, messages
 from django import forms
 from django.forms.models import BaseInlineFormSet
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
+from django.core.serializers.json import DjangoJSONEncoder
 from .models import *
 
 
@@ -352,8 +354,11 @@ class RecipeAdmin(admin.ModelAdmin):
     readonly_fields = ['recipe_subrecipes_synthesis']
 
     class Media:
-        css = {'all': ('pastry_app/admin/required_fields.css','pastry_app/admin/recipe_admin.css')}
-        js = ('pastry_app/admin/recipe_admin.js',)
+        css = {'all': ('pastry_app/admin/required_fields.css',
+                       'pastry_app/admin/recipe_admin.css', 
+                       'pastry_app/admin/tagify.css')}
+        js = ('pastry_app/admin/recipe_admin.js', 
+              'pastry_app/admin/tagify.min.js')
     
     fieldsets = (
         ('Synthèse', {
