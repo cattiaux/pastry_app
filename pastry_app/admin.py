@@ -1,12 +1,10 @@
-import json
 from django.contrib import admin, messages
 from django import forms
 from django.forms.models import BaseInlineFormSet
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
-from django.core.serializers.json import DjangoJSONEncoder
 from .models import *
-
+import json
 
 class StoreCityListFilter(admin.SimpleListFilter):
     """
@@ -349,7 +347,7 @@ class RecipeLabelInline(admin.TabularInline):
 @admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
     inlines = [RecipeCategoryInline, RecipeLabelInline, RecipeIngredientInline, RecipeStepInline, SubRecipeInline]
-    list_display = ('recipe_name', 'id', 'chef_name', 'context_name', 'parent_recipe', 'tags', 'visibility', 'is_default')
+    list_display = ('recipe_name', 'id', 'chef_name', 'context_name', 'parent_recipe', 'display_tags', 'visibility', 'is_default')
     list_filter = ('recipe_type', 'categories', 'labels', 'visibility')    
     readonly_fields = ['recipe_subrecipes_synthesis']
 
@@ -381,6 +379,30 @@ class RecipeAdmin(admin.ModelAdmin):
             'description': "Champs relatifs à la visibilité, aux droits, ou à la gestion multi-utilisateur."
         }),
     )
+
+    @admin.display(description="Tags")
+    def display_tags(self, obj):
+        """
+        Affiche la liste des tags de façon lisible, même si le champ tags contient des données sérialisées de façon incohérente 
+        (ex : liste de JSON stringifiés).
+        Cette fonction tente d'afficher uniquement les valeurs de tags, quel que soit le format présent en base.
+        """
+        # obj.tags peut être :
+        # - une liste de chaînes JSON (["[{\"value\":\"foo\"}]"])
+        # - une liste de chaînes simples (["foo", "bar"])
+        # On essaie de parser la première valeur comme JSON
+        if isinstance(obj.tags, list) and obj.tags:
+            first_value = obj.tags[0]
+            try:
+                # Si c'est une string JSON, on la parse
+                tags_list = json.loads(first_value)
+                # Si c'est une liste de dicts [{"value": "foo"}, ...]
+                if isinstance(tags_list, list) and tags_list and isinstance(tags_list[0], dict):
+                    return ", ".join(tag.get("value", "") for tag in tags_list)
+            except Exception:
+                # Sinon, on considère que c'est une liste plate de strings
+                return ", ".join(obj.tags)
+        return ""
 
     def recipe_subrecipes_synthesis(self, obj):
         html = "<div class='recipe-columns-container'>"
@@ -429,6 +451,13 @@ class RecipeAdmin(admin.ModelAdmin):
         if db_field.name == "trick":
             kwargs["widget"] = forms.Textarea(attrs={"rows": 1, "cols": 60})
         return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+    def get_readonly_fields(self, request, obj=None):
+        """ Empêche la modification du champ 'is_default' par les utilisateurs non-admin dans l'interface admin. """
+        ro_fields = super().get_readonly_fields(request, obj)
+        if not request.user.is_staff:
+            return ro_fields + ('is_default',)
+        return ro_fields
 
     def save_related(self, request, form, formsets, change):
         """
