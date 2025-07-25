@@ -132,6 +132,24 @@ Objectif à terme
 - Ajouter un test automatique pour garantir la précision sur ces cas sensibles
 
 
+
+### Dynamisation du champ “tags” dans l’admin Django
+Problème actuel : Les suggestions de tags sont statiques (écrites “en dur” dans le JS de l’admin).
+
+Besoins : Offrir à l’utilisateur de l’admin des suggestions de tags dynamiques, 
+basées sur les tags déjà existants dans la base (pour l’utilisateur courant, ou tous les utilisateurs).
+
+Solution cible :
+1. Créer un endpoint (API ou admin) qui retourne la liste des tags distincts déjà utilisés (ex : /admin/api/recipe-tags/).
+2. Dans le JS de l’admin (ex : recipe_admin.js), utiliser AJAX (fetch) pour récupérer cette liste lors du chargement du formulaire.
+3. Initialiser Tagify avec la “whitelist” récupérée dynamiquement, pour bénéficier de l’autocomplétion et des suggestions.
+
+À prévoir :
+- Authentification/permissions sur l’endpoint si besoin.
+- Gestion du format de retour (JSON array de strings).
+- Option : filtrer les tags proposés selon l’utilisateur connecté.
+
+
 ### Ajout des allergènes dans une recette. Penser à la structure de données pour ça.
 
 ### Ajout module IA, agent AI, MCP
