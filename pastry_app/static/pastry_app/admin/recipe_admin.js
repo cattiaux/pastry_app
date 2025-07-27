@@ -19,9 +19,9 @@
 
         (function($) {
 
-            // ========================================
+            // -------------------------------------------------------------------
             // 1. Affichage/Masquage de adaptation_note
-            // ========================================
+            // -------------------------------------------------------------------
 
             // Affiche/masque le champ adaptation_note selon le contexte (tu peux garder ta logique !)
             function toggleAdaptationNoteField() {
@@ -43,9 +43,9 @@
                 updateField();
             }
 
-            // ===============================================
+            // -------------------------------------------------------------------
             // 2. Affichage conditionnel du champ pan_quantity
-            // ===============================================
+            // -------------------------------------------------------------------
             function togglePanQuantityField() {
                 var panField = $('#id_pan');
                 var panQuantityRow = $('.form-row.field-pan_quantity');
@@ -63,9 +63,9 @@
                 updateField();
             }
 
-            // =======================================================
+            // -------------------------------------------------------------------
             // 3. Affichage des messages d'info sous les blocs inlines
-            // =======================================================
+            // -------------------------------------------------------------------
 
             // Utilitaire pour attendre que les blocs inline existent
             function waitForInlines(callback) {
@@ -112,14 +112,39 @@
                     // Hide the whole fieldset (title + synthesis block)
                     $('.field-recipe_subrecipes_synthesis').closest('fieldset').hide();
                 }
-                // Sinon, fallback : vérifie le titre h1 (si tu n’as pas la classe add-form)
+                // Sinon, fallback : vérifie le titre h1 (si la classe add-form n'existe pas)
                 else if ($('#content h1').text().trim().toLowerCase().startsWith('add recipe')) {
                     $('.field-recipe_subrecipes_synthesis').closest('fieldset').hide();
                 }
             }
 
             // -------------------------------------------------------------------
-            // 5. Utilisation de Tagify pour le rendu visuel du champ tags
+            // 5. Hide adjustment mode field on "add recipe" only
+            // -------------------------------------------------------------------
+            function hideAdjustmentModeOnCreate() {
+                if ($('body').hasClass('add-form')) {
+                    // Cache le form-row du champ "mode ajustement"
+                    $('.field-mode_ajustement').hide();
+                }
+                // Fallback sur le titre h1 si besoin
+                else if ($('#content h1').text().trim().toLowerCase().startsWith('add recipe')) {
+                    $('.field-mode_ajustement').hide();
+                }
+            }
+
+            // -------------------------------------------------------------------
+            // 6. Affichage conditionnel du bouton de calcul d'ajustement
+            // -------------------------------------------------------------------
+            // function toggleAdjustmentButtonVisibility() {
+            //     if ($('#id_mode_ajustement').is(':checked')) {
+            //         $('#ajustement-btn').show();
+            //     } else {
+            //         $('#ajustement-btn').hide();
+            //     }
+            // }
+
+            // -------------------------------------------------------------------
+            // 6. Utilisation de Tagify pour le rendu visuel du champ tags
             // -------------------------------------------------------------------
             function setupTagifyOnTagsField() {
                 var tagsInput = document.querySelector('#id_tags');
@@ -141,20 +166,19 @@
             }
 
             // =====================================
-            // 4. Initialisation globale au chargement
+            // Initialisation globale au chargement
             // =====================================
             $(document).ready(function () {
 
-                // 1. Adaptation note display/hide
+                // 1. Adaptation note display/hide Adaptation note field and pan quantity field
                 toggleAdaptationNoteField();
-
-                // 2. Pan quantity display/hide
                 togglePanQuantityField();
 
-                // 3. Hide synthesis fieldset on recipe creation
+                // 2. Hide synthesis fieldset and mode adjustment on recipe creation
                 hideSynthesisOnCreate();
+                hideAdjustmentModeOnCreate();
 
-                // 4. Ajout des messages d'info sous les bons blocs inline
+                // 3. Ajout des messages d'info sous les bons blocs inline
                 waitForInlines(function() {
                     // Steps
                     addInlineInfo(
@@ -173,7 +197,7 @@
                     );
                 });
 
-                // 5. Initialisation de Tagify sur le champ tags
+                // 4. Initialisation de Tagify sur le champ tags
                 setupTagifyOnTagsField();
             });
 

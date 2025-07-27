@@ -344,21 +344,32 @@ class RecipeLabelInline(admin.TabularInline):
     extra = 0
     autocomplete_fields = ['label']
 
+class RecipeAdminForm(forms.ModelForm):
+    mode_ajustement = forms.BooleanField(required=False, label="Mode ajustement", 
+                                         help_text="Permet d’ajuster les quantités sans modifier la recette.")
+
+    class Meta:
+        model = Recipe
+        fields = "__all__"
+
 @admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
     inlines = [RecipeCategoryInline, RecipeLabelInline, RecipeIngredientInline, RecipeStepInline, SubRecipeInline]
     list_display = ('recipe_name', 'id', 'chef_name', 'context_name', 'parent_recipe', 'display_tags', 'visibility', 'is_default')
     list_filter = ('recipe_type', 'categories', 'labels', 'visibility')    
     readonly_fields = ['recipe_subrecipes_synthesis']
+    form = RecipeAdminForm
 
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',
                        'pastry_app/admin/recipe_admin.css', 
                        'pastry_app/admin/tagify.css')}
         js = ('pastry_app/admin/recipe_admin.js', 
+              'pastry_app/admin/recipe_adjustment_admin.js',
               'pastry_app/admin/tagify.min.js')
     
     fieldsets = (
+        (None, {'fields': ('mode_ajustement',)}),
         ('Synthèse', {
             'fields': ('recipe_subrecipes_synthesis',),
             'classes': ('hide-label',),
