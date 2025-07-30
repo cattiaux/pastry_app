@@ -251,16 +251,20 @@ def test_recipe_adaptation_api_pan_to_pan(api_client, recipe, target_pan):
 def test_recipe_adaptation_api_servings_to_pan(api_client, recipe, target_pan):
     """
     Vérifie que l’API adapte une recette vers un moule cible
-    en se basant sur un nombre de portions initial.
+    en se basant sur le nombre de portions renseigné sur la recette (servings_min/max).
     """
-    initial_servings = 6
-    volume_source = initial_servings * 150 # (6*150 = 900)
-    volume_target = target_pan.volume_cm3_cache # (2000)
+    servings = 6
     recipe.pan = None  # On retire le pan pour forcer l’usage des servings comme source
-    multiplier = volume_target / volume_source # (2000 / 900 = 2.22)
+    recipe.servings_min = servings
+    recipe.servings_max = servings
+    recipe.save()
+
+    volume_source = servings * 150
+    volume_target = target_pan.volume_cm3_cache
+    multiplier = volume_target / volume_source
 
     url = reverse("adapt-recipe")
-    response = api_client.post(url, {"recipe_id": recipe.id, "initial_servings": initial_servings, "target_pan_id": target_pan.id}, format="json")
+    response = api_client.post(url, {"recipe_id": recipe.id, "target_pan_id": target_pan.id}, format="json")
     assert response.status_code == 200
     data = response.json()
 
@@ -271,9 +275,6 @@ def test_recipe_adaptation_api_servings_to_pan(api_client, recipe, target_pan):
     for i, original in enumerate(recipe.recipe_ingredients.all()):
         ing = data["ingredients"][i]
         assert abs(ing["quantity"] - round(original.quantity * multiplier, 2)) < 0.1
-
-    # Vérifie la cohérence du pan cible dans le résultat si on décide de l’exposer
-    # assert data.get("target_pan_id") == target_pan.id
 
     # Structure des sous-recettes
     for sub in data["subrecipes"]:
@@ -363,85 +364,89 @@ def test_recipe_adaptation_api_servings_to_servings(api_client, recipe):
     for sub in data["subrecipes"]:
         assert "ingredients" in sub and isinstance(sub["ingredients"], list)
 
-# #  POST /pan-estimation/
+#  POST /pan-estimation/
 
-# def test_pan_estimation_api(api_client, target_pan):
-#     """
-#     Vérifie que l’API d’estimation retourne bien le volume
-#     et l’intervalle de portions pour un moule existant ou pour des dimensions fournies.
-#     """
-#     url = reverse("estimate-pan")
+def test_pan_estimation_api(api_client, target_pan):
+    """
+    Vérifie que l’API d’estimation retourne bien le volume
+    et l’intervalle de portions pour un moule existant ou pour des dimensions fournies.
+    """
+    url = reverse("estimate-pan")
 
-#     # Avec pan existant
-#     response = api_client.post(url, {"pan_id": target_pan.id}, format="json")
-#     assert response.status_code == 200
-#     data = response.json()
+    # Avec pan existant
+    response = api_client.post(url, {"pan_id": target_pan.id}, format="json")
+    assert response.status_code == 200
+    data = response.json()
 
-#     assert "volume_cm3" in data
-#     assert "estimated_servings_standard" in data
-#     assert "estimated_servings_min" in data
-#     assert "estimated_servings_max" in data
-#     assert data["volume_cm3"] == round(target_pan.volume_cm3_cache, 2)
+    assert "volume_cm3" in data
+    assert "estimated_servings_standard" in data
+    assert "estimated_servings_min" in data
+    assert "estimated_servings_max" in data
+    assert data["volume_cm3"] == round(target_pan.volume_cm3_cache, 2)
 
-#     # Avec dimensions ROUND
-#     response = api_client.post(url, {"pan_type": "ROUND", "diameter": 24, "height": 5}, format="json")
-#     assert response.status_code == 200
-#     data_round = response.json()
-#     assert data_round["estimated_servings_standard"] > 0
+    # Avec dimensions ROUND
+    round_pan = Pan.objects.create(pan_name="Moule rond", pan_type="ROUND", diameter=24, height=5) 
+    response = api_client.post(url, {"pan_id":round_pan.id}, format="json")
+    print(response.json())
+    assert response.status_code == 200
+    data_round = response.json()
+    assert data_round["estimated_servings_standard"] > 0
 
-#     # Avec dimensions RECTANGLE
-#     response = api_client.post(url, {"pan_type": "RECTANGLE", "length": 30, "width": 20, "rect_height": 5}, format="json")
-#     assert response.status_code == 200
-#     data_rect = response.json()
-#     assert data_rect["estimated_servings_standard"] > 0
+    # Avec dimensions RECTANGLE
+    response = api_client.post(url, {"pan_id": target_pan.id}, format="json")
+    assert response.status_code == 200
+    data_rect = response.json()
+    assert data_rect["estimated_servings_standard"] > 0
 
-#     # Test erreur si aucun input valide
-#     response = api_client.post(url, {}, format="json")
-#     assert response.status_code == 400
-#     assert "error" in response.json() or "non_field_errors" in response.json()
+    # Test erreur si aucun input valide
+    response = api_client.post(url, {}, format="json")
+    assert response.status_code == 400
+    assert "error" in response.json() or "non_field_errors" in response.json()
 
-# #  POST /pan-suggestion/
+#  POST /pan-suggestion/
 
-# def test_pan_suggestion_api(api_client, target_pan):
-#     """
-#     Vérifie que l’API suggère des moules pour un nombre de portions donné.
-#     """
-#     url = reverse("suggest-pans")
+def test_pan_suggestion_api(api_client):
+    """
+    Vérifie que l’API suggère des moules pour un nombre de portions donné.
+    """
+    url = reverse("suggest-pans")
 
-#     response = api_client.post(url, {"target_servings": 10}, format="json")
-#     assert response.status_code == 200
-#     data = response.json()
+    # Création d'un pan pour le test, vérifier qu'il soit suggéré
+    pan = Pan.objects.create(pan_name="Test Pan", pan_type="ROUND", diameter=20, height=5, volume_cm3_cache=1550)
+    
+    response = api_client.post(url, {"target_servings": 10}, format="json")
+    assert response.status_code == 200
+    data = response.json()
 
-#     assert "target_volume_cm3" in data
-#     assert "suggested_pans" in data
-#     assert isinstance(data["suggested_pans"], list)
+    assert isinstance(data, list)  # On attend une liste de pans
+    assert len(data) > 0
 
-#     for pan in data["suggested_pans"]:
-#         assert "id" in pan
-#         assert "pan_name" in pan
-#         assert "volume_cm3_cache" in pan
-#         assert "estimated_servings_standard" in pan
+    for pan in data:
+        assert "id" in pan
+        assert "pan_name" in pan
+        assert "volume_cm3_cache" in pan
+        assert "estimated_servings_standard" in pan
+        assert abs(pan["estimated_servings_standard"] - 10) <= 2
 
-#     # Test erreur avec target_servings manquant
-#     response = api_client.post(url, {}, format="json")
-#     assert response.status_code == 400
-#     assert "target_servings" in response.json()
+    # Test erreur avec target_servings manquant
+    response = api_client.post(url, {}, format="json")
+    assert response.status_code == 400
+    assert "target_servings" in response.json() or "error" in response.json()
 
-# #  POST /recipes-adapt/by-ingredient/
+#  POST /recipes-adapt/by-ingredient/
 
-# def test_recipe_adaptation_by_ingredient_api(api_client, recipe):
-#     """
-#     Vérifie que l’API adapte correctement une recette en fonction
-#     de la quantité d’un ingrédient donné.
-#     """
-#     ingredient = recipe.recipe_ingredients.first().ingredient
-#     url = reverse("adapt-recipe-by-ingredient")
+def test_recipe_adaptation_by_ingredient_api(api_client, recipe):
+    """
+    Vérifie que l’API adapte correctement une recette en fonction de la quantité d’un ingrédient donné.
+    """
+    ingredient = recipe.recipe_ingredients.first().ingredient
+    url = reverse("adapt-recipe-by-ingredient")
 
-#     response = api_client.post(url, {"recipe_id": recipe.id, "ingredient_constraints": {str(ingredient.id): 100}}, format="json")
-#     assert response.status_code == 200
-#     data = response.json()
-#     assert data["recipe_id"] == recipe.id
-#     assert data["limiting_ingredient_id"] == ingredient.id
-#     assert data["multiplier"] > 0
-#     assert data["ingredients"][0]["ingredient_id"] == ingredient.id
+    response = api_client.post(url, {"recipe_id": recipe.id, "ingredient_constraints": {str(ingredient.id): 100}}, format="json")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["recipe_id"] == recipe.id
+    assert data["limiting_ingredient_id"] == ingredient.id
+    assert data["multiplier"] > 0
+    assert data["ingredients"][0]["ingredient_id"] == ingredient.id
 
