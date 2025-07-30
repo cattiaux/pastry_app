@@ -31,16 +31,8 @@ def normalize_case(value):
 # 1. HELPERS : CONVERSIONS VOLUMES / PORTIONS / MOULES
 # ============================================================
 
-def servings_to_volume(servings_min: int, servings_max: int = None) -> float:
-    """
-    Calcule un volume estimé (en ml) à partir d’un nombre de portions.
-    Si servings_max est donné, utilise la moyenne.
-    """
-    if servings_max:
-        servings = (servings_min + servings_max) / 2
-    else:
-        servings = servings_min
-
+def servings_to_volume(servings):
+    """Convertit un nombre de portions en volume (ml/cm³)."""
     return servings * 150
 
 def get_pan_volume(pan) -> float:
@@ -76,6 +68,28 @@ def get_pan_volume(pan) -> float:
 
     raise ValueError("Impossible de déterminer le volume du moule (pan) fourni.")
 
+def get_source_volume(recipe):
+    """
+    Retourne un tuple (volume_source, mode) :
+        - mode = 'pan' si la base est le pan d'origine,
+        - mode = 'servings' sinon.
+
+    Si la recette possède un pan : utilise le volume du pan
+    Sinon : utilise la moyenne servings_min/servings_max (via serving_to_volume)
+    """
+    if getattr(recipe, "pan", None) and getattr(recipe.pan, "volume_cm3_cache", None):
+        return recipe.pan.volume_cm3_cache, "pan"
+    # Si pas de pan, on tente la moyenne des servings
+    servings_min = getattr(recipe, "servings_min", None)
+    servings_max = getattr(recipe, "servings_max", None)
+    if servings_min and servings_max:
+        return servings_to_volume((servings_min + servings_max) / 2), "servings"
+    if servings_min:
+        return servings_to_volume(servings_min), "servings"
+    if servings_max:
+        return servings_to_volume(servings_max), "servings"
+    return None, None
+
 def calculate_quantity_multiplier(from_volume_cm3: float, to_volume_cm3: float) -> float:
     """
     Calcule le multiplicateur pour passer d’un volume source à un volume cible.
@@ -88,65 +102,31 @@ def calculate_quantity_multiplier(from_volume_cm3: float, to_volume_cm3: float) 
 # 2. CALCUL DU MULTIPLICATEUR EN FONCTION DU CONTEXTE
 # ============================================================
 
-def get_scaling_multiplier(recipe, target_servings: int = None, target_pan = None, target_volume: float = None) -> float:
+def get_scaling_multiplier(recipe, target_servings: int = None, target_pan = None) -> float:
     """
     Calcule le multiplicateur à appliquer à la recette selon le contexte cible :
-      - volume cible (prioritaire),
-      - nombre de portions cible,
-      - moule cible.
-    Utilise le volume de référence de la recette (moule ou servings d’origine).
-    Retourne 1.0 si aucun scaling n’est nécessaire.
+    Priorité au pan d'origine s'il existe, sinon base servings_min/max
     """
-    # 1. Volume cible prioritaire
-    if target_volume:
-        # On prend le volume de référence de la recette
-        base_volume = None
-        # Priorité au moule stocké sur la recette si présent
-        if hasattr(recipe, "pan") and recipe.pan:
-            base_volume = get_pan_volume(recipe.pan)
-        elif hasattr(recipe, "servings") and recipe.servings:
-            base_volume = servings_to_volume(recipe.servings)
-        else:
-            raise ValueError("Impossible de déterminer le volume de référence de la recette.")
-        return float(target_volume) / float(base_volume)
+    source_volume, source_mode = get_source_volume(recipe)
+    if not source_volume:
+        raise ValueError("Impossible de déterminer le volume source de la recette (ni pan ni servings d'origine).")
 
-    # 2. Nombre de portions cible (converti en volume)
+    if target_pan:
+        target_volume = getattr(target_pan, "volume_cm3_cache", None)
+        if not target_volume:
+            raise ValueError("Le pan cible n'a pas de volume défini.")
     elif target_servings:
-        # Calcul du volume cible pour ce nombre de portions
-        volume_target = servings_to_volume(target_servings)
-        # Volume d’origine (via moule ou portions)
-        base_volume = None
-        if hasattr(recipe, "pan") and recipe.pan:
-            base_volume = get_pan_volume(recipe.pan)
-        elif hasattr(recipe, "servings") and recipe.servings:
-            base_volume = servings_to_volume(recipe.servings)
-        else:
-            raise ValueError("Impossible de déterminer le volume de référence de la recette.")
-        return float(volume_target) / float(base_volume)
-
-    # 3. Moule cible (pan)
-    elif target_pan:
-        # Volume cible = volume du pan fourni
-        volume_target = get_pan_volume(target_pan)
-        # Volume de référence
-        base_volume = None
-        if hasattr(recipe, "pan") and recipe.pan:
-            base_volume = get_pan_volume(recipe.pan)
-        elif hasattr(recipe, "servings") and recipe.servings:
-            base_volume = servings_to_volume(recipe.servings)
-        else:
-            raise ValueError("Impossible de déterminer le volume de référence de la recette.")
-        return float(volume_target) / float(base_volume)
-
-    # 4. Aucun scaling demandé
+        target_volume = servings_to_volume(target_servings)
     else:
-        return 1.0
+        raise ValueError("Il faut fournir une destination (target_pan ou target_servings) pour calculer le scaling.")
+
+    return float(target_volume) / float(source_volume), source_mode
 
 # ============================================================
 # 3. SCALING / ADAPTATION DE RECETTE (MÉTIER)
 # ============================================================
 
-def scale_recipe_recursively(recipe, target_servings: int = None, target_pan = None, target_volume: float = None) -> dict:
+def scale_recipe_recursively(recipe, target_servings: int = None, target_pan = None) -> dict:
     """
     Fonction métier principale : adapte toute une recette (ingrédients ET sous-recettes, récursivement)
     selon un nombre de portions cible, un moule cible, ou un volume cible.
@@ -155,15 +135,10 @@ def scale_recipe_recursively(recipe, target_servings: int = None, target_pan = N
     Retourne une structure complète : ingrédients adaptés, sous-recettes adaptées, scaling utilisé, etc.
     """
     # 1. Calcule le multiplicateur de scaling pour la recette courante
-    multiplier = get_scaling_multiplier(
-        recipe,
-        target_servings=target_servings,
-        target_pan=target_pan,
-        target_volume=target_volume,
-    )
+    scaling_multiplier, scaling_mode = get_scaling_multiplier(recipe, target_servings=target_servings, target_pan=target_pan)
 
     # 2. Scaling des ingrédients directs
-    adapted_ingredients = _scale_ingredients_flat(recipe, multiplier)
+    adapted_ingredients = _scale_ingredients_flat(recipe, scaling_multiplier)
 
     # 3. Scaling récursif des sous-recettes (si présentes)
     adapted_subrecipes = []
@@ -172,7 +147,7 @@ def scale_recipe_recursively(recipe, target_servings: int = None, target_pan = N
         if not hasattr(sub_recipe, 'default_quantity') or sub_recipe.default_quantity in (None, 0):
             raise ValueError(f"La sous-recette {sub_recipe} n’a pas de default_quantity définie.")
         # Le scaling à appliquer à la sous-recette dépend du ratio demandé
-        sub_multiplier = (main_sub.quantity / sub_recipe.default_quantity) * multiplier
+        sub_multiplier = (main_sub.quantity / sub_recipe.default_quantity) * scaling_multiplier
         adapted = scale_recipe_recursively(
             sub_recipe,
             target_servings=None,
@@ -196,7 +171,8 @@ def scale_recipe_recursively(recipe, target_servings: int = None, target_pan = N
     return {
         "recipe_id": recipe.id,
         "recipe_name": getattr(recipe, "name", ""),
-        "scaling_multiplier": multiplier,
+        "scaling_multiplier": scaling_multiplier,
+        "scaling_mode": scaling_mode,
         "ingredients": adapted_ingredients,
         "subrecipes": adapted_subrecipes,
     }
@@ -211,7 +187,7 @@ def _scale_ingredients_flat(recipe, multiplier: float) -> list:
     for ri in recipe.recipe_ingredients.all():
         adapted.append({
             "ingredient_id": ri.ingredient.id,
-            "ingredient_name": ri.ingredient.name,
+            "ingredient_name": ri.ingredient.ingredient_name,
             "display_name": getattr(ri, "display_name", ""),
             "quantity": round(ri.quantity * multiplier, 2) if ri.quantity is not None else None,
             "unit": ri.unit,

@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import AllowAny, IsAdminUser
 from .permissions import *
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -14,8 +14,9 @@ from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as filters
 from django.shortcuts import get_object_or_404
-from .utils_pure import normalize_case
-from .utils import *
+# from .utils_pure import normalize_case
+# from .utils import *
+from .utils_new import *
 from .models import *
 from .serializers import *
 from .mixins import GuestUserRecipeMixin
@@ -553,7 +554,7 @@ class RecipeAdaptationAPIView(APIView):
         """
         Permet d’adapter une recette à un autre moule ou à un nombre de portions cible.
 
-        Les cas supportés :
+        Les cas supportés (gérés par `scale_recipe_recursively` via `get_scaling_multiplier`) :
         - Cas 1 : Adaptation entre moule source et moule cible
         - Cas 2 : Adaptation depuis un nombre de portions initial vers un moule
         - Cas 3 : Adaptation depuis un moule source vers un nombre de portions cible
@@ -561,10 +562,11 @@ class RecipeAdaptationAPIView(APIView):
         """
         # Extraction des paramètres du corps de la requête
         recipe_id = request.data.get("recipe_id")
-        source_pan_id = request.data.get("source_pan_id")
         target_pan_id = request.data.get("target_pan_id")
-        initial_servings = request.data.get("initial_servings")
         target_servings = request.data.get("target_servings")
+        target_pan = None
+        if target_pan_id:
+            target_pan = get_object_or_404(Pan, pk=target_pan_id)
 
         if not recipe_id:
             return Response({"error": "recipe_id est requis"}, status=status.HTTP_400_BAD_REQUEST)
@@ -572,67 +574,34 @@ class RecipeAdaptationAPIView(APIView):
         # Chargement de la recette
         recipe = get_object_or_404(Recipe, pk=recipe_id)
 
+        # Contrôle
+        if not target_pan and not target_servings:
+            return Response({"error": "Il faut fournir un moule cible ou un nombre de portions cible."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            # Cas 1 : pan → pan
-            if source_pan_id and target_pan_id:
-                if not recipe.pan or recipe.pan.id != int(source_pan_id):
-                    return Response({"error": "Le moule source de la recette ne correspond pas."}, status=status.HTTP_400_BAD_REQUEST)
-                target_pan = get_object_or_404(Pan, pk=target_pan_id)
-                data = adapt_recipe_pan_to_pan(recipe, target_pan)
-
-            # Cas 2 : servings → pan
-            elif initial_servings and target_pan_id:
-                target_pan = get_object_or_404(Pan, pk=target_pan_id)
-                volume_target = target_pan.volume_cm3_cache
-                volume_source = servings_to_volume(int(initial_servings))
-                data = adapt_recipe_with_target_volume(recipe, volume_target, volume_source)
-                data["suggested_pans"] = get_suggested_pans(volume_target)
-
-            # Cas 3 : pan → servings
-            elif source_pan_id and target_servings:
-                if not recipe.pan or recipe.pan.id != int(source_pan_id):
-                    return Response({"error": "Le moule source de la recette ne correspond pas."}, status=status.HTTP_400_BAD_REQUEST)
-                data = adapt_recipe_servings_to_volume(recipe, int(target_servings))
-
-            # Cas 4 : servings min/max → servings cible
-            elif target_servings and recipe.servings_min:
-                data = adapt_recipe_servings_to_servings(recipe, int(target_servings))
-
-            else:
-                return Response({"error": "Combinaison de paramètres invalide."}, status=status.HTTP_400_BAD_REQUEST)
-
+            data = scale_recipe_recursively(recipe, target_pan=target_pan, target_servings=target_servings)
             return Response(data, status=status.HTTP_200_OK)
-    
+
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class PanEstimationAPIView(APIView):
     """
-    API permettant d’estimer le volume et le nombre de portions
-    d’un moule (pan), à partir d’un moule existant ou de dimensions fournies.
+    API permettant d’estimer le volume et le nombre de portions d’un moule (pan), 
+    à partir d’un moule existant.
     """
 
     def post(self, request):
         serializer = PanEstimationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         data = serializer.validated_data
 
-        pan = None
-        if data.get("pan_id"):
-            pan = get_object_or_404(Pan, pk=data["pan_id"])
+        if not data.get("pan_id"):
+            return Response({"error": "Un pan_id doit être fourni."}, status=400)
+        pan = get_object_or_404(Pan, pk=data["pan_id"])
 
         try:
-            estimation = estimate_servings_from_pan(
-                pan=pan,
-                pan_type=data.get("pan_type"),
-                diameter=data.get("diameter"),
-                height=data.get("height"),
-                length=data.get("length"),
-                width=data.get("width"),
-                rect_height=data.get("rect_height"),
-                volume_raw=data.get("volume_raw")
-            )
+            estimation = estimate_servings_from_pan(pan)
             return Response(estimation, status=200)
 
         except ValueError as e:

@@ -407,3 +407,4 @@ def test_recipe_adaptation_by_ingredient_api(api_client, recipe):
     assert data["limiting_ingredient_id"] == ingredient.id
     assert data["multiplier"] > 0
     assert data["ingredients"][0]["ingredient_id"] == ingredient.id
+
