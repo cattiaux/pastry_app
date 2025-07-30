@@ -144,7 +144,7 @@
              */
             function updateQuantitiesFromResponse(response) {
                 if (!response.ingredients) {
-                    console.warn("Réponse API inattendue : pas de clé 'ingredients'");
+                    console.warn("Réponse API inattendue : pas de clé 'ingredients'");
                     return;
                 }
 
@@ -173,18 +173,6 @@
                     });
                 });
 
-                // Met à jour la synthèse des subrecipes (si tu as cette logique affichée)
-                if (response.subrecipes) {
-                    response.subrecipes.forEach(function (item) {
-                        $("select[id^='id_main_recipes-']").each(function() {
-                            if ($(this).val() == subrecipe.id) {
-                                const $row = $(this).closest('tr');
-                                $row.find("input[id^='id_main_recipes-'][id$='-quantity']").val(subrecipe.quantity);
-                            }
-                        });
-                    });
-                }
-
                 // feedback visuel
                 $(".messages").append('<div class="success">Quantités ajustées !</div>');
 
@@ -197,7 +185,7 @@
 
                 toggleAdjustmentMode();
 
-                // addAdjustButton();
+                addAdjustButton();
 
             });
 

@@ -23,6 +23,7 @@ def apply_multiplier_to_ingredients(recipe, multiplier: float) -> list:
     for ri in recipe.recipe_ingredients.all():
         adapted_ingredients.append({
             "ingredient": ri.ingredient.id,
+            "display_name": getattr(ri, "display_name", ""),
             "original_quantity": ri.quantity,
             "scaled_quantity": round(ri.quantity * multiplier, 2),
             "unit": ri.unit
@@ -114,6 +115,7 @@ def adapt_recipe_by_ingredients_constraints(recipe, ingredient_constraints: dict
         adapted_ingredients.append({
             "ingredient_id": recipe_ingredient.ingredient.id,
             "ingredient_name": recipe_ingredient.ingredient.ingredient_name,
+            "display_name": getattr(recipe_ingredient, "display_name", ""),
             "original_quantity": recipe_ingredient.quantity,
             "scaled_quantity": round(recipe_ingredient.quantity * final_multiplier, 2),
             "unit": recipe_ingredient.unit,
