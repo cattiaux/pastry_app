@@ -677,7 +677,7 @@ class RecipeSerializer(serializers.ModelSerializer):
         fields = ["id", 
                   "recipe_name", "chef_name", "context_name", 
                   "source", "recipe_type", "parent_recipe", "parent_recipe_name", "adaptation_note", "tags",
-                  "servings_min", "servings_max", "description", "trick", "image", 
+                  "servings_min", "servings_max", "total_recipe_quantity", "description", "trick", "image", 
                   "pan", "categories", "labels", "ingredients", "steps", "sub_recipes", 
                   "created_at", "updated_at",
                   "user", "guest_id", "visibility", "is_default"]

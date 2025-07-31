@@ -354,6 +354,8 @@ class Recipe(models.Model):
     servings_max = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
     pan_quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)], 
                                                help_text="Nombre d'exemplaires de ce moule utilisés dans cette recette (ex: 6 cercles individuels).")
+    total_recipe_quantity = models.FloatField(null=True, blank=True, 
+                                              help_text="Quantité totale en g produite par cette recette (ex: 1200 pour 1200g de crème pâtissière)")
 
     # Relations
     categories = models.ManyToManyField(Category, through="RecipeCategory", related_name="recipes") 

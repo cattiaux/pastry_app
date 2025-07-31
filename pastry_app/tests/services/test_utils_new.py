@@ -235,39 +235,89 @@ def test_scaling_prioritizes_pan_when_servings_are_incoherent(recipe, target_pan
     expected_multiplier = volume_target / volume_source
     assert abs(result["scaling_multiplier"] - expected_multiplier) < 0.01
 
-def test_recursive_scaling_on_subrecipes(db):
+@pytest.mark.parametrize("use_total_quantity, use_pan", [
+    (True, False),   # Teste récursion avec total_recipe_quantity
+    (False, True),   # Teste récursion avec pan d'origine
+])
+@pytest.mark.parametrize("scale_mode", ["servings", "pan"])
+def test_recursive_scaling_on_subrecipes(use_total_quantity, use_pan, scale_mode):
     """
-    Vérifie que le scaling récursif adapte bien tous les ingrédients, y compris dans les sous-recettes imbriquées.
+    Vérifie que le scaling récursif adapte bien tous les ingrédients, y compris dans les sous-recettes imbriquées,
+    selon le mode total_quantity (poids) ou pan (volume), et selon le type d'adaptation cible (par servings ou par pan).
     """
     # Création d'une sous-sous-recette
     ingr_sub_sub = Ingredient.objects.create(ingredient_name="Sucre glace")
     sub_sub_recipe = Recipe.objects.create(recipe_name="Crème", chef_name="Chef Choco", servings_min=2, servings_max=2)
     sub_sub_ingredient = RecipeIngredient.objects.create(recipe=sub_sub_recipe, ingredient=ingr_sub_sub, quantity=50, unit="g")
+    RecipeStep.objects.create(recipe=sub_sub_recipe, step_number=1, instruction="Mélanger les ingrédients")
+
+        # Option 1 : Ajout d'une quantité totale produite par la sous-sous-recette
+    if use_total_quantity:
+        sub_sub_recipe.total_recipe_quantity = 100  # Disons que la recette de crème produit 100g
+        sub_sub_recipe.save()
+
+        # Option 2 : Ajout d'un pan d'origine
+    if use_pan:
+        pan = Pan.objects.create(pan_name="Moule test", pan_type="RECTANGLE", length=10, width=5, rect_height=2, volume_cm3_cache=100) 
+        sub_sub_recipe.pan = pan
+        sub_sub_recipe.save()
 
     # Création d'une sous-recette qui inclut la sous-sous-recette
     ingr_sub = Ingredient.objects.create(ingredient_name="Farine")
     sub_recipe = Recipe.objects.create(recipe_name="Garniture", chef_name="Chef Choco", servings_min=2, servings_max=2)
     sub_ingredient = RecipeIngredient.objects.create(recipe=sub_recipe, ingredient=ingr_sub, quantity=30, unit="g")
-    SubRecipe.objects.create(recipe=sub_recipe, sub_recipe=sub_sub_recipe, quantity=123, unit="g")
+    SubRecipe.objects.create(recipe=sub_recipe, sub_recipe=sub_sub_recipe, quantity=100, unit="g")
+    RecipeStep.objects.create(recipe=sub_recipe, step_number=1, instruction="Mélanger les ingrédients")
+
+        # Idem, indique le total produit ou le pan sur la sous-recette si besoin
+    if use_total_quantity:
+        sub_recipe.total_recipe_quantity = 200  # Garniture produit 200g
+        sub_recipe.save()
+    if use_pan:
+        pan2 = Pan.objects.create(pan_name="Moule sub", pan_type="RECTANGLE", length=10, width=10, rect_height=2, volume_cm3_cache=200)
+        sub_recipe.pan = pan2
+        sub_recipe.save()
 
     # Recette principale qui inclut la sous-recette
     main_ingr = Ingredient.objects.create(ingredient_name="Oeuf")
     main_recipe = Recipe.objects.create(recipe_name="Tarte", chef_name="Chef Choco", servings_min=2, servings_max=2)
     main_ingredient = RecipeIngredient.objects.create(recipe=main_recipe, ingredient=main_ingr, quantity=2, unit="unit")
-    SubRecipe.objects.create(recipe=main_recipe, sub_recipe=sub_recipe, quantity=456, unit="g")
+    SubRecipe.objects.create(recipe=main_recipe, sub_recipe=sub_recipe, quantity=400, unit="g")
+    RecipeStep.objects.create(recipe=main_recipe, step_number=1, instruction="Mélanger les ingrédients")
 
-    # Adapter la recette pour 4 portions
-    data = scale_recipe_recursively(main_recipe, target_servings=4)
-    assert data["scaling_multiplier"] == 2.0
+        # Ajout du total ou pan sur la recette principale
+    if use_total_quantity:
+        main_recipe.total_recipe_quantity = 800
+        main_recipe.save()
+    if use_pan:
+        pan3 = Pan.objects.create(pan_name="Moule main", pan_type="RECTANGLE", length=15, width=10, rect_height=2, volume_cm3_cache=300)
+        main_recipe.pan = pan3
+        main_recipe.save()
 
-    # Vérifie tous les niveaux de sous-recettes et ingrédients
+    # -------- Scaling cible selon le paramètre scale_mode --------
+
+    # On veut doubler la recette (de 2 à 4 portions ou de pan volume 300 à 600)
+    if scale_mode == "servings":
+        data = scale_recipe_recursively(main_recipe, target_servings=4)
+    elif scale_mode == "pan":
+        target_pan = Pan.objects.create(pan_name="Cible", pan_type="RECTANGLE", length=10, width=10, rect_height=6, volume_cm3_cache=600)
+        data = scale_recipe_recursively(main_recipe, target_pan=target_pan)
+
+    # --------- Asserts globaux ---------
+
+    expected_multiplier = 2.0  # On a contrôlé les fixtures pour que ce soit exact
+    assert abs(data["scaling_multiplier"] - expected_multiplier) < 0.01
+
+    # Vérifie tous les niveaux de sous-recettes et ingrédients (les quantités sont doublées)
     assert len(data["subrecipes"]) == 1
     sub = data["subrecipes"][0]
     assert len(sub["ingredients"]) == 1
-    assert abs(sub["ingredients"][0]["quantity"] - 60) < 0.01
+    assert abs(sub["ingredients"][0]["quantity"] - 60) < 0.01  # Farine (30 * 2)
+    
+     # Vérifie le scaling dans la sub-sub-recette (sucre glace)
     assert len(sub["subrecipes"]) == 1
     subsub = sub["subrecipes"][0]
-    assert abs(subsub["ingredients"][0]["quantity"] - 100) < 0.01
+    assert abs(subsub["ingredients"][0]["quantity"] - 100) < 0.01 # Sucre glace (50 * 2)
 
 ### Test d’intégration des endpoints API
 

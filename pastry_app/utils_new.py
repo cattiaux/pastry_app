@@ -126,16 +126,28 @@ def get_scaling_multiplier(recipe, target_servings: int = None, target_pan = Non
 # 3. SCALING / ADAPTATION DE RECETTE (MÉTIER)
 # ============================================================
 
-def scale_recipe_recursively(recipe, target_servings: int = None, target_pan = None) -> dict:
+def scale_recipe_recursively(recipe, target_servings: int = None, target_pan = None, custom_multiplier=None) -> dict:
     """
     Fonction métier principale : adapte toute une recette (ingrédients ET sous-recettes, récursivement)
-    selon un nombre de portions cible, un moule cible, ou un volume cible.
-    Utilise les helpers pour calculer le multiplicateur, puis applique ce scaling partout.
+    selon un nombre de portions cible, un moule cible, ou un multiplicateur direct (custom_multiplier).
+    - Utilise la quantité totale produite si renseignée (total_recipe_quantity, en g)
+    - Sinon, fallback sur le volume du pan d'origine
+
+    - À la racine, on adapte via target_servings ou target_pan (calcul du scaling via get_scaling_multiplier).
+    - À chaque niveau de sous-recette, on applique le multiplicateur calculé (custom_multiplier),
+      sans recalculer de scaling global (plus de rappel à get_scaling_multiplier en récursion).
+
     NE MODIFIE RIEN EN BASE.
     Retourne une structure complète : ingrédients adaptés, sous-recettes adaptées, scaling utilisé, etc.
     """
     # 1. Calcule le multiplicateur de scaling pour la recette courante
-    scaling_multiplier, scaling_mode = get_scaling_multiplier(recipe, target_servings=target_servings, target_pan=target_pan)
+    if custom_multiplier is not None:
+        # Si on est dans la récursivité, on utilise directement le multiplicateur transmis
+        scaling_multiplier = custom_multiplier
+        scaling_mode = "custom"
+    else:
+        # Au premier niveau, on calcule le scaling à partir de la cible choisie
+        scaling_multiplier, scaling_mode = get_scaling_multiplier(recipe, target_servings=target_servings, target_pan=target_pan)
 
     # 2. Scaling des ingrédients directs
     adapted_ingredients = _scale_ingredients_flat(recipe, scaling_multiplier)
@@ -144,28 +156,46 @@ def scale_recipe_recursively(recipe, target_servings: int = None, target_pan = N
     adapted_subrecipes = []
     for main_sub in recipe.main_recipes.all():
         sub_recipe = main_sub.sub_recipe
-        if not hasattr(sub_recipe, 'default_quantity') or sub_recipe.default_quantity in (None, 0):
-            raise ValueError(f"La sous-recette {sub_recipe} n’a pas de default_quantity définie.")
-        # Le scaling à appliquer à la sous-recette dépend du ratio demandé
-        sub_multiplier = (main_sub.quantity / sub_recipe.default_quantity) * scaling_multiplier
-        adapted = scale_recipe_recursively(
-            sub_recipe,
-            target_servings=None,
-            target_pan=None,
-            target_volume=None,  # On propage juste le multiplicateur calculé
-        )
-        # Patch les quantités des ingrédients de la sous-recette avec sub_multiplier
-        # (on peut ajouter le multiplicateur dans la synthèse si besoin)
-        for ing in adapted["ingredients"]:
-            ing["quantity"] = round(ing["quantity"] * sub_multiplier, 2) if ing["quantity"] is not None else None
+
+        # ---------------------------
+        # Calcul du multiplicateur à appliquer à la sous-recette 
+        #  - Si la sous-recette connaît sa quantité totale produite (en g), on utilise le ratio
+        #  - Sinon, fallback sur pan d'origine (volume)
+        # ---------------------------
+        if hasattr(sub_recipe, 'total_recipe_quantity') and sub_recipe.total_recipe_quantity:
+            # Cas standard : la sous-recette connaît la quantité totale qu'elle produit (en g)
+            if main_sub.unit != "g":
+                raise ValueError("L'unité de la sous-recette doit être en grammes pour le scaling automatique.")
+            # Ex : besoin 400g / recette crème produit 1200g  → coeff = 0.333
+            local_ratio = main_sub.quantity / sub_recipe.total_recipe_quantity
+
+        elif sub_recipe.pan:
+            # Cas fallback : la sous-recette n'a pas de quantité totale, on utilise le volume du pan d'origine
+            # (Ex: une pâte pour un moule de 24cm, etc.)
+            sub_volume = get_pan_volume(sub_recipe.pan)
+            if main_sub.unit not in ["ml", "cm3", "g"]:
+                raise ValueError("L'unité attendue doit être un volume (ml, cm3) ou gramme si équivalence 1g = 1ml.")
+            # On suppose densité ~1 si g/ml, sinon conversion volume si possible
+            desired_volume = main_sub.quantity
+            local_ratio = desired_volume / sub_volume
+
+        else:
+            raise ValueError("Impossible d'adapter la sous-recette : ni quantité totale ni pan d'origine connus.")
+
+        # 4. Appel récursif sur la sous-recette en passant le multiplicateur calculé
+        # sub_multiplier = scaling_multiplier * local_ratio
+        print(f"main_sub.quantity={main_sub.quantity}, sub_recipe.total_recipe_quantity={getattr(sub_recipe, 'total_recipe_quantity', None)}, scaling_multiplier(parent)={scaling_multiplier}, local_ratio={local_ratio}")#, sub_multiplier(passed)={sub_multiplier}")
+        adapted = scale_recipe_recursively(sub_recipe, custom_multiplier=scaling_multiplier)
+
         adapted_subrecipes.append({
             "sub_recipe_id": sub_recipe.id,
             "sub_recipe_name": getattr(sub_recipe, "name", ""),
-            "quantity": main_sub.quantity,
+            "quantity": main_sub.quantity,  # quantité de sous-recette utilisée (déjà à l’échelle du parent)
             "unit": main_sub.unit,
-            "ingredients": adapted["ingredients"],
+            "ingredients": adapted["ingredients"],   # ingrédients déjà scaled globalement
             "subrecipes": adapted["subrecipes"],
-            # Ajoute ici d’autres champs utiles (notes, etc.)
+            "scaling_multiplier": scaling_multiplier,  # le scaling global appliqué à ce niveau
+            "local_ratio": local_ratio,  # Ajouté pour debugger/comprendre la logique
         })
 
     return {
