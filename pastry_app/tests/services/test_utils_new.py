@@ -2,7 +2,7 @@ import pytest, math
 from django.urls import reverse
 from rest_framework import status
 from pastry_app.utils_new import *
-from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep
+from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep, SubRecipe
 from pastry_app.tests.base_api_test import api_client, base_url
 import importlib
 import pastry_app.views
@@ -26,6 +26,22 @@ def recipe(db):
     return recipe
 
 ### Test services 
+
+def test_scaling_mode_is_correct(recipe, target_pan):
+    """
+    Vérifie que le champ scaling_mode est correct selon la logique métier.
+    """
+    # Cas pan d'origine : scaling_mode doit être "pan"
+    result = scale_recipe_recursively(recipe, target_pan=target_pan)
+    assert result["scaling_mode"] == "pan"
+
+    # Cas sans pan, avec servings : scaling_mode doit être "servings"
+    recipe.pan = None
+    recipe.servings_min = 8
+    recipe.servings_max = 8
+    recipe.save()
+    result2 = scale_recipe_recursively(recipe, target_pan=target_pan)
+    assert result2["scaling_mode"] == "servings"
 
 def test_adapt_recipe_pan_to_pan_creates_correct_multiplier(recipe, target_pan):
     """
@@ -201,6 +217,57 @@ def test_adapt_recipe_by_ingredients_constraints(recipe):
     assert result["multiplier"] == expected_multiplier
     assert result["limiting_ingredient_id"] == ingredient.id
     assert abs(result["ingredients"][0]["scaled_quantity"] - 100) < 0.01
+
+def test_scaling_prioritizes_pan_when_servings_are_incoherent(recipe, target_pan):
+    """
+    Vérifie que la priorité est bien donnée au pan d'origine même si les servings sont incohérents.
+    """
+    # On donne un pan d'origine petit mais des servings incohérents
+    recipe.servings_min = 100
+    recipe.servings_max = 100
+    recipe.save()
+    # Le scaling doit utiliser le volume pan (pas servings)
+    result = scale_recipe_recursively(recipe, target_pan=target_pan)
+    assert result["scaling_mode"] == "pan"
+    # On vérifie que le scaling_multiplier correspond bien à la formule basée sur les volumes des pans
+    volume_source = recipe.pan.volume_cm3_cache
+    volume_target = target_pan.volume_cm3_cache
+    expected_multiplier = volume_target / volume_source
+    assert abs(result["scaling_multiplier"] - expected_multiplier) < 0.01
+
+def test_recursive_scaling_on_subrecipes(db):
+    """
+    Vérifie que le scaling récursif adapte bien tous les ingrédients, y compris dans les sous-recettes imbriquées.
+    """
+    # Création d'une sous-sous-recette
+    ingr_sub_sub = Ingredient.objects.create(ingredient_name="Sucre glace")
+    sub_sub_recipe = Recipe.objects.create(recipe_name="Crème", chef_name="Chef Choco", servings_min=2, servings_max=2)
+    sub_sub_ingredient = RecipeIngredient.objects.create(recipe=sub_sub_recipe, ingredient=ingr_sub_sub, quantity=50, unit="g")
+
+    # Création d'une sous-recette qui inclut la sous-sous-recette
+    ingr_sub = Ingredient.objects.create(ingredient_name="Farine")
+    sub_recipe = Recipe.objects.create(recipe_name="Garniture", chef_name="Chef Choco", servings_min=2, servings_max=2)
+    sub_ingredient = RecipeIngredient.objects.create(recipe=sub_recipe, ingredient=ingr_sub, quantity=30, unit="g")
+    SubRecipe.objects.create(recipe=sub_recipe, sub_recipe=sub_sub_recipe, quantity=123, unit="g")
+
+    # Recette principale qui inclut la sous-recette
+    main_ingr = Ingredient.objects.create(ingredient_name="Oeuf")
+    main_recipe = Recipe.objects.create(recipe_name="Tarte", chef_name="Chef Choco", servings_min=2, servings_max=2)
+    main_ingredient = RecipeIngredient.objects.create(recipe=main_recipe, ingredient=main_ingr, quantity=2, unit="unit")
+    SubRecipe.objects.create(recipe=main_recipe, sub_recipe=sub_recipe, quantity=456, unit="g")
+
+    # Adapter la recette pour 4 portions
+    data = scale_recipe_recursively(main_recipe, target_servings=4)
+    assert data["scaling_multiplier"] == 2.0
+
+    # Vérifie tous les niveaux de sous-recettes et ingrédients
+    assert len(data["subrecipes"]) == 1
+    sub = data["subrecipes"][0]
+    assert len(sub["ingredients"]) == 1
+    assert abs(sub["ingredients"][0]["quantity"] - 60) < 0.01
+    assert len(sub["subrecipes"]) == 1
+    subsub = sub["subrecipes"][0]
+    assert abs(subsub["ingredients"][0]["quantity"] - 100) < 0.01
 
 ### Test d’intégration des endpoints API
 

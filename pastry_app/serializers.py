@@ -621,6 +621,14 @@ class SubRecipeSerializer(serializers.ModelSerializer):
         """
         recipe = data.get("recipe", getattr(self.instance, "recipe", None))
         sub_recipe = data.get("sub_recipe", getattr(self.instance, "sub_recipe", None))
+        quantity = data.get("quantity", getattr(self.instance, "quantity", None))
+        unit = data.get("unit", getattr(self.instance, "unit", None))
+
+        # quantité et unité sont obligatoires
+        if quantity is None or quantity < 0 :
+            raise serializers.ValidationError({"quantity": "La quantité est obligatoire et doit être positive."})
+        if unit is None or unit == "":
+            raise serializers.ValidationError({"unit": "L'unité de mesure est obligatoire."})
 
         # Interdiction d'une recette en sous-recette d'elle-même
         if recipe and sub_recipe and recipe.id == sub_recipe.id:
