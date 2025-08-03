@@ -1,5 +1,5 @@
 # views.py
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, permissions
 from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.decorators import action
@@ -554,11 +554,15 @@ class IngredientUnitReferenceViewSet(viewsets.ModelViewSet):
     """
     queryset = IngredientUnitReference.objects.all().select_related('ingredient')
     serializer_class = IngredientUnitReferenceSerializer
-    permission_classes = [IsAdminUser] # Seuls les admins peuvent modifier
     filterset_fields = ['unit', 'ingredient']
     search_fields = ['ingredient__ingredient_name', 'ingredient__slug', 'notes']
     ordering_fields = ['ingredient', 'unit', 'weight_in_grams']
     ordering = ['ingredient', 'unit']
+
+    def get_permissions(self):
+        if self.action in ["list", "retrieve"]:
+            return [permissions.AllowAny()]   # Lecture pour tous
+        return [permissions.IsAdminUser()]   # Modification = admin seulement
 
 class RecipeAdaptationAPIView(APIView):
     """API permettant d'adapter une recette à un nouveau contexte (moule ou portions)."""

@@ -1120,25 +1120,24 @@ class IngredientUnitReference(models.Model):
         ordering = ['ingredient', 'unit']
 
     def __str__(self):
-        return f"{self.ingredient.ingredient_name} ({self.unit} : {self.weight_in_grams} g"
+        return f"{self.ingredient.ingredient_name} ({self.unit}) : {self.weight_in_grams} g"
 
     def clean(self):
+        # Champs obligatoires (ingredient et unit)
+        # if self.ingredient is None:
+        #     print("self.ingredient is None")
+        if not self.ingredient :
+            raise ValidationError("L’ingrédient doit être renseigné.")
+        if not self.unit:
+            raise ValidationError("L’unité doit être renseigné.")
+        print("ok")
         # Unicité du couple ingrédient/unité
-        if IngredientUnitReference.objects.exclude(pk=self.pk).filter(
-            ingredient=self.ingredient, 
-            unit=self.unit
-        ).exists():
+        if IngredientUnitReference.objects.exclude(pk=self.pk).filter(ingredient=self.ingredient, unit=self.unit).exists():
             raise ValidationError("Une référence avec cet ingrédient et cette unité existe déjà.")
 
         # Poids doit être strictement positif
         if self.weight_in_grams is None or self.weight_in_grams <= 0:
             raise ValidationError("Le poids doit être strictement supérieur à 0.")
-
-        # Champs obligatoires (ingredient et unit)
-        if not self.ingredient:
-            raise ValidationError("L’ingrédient doit être renseigné.")
-        if not self.unit:
-            raise ValidationError("L’unité doit être renseigné.")
 
     def save(self, *args, **kwargs):
         self.full_clean()  # Appelle clean()
