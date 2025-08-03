@@ -579,7 +579,12 @@ class RecipeAdaptationAPIView(APIView):
             return Response({"error": "Il faut fournir un moule cible ou un nombre de portions cible."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            data = scale_recipe_recursively(recipe, target_pan=target_pan, target_servings=target_servings)
+            # 1. Calcul du multiplicateur global
+            multiplier, scaling_mode = get_scaling_multiplier(recipe, target_pan=target_pan, target_servings=target_servings)
+            # 2. Application du scaling partout
+            data = scale_recipe_globally(recipe, multiplier)
+            # 3. Infos utiles en plus
+            data["scaling_mode"] = scaling_mode
             return Response(data, status=status.HTTP_200_OK)
 
         except ValueError as e:
@@ -636,12 +641,16 @@ class RecipeAdaptationByIngredientAPIView(APIView):
 
         recipe = get_object_or_404(Recipe, pk=serializer.validated_data["recipe_id"])
         # Conversion des clés en entier pour correspondre aux IDs en base
-        ingredient_constraints = {
-            int(k): v for k, v in serializer.validated_data["ingredient_constraints"].items()
-        }
+        ingredient_constraints = {int(k): v for k, v in serializer.validated_data["ingredient_constraints"].items()}
 
         try:
-            result = adapt_recipe_by_ingredients_constraints(recipe, ingredient_constraints)
+            # 1. Calcul du multiplicateur limitant
+            multiplier, limiting_ingredient_id = get_limiting_multiplier(recipe, ingredient_constraints)
+            # 2. Adaptation globale
+            result = scale_recipe_globally(recipe, multiplier)
+            # 3. Ajoute les infos utiles au retour
+            result["limiting_ingredient_id"] = limiting_ingredient_id
+            result["multiplier"] = multiplier
             return Response(result, status=status.HTTP_200_OK)
 
         except ValidationError as e:

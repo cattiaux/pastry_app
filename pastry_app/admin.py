@@ -377,7 +377,7 @@ class RecipeAdmin(admin.ModelAdmin):
         }),
         ('Caractéristiques principales de la recette', {
             'fields': ('recipe_type', 'recipe_name', 'chef_name', 'parent_recipe', 'adaptation_note',
-                       'servings_min', 'servings_max', 'pan', 'pan_quantity')
+                       'servings_min', 'servings_max', 'pan', 'pan_quantity', 'total_recipe_quantity')
         }),
         ('Contenu', {
             'fields': ('description', 'trick', 'image', 'tags')
