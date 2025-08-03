@@ -1005,6 +1005,31 @@ class PanSerializer(serializers.ModelSerializer):
 
         return data
 
+class IngredientUnitReferenceSerializer(serializers.ModelSerializer):
+    # On expose l'ingrédient par son slug (plus lisible côté API)
+    ingredient = serializers.SlugRelatedField(queryset=Ingredient.objects.all(), slug_field='ingredient_name', required=True)
+    unit = serializers.ChoiceField(choices=UNIT_CHOICES)
+
+    class Meta:
+        model = IngredientUnitReference
+        fields = ['id', 'ingredient', 'unit', 'weight_in_grams', 'notes']
+
+    def validate_weight_in_grams(self, value):
+        if value is None or value <= 0:
+            raise serializers.ValidationError("Le poids doit être strictement supérieur à 0.")
+        return value
+    
+    def validate(self, data):
+        # Unicité du couple ingrédient + unité
+        ingredient = data.get('ingredient')
+        unit = data.get('unit')
+        qs = IngredientUnitReference.objects.filter(ingredient=ingredient, unit=unit)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("Une référence avec cet ingrédient et cette unité existe déjà.")
+        return data
+
 class PanEstimationSerializer(serializers.Serializer):
     pan_id = serializers.IntegerField(required=False)
     pan_type = serializers.ChoiceField(choices=["ROUND", "RECTANGLE", "OTHER"], required=False)

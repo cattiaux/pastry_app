@@ -31,6 +31,7 @@ router.register(r'pans', PanViewSet)
 router.register(r'categories', CategoryViewSet) 
 router.register(r'labels', LabelViewSet) 
 router.register(r'stores', StoreViewSet) 
+router.register(r'ingredient_unit_references', IngredientUnitReferenceViewSet)
 
 # Router imbriqué
 recipes_router = NestedDefaultRouter(router, r"recipes", lookup="recipe")

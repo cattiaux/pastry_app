@@ -565,3 +565,11 @@ class SubRecipeAdmin(admin.ModelAdmin):
     def subrecipe_name(self, obj):
         return obj.sub_recipe.recipe_name
     subrecipe_name.short_description = 'Subrecipe Name'
+
+@admin.register(IngredientUnitReference)
+class IngredientUnitReferenceAdmin(admin.ModelAdmin):
+    list_display = ('ingredient', 'unit', 'weight_in_grams', 'notes')
+    list_filter = ('unit', 'ingredient')
+    search_fields = ('ingredient__ingredient_name', 'notes')
+    autocomplete_fields = ['ingredient']
+    ordering = ('ingredient', 'unit')

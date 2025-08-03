@@ -547,6 +547,19 @@ class PanViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
 
         return Response(serializer.data)
     
+class IngredientUnitReferenceViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet CRUD complet pour gérer le mapping d'unités en API.
+    Limité aux admins (modifiable selon tes besoins).
+    """
+    queryset = IngredientUnitReference.objects.all().select_related('ingredient')
+    serializer_class = IngredientUnitReferenceSerializer
+    permission_classes = [IsAdminUser] # Seuls les admins peuvent modifier
+    filterset_fields = ['unit', 'ingredient']
+    search_fields = ['ingredient__ingredient_name', 'ingredient__slug', 'notes']
+    ordering_fields = ['ingredient', 'unit', 'weight_in_grams']
+    ordering = ['ingredient', 'unit']
+
 class RecipeAdaptationAPIView(APIView):
     """API permettant d'adapter une recette à un nouveau contexte (moule ou portions)."""
 
