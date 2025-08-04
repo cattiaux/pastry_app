@@ -1,5 +1,5 @@
 # views.py
-from rest_framework import viewsets, status, permissions
+from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.decorators import action
@@ -9,7 +9,7 @@ from .permissions import *
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Q
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as filters
@@ -19,7 +19,7 @@ from django.shortcuts import get_object_or_404
 from .utils_new import *
 from .models import *
 from .serializers import *
-from .mixins import GuestUserRecipeMixin
+from .mixins import *
 
 class RecipeFilter(filters.FilterSet):
     """
@@ -547,7 +547,7 @@ class PanViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
 
         return Response(serializer.data)
     
-class IngredientUnitReferenceViewSet(viewsets.ModelViewSet):
+class IngredientUnitReferenceViewSet(OverridableReferenceQuerysetMixin, GuestUserReferenceMixin, viewsets.ModelViewSet):
     """
     ViewSet CRUD complet pour gérer le mapping d'unités en API.
     Limité aux admins (modifiable selon tes besoins).
@@ -558,11 +558,53 @@ class IngredientUnitReferenceViewSet(viewsets.ModelViewSet):
     search_fields = ['ingredient__ingredient_name', 'ingredient__slug', 'notes']
     ordering_fields = ['ingredient', 'unit', 'weight_in_grams']
     ordering = ['ingredient', 'unit']
+    permission_classes = [IsOwnerOrGuestOrReadOnly]
+    
+    def get_queryset(self):
+        base_queryset = super().get_queryset()
+        return self.get_user_overridable_queryset(base_queryset)
 
-    def get_permissions(self):
-        if self.action in ["list", "retrieve"]:
-            return [permissions.AllowAny()]   # Lecture pour tous
-        return [permissions.IsAdminUser()]   # Modification = admin seulement
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        user = request.user if request.user.is_authenticated else None
+        guest_id = request.session.get('guest_id')
+        # Si global, on duplique en privé ou update le privé
+        if instance.user is None and instance.guest_id is None:
+            # Vérifie si privé existe déjà
+            private_qs = IngredientUnitReference.objects.filter(ingredient=instance.ingredient, unit=instance.unit, 
+                                                                user=user, guest_id=guest_id)
+            if private_qs.exists():
+                private_instance = private_qs.first()
+                return super().update(request, pk=private_instance.pk)
+            else:
+                # Créer copie privée
+                data = request.data.copy()
+                data['ingredient'] = instance.ingredient.ingredient_name 
+                data['unit'] = instance.unit
+                serializer = self.get_serializer(data=data)
+                serializer.is_valid(raise_exception=True)
+                serializer.save(user=user, guest_id=guest_id)
+                return Response(serializer.data)
+        else:
+            # Comportement standard
+            return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        user = request.user if request.user.is_authenticated else None
+        guest_id = request.session.get('guest_id')
+        if instance.user is None and instance.guest_id is None:
+            # "Suppression" = créer version privée qui surchargera la globale (fork privé)
+            IngredientUnitReference.objects.get_or_create(
+                ingredient=instance.ingredient,
+                unit=instance.unit,
+                user=user,
+                guest_id=guest_id,
+                defaults={'weight_in_grams': None}
+            )
+            return Response(status=204)
+        else:
+            return super().destroy(request, *args, **kwargs)
 
 class RecipeAdaptationAPIView(APIView):
     """API permettant d'adapter une recette à un nouveau contexte (moule ou portions)."""

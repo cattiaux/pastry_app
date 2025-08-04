@@ -8,6 +8,7 @@ from .models import *
 from .constants import UNIT_CHOICES
 from .utils_pure import normalize_case
 
+
 class StoreSerializer(serializers.ModelSerializer):
     """ Sérialise les magasins où sont vendus les ingrédients. """
     store_name = serializers.CharField(
@@ -1006,13 +1007,14 @@ class PanSerializer(serializers.ModelSerializer):
         return data
 
 class IngredientUnitReferenceSerializer(serializers.ModelSerializer):
-    # On expose l'ingrédient par son slug (plus lisible côté API)
-    ingredient = serializers.SlugRelatedField(queryset=Ingredient.objects.all(), slug_field='ingredient_name', required=True)
+    ingredient = serializers.SlugRelatedField(queryset=Ingredient.objects.all(), slug_field='ingredient_name', required=True) # On expose l'ingrédient par son slug normalisé (plus lisible côté API)
     unit = serializers.ChoiceField(choices=UNIT_CHOICES)
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    guest_id = serializers.CharField(read_only=True)
 
     class Meta:
         model = IngredientUnitReference
-        fields = ['id', 'ingredient', 'unit', 'weight_in_grams', 'notes']
+        fields = ['id', 'ingredient', 'unit', 'weight_in_grams', 'notes', 'user', 'guest_id']
 
     def validate_weight_in_grams(self, value):
         if value is None or value <= 0:
@@ -1020,14 +1022,20 @@ class IngredientUnitReferenceSerializer(serializers.ModelSerializer):
         return value
     
     def validate(self, data):
+        request = self.context.get("request")
+        user = request.user if request and request.user.is_authenticated else None
+        guest_id = None
+        if request:
+            guest_id = (request.headers.get('X-Guest-Id') or request.headers.get('X-GUEST-ID') or request.data.get('guest_id') or request.query_params.get('guest_id'))
+        ingredient = data.get('ingredient') or getattr(self.instance, 'ingredient', None)
+        unit = data.get('unit') or getattr(self.instance, 'unit', None)
+
         # Unicité du couple ingrédient + unité
-        ingredient = data.get('ingredient')
-        unit = data.get('unit')
-        qs = IngredientUnitReference.objects.filter(ingredient=ingredient, unit=unit)
+        qs = IngredientUnitReference.objects.filter(ingredient=ingredient, unit=unit, user=user, guest_id=guest_id)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
-            raise serializers.ValidationError("Une référence avec cet ingrédient et cette unité existe déjà.")
+            raise serializers.ValidationError("Cette référence existe déjà pour cet utilisateur ou guest.")
         return data
 
 class PanEstimationSerializer(serializers.Serializer):

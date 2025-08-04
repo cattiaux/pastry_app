@@ -1112,28 +1112,32 @@ class IngredientUnitReference(models.Model):
     unit = models.CharField(max_length=20, choices=UNIT_CHOICES, help_text="Unité (ex : unité, cas, cc, cup, tranche, etc.)")
     weight_in_grams = models.FloatField(help_text="Poids en grammes correspondant à 1 unité de cet ingrédient.")
     notes = models.CharField(max_length=200, blank=True, help_text="Commentaire, astuce ou source (optionnel).")
-    
+
+    # Utilisateur
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="ingredient_unit_references")
+    guest_id = models.CharField(max_length=64, blank=True, null=True, db_index=True)
+
     class Meta:
-        unique_together = ('ingredient', 'unit')
+        unique_together = ('ingredient', 'unit', 'user', 'guest_id')
         verbose_name = "Référence de conversion unité ➔ poids"
         verbose_name_plural = "Références de conversion unité ➔ poids"
         ordering = ['ingredient', 'unit']
+        constraints = [models.UniqueConstraint(fields=["ingredient", "unit", "user", "guest_id"], name="unique_ingredient_unit_user_guest")]
 
     def __str__(self):
         return f"{self.ingredient.ingredient_name} ({self.unit}) : {self.weight_in_grams} g"
 
     def clean(self):
         # Champs obligatoires (ingredient et unit)
-        # if self.ingredient is None:
-        #     print("self.ingredient is None")
         if not self.ingredient :
             raise ValidationError("L’ingrédient doit être renseigné.")
         if not self.unit:
             raise ValidationError("L’unité doit être renseigné.")
-        print("ok")
+
         # Unicité du couple ingrédient/unité
-        if IngredientUnitReference.objects.exclude(pk=self.pk).filter(ingredient=self.ingredient, unit=self.unit).exists():
-            raise ValidationError("Une référence avec cet ingrédient et cette unité existe déjà.")
+        # filters = dict(ingredient=self.ingredient, unit=self.unit, user=self.user, guest_id=self.guest_id)
+        # if IngredientUnitReference.objects.exclude(pk=self.pk).filter(**filters).exists():
+        #     raise ValidationError("Une référence similaire existe déjà pour cet utilisateur ou guest.")
 
         # Poids doit être strictement positif
         if self.weight_in_grams is None or self.weight_in_grams <= 0:
