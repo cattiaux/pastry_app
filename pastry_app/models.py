@@ -7,7 +7,7 @@ from django.db.models import UniqueConstraint
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.fields import ArrayField
-from django.db.models.signals import pre_delete, post_delete
+from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from .utils_pure import normalize_case
 from .constants import UNIT_CHOICES
@@ -1184,3 +1184,4 @@ class UserRecipeVisibility(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+
