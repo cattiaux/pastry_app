@@ -1135,9 +1135,9 @@ class IngredientUnitReference(models.Model):
             raise ValidationError("L’unité doit être renseigné.")
 
         # Unicité du couple ingrédient/unité
-        # filters = dict(ingredient=self.ingredient, unit=self.unit, user=self.user, guest_id=self.guest_id)
-        # if IngredientUnitReference.objects.exclude(pk=self.pk).filter(**filters).exists():
-        #     raise ValidationError("Une référence similaire existe déjà pour cet utilisateur ou guest.")
+        filters = dict(ingredient=self.ingredient, unit=self.unit, user=self.user, guest_id=self.guest_id)
+        if IngredientUnitReference.objects.exclude(pk=self.pk).filter(**filters).exists():
+            raise ValidationError("Une référence similaire existe déjà pour cet utilisateur ou guest.")
 
         # Poids doit être strictement positif
         if self.weight_in_grams is None or self.weight_in_grams <= 0:

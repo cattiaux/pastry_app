@@ -24,13 +24,12 @@ def user():
 @pytest.fixture
 def ingredient():
     obj = Ingredient.objects.create(ingredient_name="blanC d'œuf")
-    # obj.full_clean() # pas nécessaire car full_clean est appelé dans le save()
-    obj.save()
+    obj.refresh_from_db()
     return obj
 
 @pytest.fixture
-def reference(ingredient):
-    return IngredientUnitReference.objects.create(ingredient=ingredient, unit="unit", weight_in_grams=50)
+def reference(ingredient, user):
+    return IngredientUnitReference.objects.create(ingredient=ingredient, unit="unit", weight_in_grams=50, user=user)
 
 @pytest.mark.parametrize("field_name", ["ingredient", "unit", "weight_in_grams"])
 def test_required_fields_reference_api(api_client, base_url, ingredient, field_name, user):
@@ -63,18 +62,11 @@ def test_weight_must_be_strictly_positive_api(api_client, base_url, ingredient, 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "weight_in_grams" in response.json()
 
-### NO MORE VALID
-# def test_non_admin_cannot_create_reference(api_client, base_url, ingredient):
-#     """Vérifie qu'un non-admin ne peut pas créer de référence."""
-#     url = base_url(model_name)
-#     data = {"ingredient": ingredient.ingredient_name, "unit": "unit", "weight_in_grams": 50}
-#     response = api_client.post(url, data, format="json")
-#     assert response.status_code == status.HTTP_403_FORBIDDEN
-
 def test_guest_can_create_reference(api_client, base_url, guest_id, ingredient):
     url = base_url(model_name)
     data = {"ingredient": ingredient.ingredient_name, "unit": "unit", "weight_in_grams": 42}
     response = api_client.post(url, data, format="json", HTTP_X_GUEST_ID=guest_id)
+    print(response.json())
     assert response.status_code == status.HTTP_201_CREATED
     ref = IngredientUnitReference.objects.get(id=response.data['id'])
     assert ref.guest_id == guest_id
