@@ -167,3 +167,42 @@ def test_isolation_between_users(api_client, ingredient, setup_reference, user, 
     assert user_private.weight_in_grams == 10
     assert guest_private.weight_in_grams == 20
     assert setup_reference.weight_in_grams == 100
+
+def test_soft_hide_idempotence(api_client, ingredient, user, base_url, setup_reference):
+    api_client.force_authenticate(user=user)
+    url = base_url("ingredient_unit_references") + f"{setup_reference.id}/"
+    resp1 = api_client.delete(url)
+    resp2 = api_client.delete(url)
+    assert resp1.status_code == 204
+    assert resp2.status_code == 204
+    # Toujours une seule tombstone pour ce user/clé
+    tombstones = IngredientUnitReference.objects.filter(ingredient=ingredient, unit=setup_reference.unit, user=user, is_hidden=True)
+    assert tombstones.count() == 1
+
+def test_soft_hide_idempotence(api_client, ingredient, user, base_url, setup_reference):
+    api_client.force_authenticate(user=user)
+    url = base_url("ingredient_unit_references") + f"{setup_reference.id}/"
+    resp1 = api_client.delete(url)
+    resp2 = api_client.delete(url)
+    assert resp1.status_code == 204
+    assert resp2.status_code == 204
+    tombstones = IngredientUnitReference.objects.filter(
+        ingredient=ingredient, unit=setup_reference.unit, user=user, is_hidden=True
+    )
+    assert tombstones.count() == 1
+
+def test_cannot_create_duplicate_active_reference(api_client, ingredient, user, base_url):
+    IngredientUnitReference.objects.create(ingredient=ingredient, unit="unit", weight_in_grams=50, user=user)
+    api_client.force_authenticate(user=user)
+    url = base_url("ingredient_unit_references")
+    data = {"ingredient": ingredient.ingredient_name, "unit": "unit", "weight_in_grams": 99}
+    response = api_client.post(url, data=json.dumps(data), content_type="application/json")
+    assert response.status_code == 400  # Unicité enforced
+
+def test_cannot_create_duplicate_hidden_reference(api_client, ingredient, user, base_url):
+    IngredientUnitReference.objects.create(ingredient=ingredient, unit="unit", weight_in_grams=50, user=user, is_hidden=True)
+    api_client.force_authenticate(user=user)
+    url = base_url("ingredient_unit_references")
+    data = {"ingredient": ingredient.ingredient_name, "unit": "unit", "weight_in_grams": 99, "is_hidden": True}
+    response = api_client.post(url, data=json.dumps(data), content_type="application/json")
+    assert response.status_code == 400

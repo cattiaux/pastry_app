@@ -1123,7 +1123,8 @@ class IngredientUnitReference(models.Model):
         verbose_name = "Référence de conversion unité ➔ poids"
         verbose_name_plural = "Références de conversion unité ➔ poids"
         ordering = ['ingredient', 'unit', 'is_hidden']
-        constraints = [models.UniqueConstraint(fields=["ingredient", "unit", "user", "guest_id"], name="unique_ingredient_unit_user_guest")]
+        constraints = [models.UniqueConstraint(fields=["ingredient", "unit", "user", "guest_id", "is_hidden"], 
+                                               name="unique_ingredient_unit_user_guest_hidden")]
 
     def __str__(self):
         return f"{self.ingredient.ingredient_name} ({self.unit}) : {self.weight_in_grams} g"
@@ -1136,9 +1137,9 @@ class IngredientUnitReference(models.Model):
             raise ValidationError("L’unité doit être renseigné.")
 
         # Unicité du couple ingrédient/unité
-        filters = dict(ingredient=self.ingredient, unit=self.unit, user=self.user, guest_id=self.guest_id)
+        filters = dict(ingredient=self.ingredient, unit=self.unit, user=self.user, guest_id=self.guest_id, is_hidden=self.is_hidden)
         if IngredientUnitReference.objects.exclude(pk=self.pk).filter(**filters).exists():
-            raise ValidationError("Une référence similaire existe déjà pour cet utilisateur ou guest.")
+            raise ValidationError("Une référence similaire existe déjà pour cet utilisateur ou guest avec ce statut (actif/masqué).")
 
         # Poids doit être strictement positif
         if self.weight_in_grams is None or self.weight_in_grams <= 0:

@@ -94,3 +94,33 @@ def test_guest_override_global(ingredient, guest_id):
     global_ref = IngredientUnitReference.objects.create(ingredient=ingredient, unit="unit", weight_in_grams=50)
     guest_ref = IngredientUnitReference.objects.create(ingredient=ingredient, unit="unit", weight_in_grams=56, guest_id=guest_id)
     assert guest_ref.weight_in_grams != global_ref.weight_in_grams
+
+def test_create_soft_hidden_reference(ingredient, user):
+    ref = IngredientUnitReference.objects.create(ingredient=ingredient, unit="unit", weight_in_grams=99, user=user, is_hidden=True)
+    assert ref.is_hidden is True
+
+def test_can_have_one_active_and_one_soft_hidden_ref(ingredient, user):
+    # Crée une ref active (OK)
+    ref1 = IngredientUnitReference.objects.create(ingredient=ingredient, unit="unit", weight_in_grams=10, user=user, is_hidden=False)
+    # Crée une ref soft-hidée pour la même clé (OK)
+    ref2 = IngredientUnitReference.objects.create(ingredient=ingredient, unit="unit", weight_in_grams=11, user=user, is_hidden=True)
+    # Impossible de créer une seconde active
+    with pytest.raises(ValidationError):
+        IngredientUnitReference(ingredient=ingredient, unit="unit", weight_in_grams=12, user=user, is_hidden=False).full_clean()
+    # Impossible de créer une seconde soft-hidée
+    with pytest.raises(ValidationError):
+        IngredientUnitReference(ingredient=ingredient, unit="unit", weight_in_grams=13, user=user, is_hidden=True).full_clean()
+
+def test_can_have_one_active_and_one_soft_hidden_ref(ingredient, user):
+    # Crée une ref active
+    ref1 = IngredientUnitReference.objects.create(ingredient=ingredient, unit="unit", weight_in_grams=10, user=user, is_hidden=False)
+    # Crée une ref soft-hidée pour la même clé (doit passer)
+    ref2 = IngredientUnitReference.objects.create(ingredient=ingredient, unit="unit", weight_in_grams=11, user=user, is_hidden=True)
+    assert ref1.is_hidden is False
+    assert ref2.is_hidden is True
+    # Impossible de créer une seconde active
+    with pytest.raises(ValidationError):
+        IngredientUnitReference(ingredient=ingredient, unit="unit", weight_in_grams=12, user=user, is_hidden=False).full_clean()
+    # Impossible de créer une seconde soft-hidée
+    with pytest.raises(ValidationError):
+        IngredientUnitReference(ingredient=ingredient, unit="unit", weight_in_grams=13, user=user, is_hidden=True).full_clean()

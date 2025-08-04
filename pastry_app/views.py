@@ -562,7 +562,8 @@ class IngredientUnitReferenceViewSet(OverridableReferenceQuerysetMixin, GuestUse
     
     def get_queryset(self):
         base_queryset = super().get_queryset()
-        return self.get_user_overridable_queryset(base_queryset.filter(is_hidden=False))
+        qs = self.get_user_overridable_queryset(base_queryset)
+        return qs.filter(is_hidden=False)
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()

@@ -1014,7 +1014,7 @@ class IngredientUnitReferenceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = IngredientUnitReference
-        fields = ['id', 'ingredient', 'unit', 'weight_in_grams', 'notes', 'user', 'guest_id']
+        fields = ['id', 'ingredient', 'unit', 'weight_in_grams', 'notes', 'user', 'guest_id', 'is_hidden']
 
     def validate_weight_in_grams(self, value):
         if value is None or value <= 0:
@@ -1029,13 +1029,14 @@ class IngredientUnitReferenceSerializer(serializers.ModelSerializer):
             guest_id = (request.headers.get('X-Guest-Id') or request.headers.get('X-GUEST-ID') or request.data.get('guest_id') or request.query_params.get('guest_id'))
         ingredient = data.get('ingredient') or getattr(self.instance, 'ingredient', None)
         unit = data.get('unit') or getattr(self.instance, 'unit', None)
+        is_hidden = data.get('is_hidden') or getattr(self.instance, 'is_hidden', None)
 
         # Unicité du couple ingrédient + unité
-        qs = IngredientUnitReference.objects.filter(ingredient=ingredient, unit=unit, user=user, guest_id=guest_id, is_hidden=False)
+        qs = IngredientUnitReference.objects.filter(ingredient=ingredient, unit=unit, user=user, guest_id=guest_id, is_hidden=is_hidden)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
-            raise serializers.ValidationError("Cette référence existe déjà pour cet utilisateur ou guest.")
+            raise serializers.ValidationError("Cette référence existe déjà (active ou soft-hidée) pour cet utilisateur ou guest.")
         return data
 
 class PanEstimationSerializer(serializers.Serializer):
