@@ -1,57 +1,65 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
+def extract_guest_id(request):
+    return (
+        request.headers.get("X-Guest-Id") or
+        request.headers.get("X-GUEST-ID") or
+        request.data.get("guest_id") or
+        request.query_params.get("guest_id")
+    )
+
 class IsOwnerOrGuestOrReadOnly(BasePermission):
     """
-    - Un objet ne peut être modifié que par son propriétaire authentifié OU par l'invité qui l'a créé (via guest_id).
-    - Lecture seule autorisée pour tous.
+    Lecture seule pour tous. Modif/suppression : owner ou guest seulement.
     """
     def has_object_permission(self, request, view, obj):
-        # Lecture seule autorisée pour tout le monde
         if request.method in SAFE_METHODS:
             return True
-        # Utilisateur authentifié
         if request.user.is_authenticated:
             return obj.user == request.user
-        # Sinon, mode invité : compare le guest_id fourni à celui enregistré sur l'objet
-        guest_id = request.headers.get("X-Guest-Id") or request.data.get("guest_id")
+        guest_id = extract_guest_id(request)
         return obj.guest_id and obj.guest_id == guest_id
 
-class CanSoftHideRecipeOrIsOwnerOrGuest(BasePermission):
+class IsNotDefaultInstance(BasePermission):
     """
-    - Pour les recettes de base (is_default), autorise tout user ou invité identifié à soft-hide (DELETE).
-    - Sinon : modif/suppression réservée au propriétaire ou à l'invité créateur (via guest_id).
-    - Lecture seule pour tous.
+    Empêche toute modif/suppression sur instance "de base" (is_default=True).
+    """
+    def has_object_permission(self, request, view, obj):
+        return not getattr(obj, 'is_default', False) or request.method in SAFE_METHODS
+
+class CanSoftHideRecipeOrIsOwnerOrGuest(IsOwnerOrGuestOrReadOnly):
+    """
+    Pour Recipe : 
+    - soft-hide autorisé sur is_default en DELETE (pour tout user/guest identifié)
+    - Sinon, logique owner classique.
     """
     def has_object_permission(self, request, view, obj):
         # Lecture seule toujours autorisée
         if request.method in SAFE_METHODS:
             return True
-
-        # Cas spécial : recette de base (is_default=True) ET delete
+        # Cas soft-hide sur recette de base
         if request.method == "DELETE" and getattr(obj, "is_default", False):
-            if request.user.is_authenticated or (request.headers.get("X-Guest-Id") or request.data.get("guest_id")):
-                return True
+            # Autorise tout user identifié ou guest identifié
+            return request.user.is_authenticated or extract_guest_id(request)
+        # Sinon comportement owner/guest
+        return super().has_object_permission(request, view, obj)
 
-        # Comportement classique (propriétaire ou guest_id)
-        if request.user.is_authenticated:
-            return obj.user == request.user
-        guest_id = request.headers.get("X-Guest-Id") or request.data.get("guest_id")
-        return obj.guest_id and obj.guest_id == guest_id
-
-class IsNotDefaultInstance(BasePermission):
+class CanForkOrIsOwnerOrGuest(IsOwnerOrGuestOrReadOnly):
     """
-    Interdit la modification/suppression des objets 'de base' (is_default=True).
-    S'applique à tous les modèles qui possèdent un champ booléen 'is_default'.
+    Permet PATCH/DELETE sur une instance globale (user=None, guest_id=None) pour fork automatique.
     """
     def has_object_permission(self, request, view, obj):
-        # Si l'objet a is_default=True => lecture seule
-        if getattr(obj, 'is_default', False):
-            return request.method in SAFE_METHODS 
-        return True
-    
+        if request.method in SAFE_METHODS:
+            return True
+        # Autorise modif/suppression sur globale (pour fork)
+        if getattr(obj, "user", None) is None and getattr(obj, "guest_id", None) is None:
+            return True
+        # Sinon comportement owner/guest
+        return super().has_object_permission(request, view, obj)
+
 class IsAdminOrReadOnly(BasePermission):
     """
-    Autorise l'écriture uniquement aux admins.
+    Seuls les admins peuvent modifier/supprimer/créer.
     """
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:

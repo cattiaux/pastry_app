@@ -95,4 +95,4 @@ def test_cannot_delete_last_recipeingredient_api(api_client, base_url, recipe_in
     ingredient_id = recipe_ingredient.id  # Récupération de l'id du seul ingrédient de la recette
     delete_response = api_client.delete(url + f"{ingredient_id}/")  # Tentative de suppression du dernier ingrédient
     assert delete_response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "Une recette doit contenir au moins un ingrédient." in delete_response.json()["error"]
+    assert "Une recette doit contenir au moins un ingrédient ou une sous-recette." in delete_response.json()["error"]

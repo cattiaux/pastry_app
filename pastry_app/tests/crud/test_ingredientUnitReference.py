@@ -58,19 +58,39 @@ def test_update_reference(api_client, base_url, setup_reference, ingredient, use
     ref_id = setup_reference.id
     data = {"weight_in_grams": 52}
     response = update_object(api_client, url, ref_id, data=json.dumps(data))
-    print(response.json())
     assert response.status_code in (200, 201)
     setup_reference.refresh_from_db()
-    assert setup_reference.weight_in_grams == 52
+    # 1. La globale n'a pas changé
+    assert setup_reference.weight_in_grams == 100
+    # 2. La référence privée existe et a la bonne valeur
+    user_private = IngredientUnitReference.objects.get(ingredient=ingredient, unit="unit", user=user)
+    assert user_private.weight_in_grams == 52
+    # 3. L'API renvoie la nouvelle ref privée
+    assert response.data["id"] == user_private.id
 
-def test_delete_reference(api_client, base_url, setup_reference, user):
+def test_delete_reference(api_client, base_url, ingredient, setup_reference, user):
     """Test de suppression d'une référence."""
     api_client.force_authenticate(user=user)
     url = base_url(model_name) + f"{setup_reference.id}/"
     response = api_client.delete(url)
-    print(response.json())
     assert response.status_code == status.HTTP_204_NO_CONTENT
-    assert not IngredientUnitReference.objects.filter(id=setup_reference.id).exists()
+
+    # 1. La globale existe toujours en base
+    assert IngredientUnitReference.objects.filter(id=setup_reference.id).exists()
+
+    # 2. Une ref privée 'tombstone' a été créée pour ce user, avec is_hidden=True
+    user_hidden = IngredientUnitReference.objects.filter(ingredient=ingredient, unit=setup_reference.unit, user=user, is_hidden=True).first()
+    assert user_hidden is not None
+
+    # 3. La ref privée a bien les bonnes valeurs (optionnel, pour auditer)
+    assert user_hidden.ingredient == ingredient
+    assert user_hidden.unit == setup_reference.unit
+    assert user_hidden.is_hidden is True
+    assert not setup_reference.is_hidden
+
+    # 4. Pour ce user, le get_queryset métier (filtré sur is_hidden=False) ne renverra PAS la globale
+    visible_refs = IngredientUnitReference.objects.filter(ingredient=ingredient, unit=setup_reference.unit, user=user, is_hidden=False)
+    assert not visible_refs.exists()
 
 def test_get_nonexistent_reference(api_client, base_url):
     """Vérifie qu'on obtient une erreur 404 sur une référence inexistante."""
@@ -85,7 +105,7 @@ def test_delete_nonexistent_reference(api_client, base_url, user):
     response = api_client.delete(url)
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
-def test_non_admin_cannot_delete_reference(api_client, base_url, setup_reference):
+def test_anonymous_cannot_delete_reference(api_client, base_url, setup_reference):
     """Vérifie qu'un non-admin ne peut pas supprimer une référence."""
     url = base_url(model_name) + f"{setup_reference.id}/"
     response = api_client.delete(url)
@@ -106,6 +126,7 @@ def test_guest_fork_update(api_client, base_url, ingredient, guest_id, setup_ref
     url = base_url(model_name) + f"{setup_reference.id}/"
     data = {"weight_in_grams": 66}
     response = api_client.patch(url, data=json.dumps(data), content_type="application/json", HTTP_X_GUEST_ID=guest_id)
+    print(response.json())
     assert response.status_code in (200, 201)
     setup_reference.refresh_from_db()
     assert setup_reference.weight_in_grams == 100

@@ -1112,6 +1112,7 @@ class IngredientUnitReference(models.Model):
     unit = models.CharField(max_length=20, choices=UNIT_CHOICES, help_text="Unité (ex : unité, cas, cc, cup, tranche, etc.)")
     weight_in_grams = models.FloatField(help_text="Poids en grammes correspondant à 1 unité de cet ingrédient.")
     notes = models.CharField(max_length=200, blank=True, help_text="Commentaire, astuce ou source (optionnel).")
+    is_hidden = models.BooleanField(default=False, help_text="Masque cette référence (soft-delete pour forker une globale)")
 
     # Utilisateur
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="ingredient_unit_references")
@@ -1121,7 +1122,7 @@ class IngredientUnitReference(models.Model):
         unique_together = ('ingredient', 'unit', 'user', 'guest_id')
         verbose_name = "Référence de conversion unité ➔ poids"
         verbose_name_plural = "Références de conversion unité ➔ poids"
-        ordering = ['ingredient', 'unit']
+        ordering = ['ingredient', 'unit', 'is_hidden']
         constraints = [models.UniqueConstraint(fields=["ingredient", "unit", "user", "guest_id"], name="unique_ingredient_unit_user_guest")]
 
     def __str__(self):

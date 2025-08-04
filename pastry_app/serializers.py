@@ -1031,7 +1031,7 @@ class IngredientUnitReferenceSerializer(serializers.ModelSerializer):
         unit = data.get('unit') or getattr(self.instance, 'unit', None)
 
         # Unicité du couple ingrédient + unité
-        qs = IngredientUnitReference.objects.filter(ingredient=ingredient, unit=unit, user=user, guest_id=guest_id)
+        qs = IngredientUnitReference.objects.filter(ingredient=ingredient, unit=unit, user=user, guest_id=guest_id, is_hidden=False)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():

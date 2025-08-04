@@ -6,7 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
 from .permissions import *
-from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
 from django.db.models import ProtectedError, Q
@@ -521,7 +521,7 @@ class PanViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     search_fields = ["pan_name", "pan_brand"]
     ordering_fields = ["pan_name", "pan_type", "pan_brand"]
     ordering = ["pan_name"]
-    permission_classes = [IsOwnerOrGuestOrReadOnly & IsNotDefaultInstance]
+    permission_classes = [IsOwnerOrGuestOrReadOnly, IsNotDefaultInstance]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -558,16 +558,16 @@ class IngredientUnitReferenceViewSet(OverridableReferenceQuerysetMixin, GuestUse
     search_fields = ['ingredient__ingredient_name', 'ingredient__slug', 'notes']
     ordering_fields = ['ingredient', 'unit', 'weight_in_grams']
     ordering = ['ingredient', 'unit']
-    permission_classes = [IsOwnerOrGuestOrReadOnly]
+    permission_classes = [CanForkOrIsOwnerOrGuest]
     
     def get_queryset(self):
         base_queryset = super().get_queryset()
-        return self.get_user_overridable_queryset(base_queryset)
+        return self.get_user_overridable_queryset(base_queryset.filter(is_hidden=False))
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
         user = request.user if request.user.is_authenticated else None
-        guest_id = request.session.get('guest_id')
+        guest_id = (request.session.get('guest_id') or request.headers.get("X-Guest-Id") or request.data.get("guest_id") or request.query_params.get("guest_id"))
         # Si global, on duplique en privé ou update le privé
         if instance.user is None and instance.guest_id is None:
             # Vérifie si privé existe déjà
@@ -592,16 +592,22 @@ class IngredientUnitReferenceViewSet(OverridableReferenceQuerysetMixin, GuestUse
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         user = request.user if request.user.is_authenticated else None
-        guest_id = request.session.get('guest_id')
+        guest_id = (request.session.get('guest_id') or request.headers.get("X-Guest-Id") or request.data.get("guest_id") or request.query_params.get("guest_id"))
         if instance.user is None and instance.guest_id is None:
-            # "Suppression" = créer version privée qui surchargera la globale (fork privé)
-            IngredientUnitReference.objects.get_or_create(
+            if not user and not guest_id:
+                raise PermissionDenied("Vous devez être authentifié ou avoir un guest_id pour masquer une référence.")
+
+            # "Suppression" = créer version privée qui surchargera la globale (fork privé/"tombstone")
+            obj, created = IngredientUnitReference.objects.get_or_create(
                 ingredient=instance.ingredient,
                 unit=instance.unit,
                 user=user,
                 guest_id=guest_id,
-                defaults={'weight_in_grams': None}
+                defaults={'weight_in_grams': instance.weight_in_grams, 'is_hidden': True}
             )
+            if not created:
+                obj.is_hidden = True
+                obj.save()
             return Response(status=204)
         else:
             return super().destroy(request, *args, **kwargs)

@@ -568,8 +568,8 @@ class SubRecipeAdmin(admin.ModelAdmin):
 
 @admin.register(IngredientUnitReference)
 class IngredientUnitReferenceAdmin(admin.ModelAdmin):
-    list_display = ('ingredient', 'unit', 'weight_in_grams', 'notes')
-    list_filter = ('unit', 'ingredient')
+    list_display = ('ingredient', 'unit', 'weight_in_grams', 'notes', 'is_hidden')
+    list_filter = ('unit', 'ingredient', 'is_hidden')
     search_fields = ('ingredient__ingredient_name', 'notes')
     autocomplete_fields = ['ingredient']
     ordering = ('ingredient', 'unit')
