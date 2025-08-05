@@ -1,7 +1,7 @@
 import pytest
 from rest_framework import status
 from django.contrib.auth import get_user_model
-from pastry_app.models import Ingredient, Recipe
+from pastry_app.models import Ingredient, Recipe, IngredientUnitReference
 from pastry_app.tests.base_api_test import api_client, base_url
 from pastry_app.tests.utils import (
     validate_constraint_api, validate_unique_constraint_api, validate_field_normalization_api,
@@ -250,6 +250,54 @@ def test_patch_step_does_not_affect_recipe(api_client, base_url, user):
     assert response.status_code == 200
     recipe_check = api_client.get(f"{base_url(model_name)}{recipe['id']}/").json()
     assert recipe_check["steps"][0]["instruction"] == "Instruction modifiée"
+
+def test_api_total_recipe_quantity_auto(api_client, user):
+    api_client.force_authenticate(user=user)
+    data = base_recipe_data()
+    ingr = Ingredient.objects.create(ingredient_name="Sucre")
+    IngredientUnitReference.objects.create(ingredient=ingr, unit="cas", weight_in_grams=15)
+    data["ingredients"] = [
+        {"ingredient": ingr.pk, "quantity": 2, "unit": "cas"},
+        {"ingredient": ingr.pk, "quantity": 10, "unit": "g"}
+    ]
+    response = api_client.post("/api/recipes/", data, format="json")
+    assert response.status_code == 201
+    recipe_id = response.data["id"]
+    recipe = Recipe.objects.get(pk=recipe_id)
+    assert recipe.total_recipe_quantity == 40  # (2×15)+10
+
+def test_api_total_recipe_quantity_manual(api_client, user):
+    api_client.force_authenticate(user=user)
+    data = base_recipe_data()
+    ingr = Ingredient.objects.create(ingredient_name="Farine")
+    data["ingredients"] = [{"ingredient": ingr.pk, "quantity": 50, "unit": "g"}]
+    data["total_recipe_quantity"] = 789
+    response = api_client.post("/api/recipes/", data, format="json")
+    assert response.status_code == 201
+    recipe_id = response.data["id"]
+    recipe = Recipe.objects.get(pk=recipe_id)
+    assert recipe.total_recipe_quantity == 789
+
+def test_api_total_recipe_quantity_error_if_no_mapping(api_client, user):
+    api_client.force_authenticate(user=user)
+    data = base_recipe_data()
+    ingr = Ingredient.objects.create(ingredient_name="Mystère")
+    data["ingredients"] = [{"ingredient": ingr.pk, "quantity": 1, "unit": "unit"}]
+    data.pop("total_recipe_quantity", None)
+    response = api_client.post("/api/recipes/", data, format="json")
+    assert response.status_code == 400
+    assert "mapping" in str(response.data).lower() or "correspondance" in str(response.data).lower()
+
+def test_api_patch_total_recipe_quantity(api_client, user):
+    api_client.force_authenticate(user=user)
+    data = base_recipe_data()
+    ingr = Ingredient.objects.create(ingredient_name="Patch")
+    data["ingredients"] = [{"ingredient": ingr.pk, "quantity": 50, "unit": "g"}]
+    resp = api_client.post("/api/recipes/", data, format="json")
+    recipe_id = resp.data["id"]
+    patch_resp = api_client.patch(f"/api/recipes/{recipe_id}/", {"total_recipe_quantity": 999}, format="json")
+    assert patch_resp.status_code == 200
+    assert patch_resp.data["total_recipe_quantity"] == 999
 
 # --- Tests de validation métier : adaptation de recettes ---
 

@@ -402,6 +402,45 @@ class Recipe(models.Model):
             return self.servings_max
         return None
 
+    def compute_and_set_total_quantity(self, force=False, user=None, guest_id=None, save=True):
+        """
+        Calcule la quantité totale produite par la recette en grammes,
+        en convertissant chaque ingrédient selon son unité (avec fallback sur la table de correspondance).
+        Si user/guest_id sont passés, privilégie leurs mappings.
+        - Ne remplit le champ que s'il est vide ou si force=True.
+        - Retourne la quantité calculée.
+        - Par défaut, maj le champ et save, sauf si save=False.
+        """
+        if self.total_recipe_quantity is None or force:
+            total = 0
+            errors = []
+            for rec_ing in self.recipe_ingredients.all():
+                qte = rec_ing.quantity
+                unit = rec_ing.unit
+                if unit == "g":
+                    total += qte
+                elif unit == "mg":
+                    total += qte / 1000
+                elif unit == "kg":
+                    total += qte * 1000
+                else:
+                    # Cherche correspondance unité→g (priorité user/guest puis globale)
+                    ref = IngredientUnitReference.objects.filter(ingredient=rec_ing.ingredient, unit=unit, 
+                                                                is_hidden=False, user=user, guest_id=guest_id
+                    ).first() or IngredientUnitReference.objects.filter(ingredient=rec_ing.ingredient, unit=unit, 
+                                                                        is_hidden=False, user__isnull=True, guest_id__isnull=True).first()
+                    if ref:
+                        total += qte * ref.weight_in_grams
+                    else:
+                        errors.append(f"Pas de correspondance unité→g pour '{rec_ing.ingredient.ingredient_name}' ({unit})")
+            if errors:
+                raise ValidationError("Impossible de calculer la quantité totale : " + "; ".join(errors))
+            self.total_recipe_quantity = total
+            if save:
+                self.save(update_fields=['total_recipe_quantity'])
+            return total
+        return self.total_recipe_quantity
+    
     def _auto_fill_servings_from_pan(self):
         """Tente de deviner le nombre de portions si un pan est présent mais pas les servings renseignés."""
         if not self.pan:
@@ -532,6 +571,15 @@ class Recipe(models.Model):
     
     def save(self, *args, **kwargs):
         self.full_clean()
+
+        # # Auto-calcule la quantité totale si non renseignée
+        # if self.total_recipe_quantity is None:
+        #     try:
+        #         # On passe user/guest au cas où ça serait utile au métier (sinon on peut retirer ces args)
+        #         self.total_recipe_quantity = self.compute_total_quantity(getattr(self, "user", None), getattr(self, "guest_id", None))
+        #     except ValidationError as e:
+        #         raise e
+    
         if self.parent_recipe and not self.context_name:
             self.context_name = f"Variante de {self.parent_recipe.recipe_name}"
         super().save(*args, **kwargs)

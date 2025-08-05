@@ -835,6 +835,14 @@ class RecipeSerializer(serializers.ModelSerializer):
         for sub in subrecipes_data:
             SubRecipe.objects.create(recipe=recipe, **sub)
 
+        # --- AUTO-CALCUL de total_recipe_quantity : seulement si l'utilisateur n'a PAS fourni la valeur ---
+        if recipe.total_recipe_quantity is None:
+            try:
+                recipe.compute_and_set_total_quantity(user=recipe.user, guest_id=recipe.guest_id)
+            except ValidationError as e:
+                recipe.delete()  # Supprime la recette si elle vient juste d'être créée
+                raise serializers.ValidationError({"total_recipe_quantity": str(e)})
+
         return recipe
 
     def update(self, instance, validated_data):
@@ -892,6 +900,13 @@ class RecipeSerializer(serializers.ModelSerializer):
             for sub in subrecipes_data:
                 SubRecipe.objects.create(recipe=instance, **sub)
 
+            # --- AUTO-CALCUL de total_recipe_quantity : si total non fourni, recalcule
+            if 'total_recipe_quantity' not in self.initial_data or instance.total_recipe_quantity is None:
+                try:
+                    instance.compute_and_set_total_quantity(user=instance.user, guest_id=instance.guest_id)
+                except ValidationError as e:
+                    raise serializers.ValidationError({"total_recipe_quantity": str(e)})
+                
         return instance
 
     def destroy(self, request, *args, **kwargs):

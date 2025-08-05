@@ -1,4 +1,5 @@
 UNIT_CHOICES = [
+    ('mg', 'Miligrams'),
     ('g', 'Grams'),
     ('kg', 'Kilograms'),
     ('ml', 'Milliliters'),
@@ -7,7 +8,7 @@ UNIT_CHOICES = [
     ('tsp', 'Teaspoons'),
     ('tbsp', 'Tablespoons'),
     ('cas', 'Cuillère à soupe'),
-    ('cc', 'Cuillère à café'),
+    ('cac', 'Cuillère à café'),
     ('cup', 'Cups'),
     ('unit', 'Unit'),
     # Add more units as needed

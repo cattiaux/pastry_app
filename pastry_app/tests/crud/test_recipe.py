@@ -1,7 +1,7 @@
 import pytest, copy
 from rest_framework import status
 from django.contrib.auth import get_user_model
-from pastry_app.models import Recipe, Ingredient, SubRecipe
+from pastry_app.models import Recipe, Ingredient, IngredientUnitReference
 from pastry_app.tests.base_api_test import api_client, base_url
 
 model_name = "recipes"
@@ -110,6 +110,17 @@ def test_delete_nonexistent_recipe(api_client, base_url, user):
     api_client.force_authenticate(user=user)
     response = api_client.delete(base_url(model_name) + "9999/")
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+def test_total_quantity_in_api_get(api_client, user, base_recipe_data):
+    api_client.force_authenticate(user=user)
+    ingr = Ingredient.objects.create(ingredient_name="Sucre")
+    IngredientUnitReference.objects.create(ingredient=ingr, unit="cas", weight_in_grams=10)
+    base_recipe_data["ingredients"] = [{"ingredient": ingr.pk, "quantity": 3, "unit": "cas"}]
+    resp = api_client.post("/api/recipes/", base_recipe_data, format="json")
+    recipe_id = resp.data["id"]
+    get_resp = api_client.get(f"/api/recipes/{recipe_id}/")
+    assert get_resp.status_code == 200
+    assert get_resp.data["total_recipe_quantity"] == 30
 
 # --- Tests API CRUD imbriqués : RecipeStep via /recipes/<id>/steps/ ---
 

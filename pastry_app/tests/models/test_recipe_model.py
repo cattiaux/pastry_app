@@ -1,7 +1,7 @@
 import pytest
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
-from pastry_app.models import Recipe, Pan, RecipeIngredient, Ingredient, RecipeStep, UserRecipeVisibility
+from pastry_app.models import Recipe, Pan, RecipeIngredient, Ingredient, RecipeStep, IngredientUnitReference, UserRecipeVisibility
 from pastry_app.tests.utils import validate_constraint, validate_field_normalization, normalize_case
 
 pytestmark = pytest.mark.django_db
@@ -28,6 +28,22 @@ def recipe(pan):
 @pytest.fixture
 def user():
     return User.objects.create_user(username="user1", password="testpass123")
+
+@pytest.fixture
+def recipe_with_conversions(pan):
+    recipe = Recipe.objects.create(recipe_name="Recette Conversion", chef_name="Chef Convert", recipe_type="BASE", servings_min=4, servings_max=4, pan=pan)
+    ingr_g = Ingredient.objects.create(ingredient_name="Farine")
+    ingr_kg = Ingredient.objects.create(ingredient_name="Chocolat")
+    ingr_mg = Ingredient.objects.create(ingredient_name="Levure")
+    ingr_cs = Ingredient.objects.create(ingredient_name="Sucre")
+    # Mapping pour la cuillère à soupe
+    IngredientUnitReference.objects.create(ingredient=ingr_cs, unit="cas", weight_in_grams=15)
+    RecipeIngredient.objects.create(recipe=recipe, ingredient=ingr_g, quantity=120, unit="g")
+    RecipeIngredient.objects.create(recipe=recipe, ingredient=ingr_kg, quantity=0.5, unit="kg")
+    RecipeIngredient.objects.create(recipe=recipe, ingredient=ingr_mg, quantity=500, unit="mg")
+    RecipeIngredient.objects.create(recipe=recipe, ingredient=ingr_cs, quantity=2, unit="cas")
+    RecipeStep.objects.create(recipe=recipe, step_number=1, instruction="Mélanger la farine et le sucre.")
+    return recipe
 
 # --- Tests de validation modèle ---
 
@@ -207,6 +223,39 @@ def test_valid_variation_with_adaptation_note(recipe, pan):
     r.full_clean()
     r.save()
     assert r.id is not None
+
+def test_total_recipe_quantity_auto_calculated(recipe):
+    """Le champ total_recipe_quantity est calculé si absent."""
+    # On retire la valeur pour forcer le calcul
+    recipe.total_recipe_quantity = None
+    recipe.save()
+    recipe.compute_and_set_total_quantity(user=recipe.user, guest_id=recipe.guest_id)  
+    assert recipe.total_recipe_quantity == 100  # 1 ingrédient de 100g
+
+def test_total_recipe_quantity_manual_entry(recipe):
+    """Si total_recipe_quantity est fourni, il est conservé."""
+    recipe.total_recipe_quantity = 555
+    recipe.save()
+    recipe.compute_and_set_total_quantity(user=recipe.user, guest_id=recipe.guest_id)
+    assert recipe.total_recipe_quantity == 555
+
+def test_total_quantity_calculation_mixed_units(recipe_with_conversions):
+    """Le calcul convertit les unités volumétriques et pondérales vers g."""
+    recipe = recipe_with_conversions
+    recipe.total_recipe_quantity = None
+    recipe.save()
+    recipe.compute_and_set_total_quantity(user=recipe.user, guest_id=recipe.guest_id)
+    # 120g + 0.5kg (500g) + 500mg (0.5g) + 2cas (30g)
+    assert recipe.total_recipe_quantity == pytest.approx(120 + 500 + 0.5 + 30, 0.001)
+
+def test_total_recipe_quantity_fails_without_mapping(pan):
+    recipe = Recipe.objects.create(recipe_name="Recette Fail", chef_name="Chef X", recipe_type="BASE", servings_min=1, servings_max=1, pan=pan)
+    ingr = Ingredient.objects.create(ingredient_name="Mystère")
+    RecipeIngredient.objects.create(recipe=recipe, ingredient=ingr, quantity=1, unit="unit")
+    recipe.total_recipe_quantity = None
+    with pytest.raises(Exception):
+        recipe.compute_and_set_total_quantity(user=recipe.user, guest_id=recipe.guest_id)
+        recipe.save()
 
 # --- test pour UserRecipeVisibility ---
 
