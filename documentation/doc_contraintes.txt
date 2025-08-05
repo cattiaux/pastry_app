@@ -898,3 +898,94 @@ de masquage dans UserRecipeVisibility (et exclut l’objet du queryset de l’ut
 - Permissions customisées : les ViewSets utilisent une permission spécifique pour gérer ces logiques (CanSoftHideRecipeOrIsOwnerOrGuest).
 - Cas d’adaptation : lors d’une adaptation (endpoint /adapt/), l’objet créé hérite toujours de is_default=False et visibility=private, 
 sauf si l’utilisateur choisit explicitement le contraire et que c’est permis.
+
+
+
+##### Synthèse des Contraintes pour le Modèle IngredientUnitReference
+
+Ce modèle permet :
+Une gestion fine des conversions unité/poids personnalisables par user ou guest.
+Une logique robuste d’héritage, d’override, de soft-delete et de permission multi-profil.
+
+
+            CONTRAINTES MÉTIER & TECHNIQUES	                                                                         TEST CORRESPONDANT
+Création d’une référence unité/poids pour un ingrédient	                                        → test_guest_can_create_reference, test_user_can_create_reference
+Unicité du couple (ingredient, unit, user, guest_id, is_hidden)	                                → test_can_have_one_active_and_one_soft_hidden_ref, test_cannot_create_duplicate_active_reference, test_cannot_create_duplicate_hidden_reference
+Poids (weight_in_grams) strictement positif	                                                    → test_create_reference_invalid_weight, test_update_reference_invalid_weight
+Association à un ingrédient obligatoire	                                                        → test_create_reference_missing_ingredient
+Unité obligatoire et valide (choix limités)	                                                    → test_create_reference_invalid_unit, test_create_reference_missing_unit
+Possibilité de notes optionnelles	                                                            → test_create_reference_with_notes
+Création possible pour user connecté ou guest_id (invité)	                                    → test_guest_can_create_reference, test_user_can_create_reference
+Lecture ouverte à tous	                                                                        → test_list_reference, test_get_reference
+Recherche insensible à la casse sur ingredient_name	                                            → test_case_insensitive_search_reference
+Suppression : Soft-hide/fork (jamais de delete physique de la globale)	                        → test_delete_reference, test_soft_hide_idempotence
+Impossibilité pour un anonyme (non user, non guest) de créer/modifier/supprimer	                → test_anonymous_cannot_delete_reference, test_anonymous_cannot_create_reference
+Soft-hide/fork isole la globale pour un user/guest	                                            → test_hidden_reference_not_visible_in_queryset
+Update sur une globale crée une copie privée (fork), ne modifie pas la globale	                → test_update_reference_fork, test_guest_fork_update
+Fork unique par couple (ingredient, unit, user, guest_id) pour chaque is_hidden	                → test_can_have_one_active_and_one_soft_hidden_ref, test_soft_hide_idempotence
+PATCH partiel accepté pour mise à jour	                                                        → test_partial_update_reference
+Erreur 404 sur tentative de suppression ou d’update d’une référence inexistante	                → test_update_nonexistent_reference, test_delete_nonexistent_reference
+Erreur 400 sur duplication d’une référence existante (active ou soft-hidée)	                    → test_cannot_create_duplicate_active_reference, test_cannot_create_duplicate_hidden_reference
+Visibilité métier : Seules les refs actives (is_hidden=False) sont listées pour l’utilisateur	→ test_hidden_reference_not_visible_in_queryset
+
+
+Contraintes Métier
+1. Unicité
+    ◦ Pour chaque couple (ingredient, unit, user, guest_id), maximum une référence active (is_hidden=False) et une soft-hidée (is_hidden=True).
+    ◦ Impossible de créer deux actives ou deux soft-hidées pour le même couple.
+2. Suppression
+    ◦ La suppression d’une référence globale par un user/guest crée une “tombstone” privée (is_hidden=True) pour ce couple et ce user/guest (fork soft-hide).
+    ◦ Cette ref privée masque la globale, sans la supprimer.
+    ◦ Idempotence : une seule “tombstone” possible par user/guest/couple.
+3. Modification
+    ◦ Un update sur une référence globale par un user/guest crée automatiquement une copie privée modifiable (fork).
+    ◦ L’utilisateur ne modifie jamais la globale directement.
+4. Lecture
+    ◦ Un utilisateur (user ou guest) voit uniquement ses propres références actives, ou la globale si non overridée et non soft-hidée.
+    ◦ Les références soft-hidées sont invisibles pour l’utilisateur.
+5. Permissions
+    ◦ Seuls les users authentifiés ou guests identifiés peuvent créer, modifier ou soft-hider des références.
+    ◦ Anonymes : lecture seule.
+6. Validation
+    ◦ Le champ weight_in_grams doit être strictement supérieur à 0.
+    ◦ L’unité (unit) doit faire partie d’une liste prédéfinie (choices).
+    ◦ L’ingrédient référencé doit exister.
+7. Recherche
+    ◦ Les recherches sur le nom d’ingrédient sont insensibles à la casse.
+
+
+Contraintes Techniques
+1. Champs principaux
+    ◦ ingredient : ForeignKey vers Ingredient, obligatoire.
+    ◦ unit : CharField avec choices, obligatoire.
+    ◦ weight_in_grams : FloatField, strictement positif.
+    ◦ user : ForeignKey (nullable), lié au propriétaire de la ref.
+    ◦ guest_id : CharField (nullable), utilisé pour les invités.
+    ◦ is_hidden : BooleanField, contrôle la visibilité métier (soft-hide).
+2. Unicité
+    ◦ Contrainte unique sur (ingredient, unit, user, guest_id, is_hidden)
+    ◦ Validée en base ET en API.
+3. Indexation
+    ◦ Indexe automatiquement les ForeignKey et fields principaux pour les performances.
+
+Contraintes d’Intégrité
+1. Gestion du Soft-Delete (Suppression)
+    ◦ Jamais de suppression physique de la référence globale.
+    ◦ Création d’une version privée masquée (is_hidden=True) si un user/guest soft-hide une globale.
+    ◦ Une seule “tombstone” soft-hidée par couple et user/guest.
+2. Gestion du Fork (Update sur globale)
+    ◦ L’utilisateur/guest ne modifie jamais une ref globale : un update sur une globale déclenche un fork privé (active ou caché).
+3. Isolation entre users/guests
+    ◦ Les références privées d’un user/guest sont invisibles aux autres.
+    ◦ Chaque user/guest peut surcharger la globale avec sa propre version.
+4. Visibilité
+    ◦ Le queryset métier retourne uniquement les références actives (is_hidden=False), la logique d’override filtre les globales si une ref privée existe.
+5. Permissions
+    ◦ Seuls les users/guests identifiés peuvent créer/modifier/soft-hider.
+    ◦ Lecture ouverte à tous.
+
+Règles sur la Suppression & Fork
+    ◦ Suppression d’une globale par un user/guest : soft-hide (tombstone, is_hidden=True) → masque la globale pour ce user/guest uniquement.
+    ◦ Suppression d’une ref privée active : suppression réelle en base.
+    ◦ Fork sur update : update sur globale → copie privée modifiable.
+    ◦ Soft-hide idempotent : jamais plus d’une “tombstone” pour la même clé.
