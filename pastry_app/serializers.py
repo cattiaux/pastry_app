@@ -1030,6 +1030,8 @@ class IngredientUnitReferenceSerializer(serializers.ModelSerializer):
         ingredient = data.get('ingredient') or getattr(self.instance, 'ingredient', None)
         unit = data.get('unit') or getattr(self.instance, 'unit', None)
         is_hidden = data.get('is_hidden') or getattr(self.instance, 'is_hidden', None)
+        if is_hidden is None:
+            is_hidden = False  # la valeur par défaut métier pour toute création (POST)
 
         # Unicité du couple ingrédient + unité
         qs = IngredientUnitReference.objects.filter(ingredient=ingredient, unit=unit, user=user, guest_id=guest_id, is_hidden=is_hidden)

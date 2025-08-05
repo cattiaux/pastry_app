@@ -196,6 +196,24 @@ def test_cannot_create_duplicate_active_reference(api_client, ingredient, user, 
     api_client.force_authenticate(user=user)
     url = base_url("ingredient_unit_references")
     data = {"ingredient": ingredient.ingredient_name, "unit": "unit", "weight_in_grams": 99}
+    print("==== DEBUG DB ====")
+    for ref in IngredientUnitReference.objects.all():
+        print(
+            "ingredient:", ref.ingredient, "|",
+            "unit:", ref.unit, "|",
+            "user:", ref.user, "|",
+            "guest_id:", ref.guest_id, "|",
+            "is_hidden:", ref.is_hidden, "|",
+            "id:", ref.id
+        )
+    print("== POST DATA ==")
+    print(
+        "ingredient:", ingredient, "|",
+        "unit:", "unit", "|",
+        "user:", user, "|",
+        "guest_id:", None, "|",
+        "is_hidden:", False
+    )
     response = api_client.post(url, data=json.dumps(data), content_type="application/json")
     assert response.status_code == 400  # Unicité enforced
 
