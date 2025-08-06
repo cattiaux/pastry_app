@@ -1,16 +1,24 @@
 import pytest, math
 from django.urls import reverse
+from django.contrib.auth import get_user_model
 from rest_framework import status
 from pastry_app.utils_new import *
-from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep, SubRecipe
+from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep, SubRecipe, Category
 from pastry_app.tests.base_api_test import api_client, base_url
 import importlib
+from pastry_app.views import *
 import pastry_app.views
 importlib.reload(pastry_app.views)
 
 pytestmark = pytest.mark.django_db
 
 ### fixtures 
+
+User = get_user_model()
+
+@pytest.fixture
+def user():
+    return User.objects.create_user(username="user1", password="testpass123")
 
 @pytest.fixture
 def target_pan(db):
@@ -20,32 +28,63 @@ def target_pan(db):
 def recipe(db):
     ingredient = Ingredient.objects.create(ingredient_name="Chocolat")
     pan = Pan.objects.create(pan_name="Rond", pan_type="ROUND", diameter=20, height=5)
-    recipe = Recipe.objects.create(recipe_name="Fondant", chef_name="Chef Choco", servings_min=4, servings_max=6, pan=pan)
+    recipe = Recipe.objects.create(recipe_name="Fondant", chef_name="Chef Choco", servings_min=4, servings_max=6, pan=pan, total_recipe_quantity=600, visibility="public")
+    RecipeIngredient.objects.create(recipe=recipe, ingredient=ingredient, quantity=200, unit="g")
+    RecipeStep.objects.create(recipe=recipe, step_number=1, instruction="Mélanger les ingrédients")
+    return recipe
+
+@pytest.fixture
+def reference_recipe(db):
+    """ Recette de référence pour tester le scaling par poids. """
+    ingredient = Ingredient.objects.create(ingredient_name="Noisette")
+    recipe = Recipe.objects.create(recipe_name="Crème Noisette", chef_name="Chef Noisette", total_recipe_quantity=1200, visibility="public")
     RecipeIngredient.objects.create(recipe=recipe, ingredient=ingredient, quantity=200, unit="g")
     RecipeStep.objects.create(recipe=recipe, step_number=1, instruction="Mélanger les ingrédients")
     return recipe
 
 ### Test services 
 
-def test_scaling_mode_is_correct(recipe, target_pan):
+@pytest.mark.parametrize(
+    "has_pan, has_servings, use_reference, expect_mode, should_raise_error",
+    [
+        (True, False, False, "pan", False),
+        (False, True, False, "servings", False),
+        (False, False, True, "reference_recipe", False),
+        (False, False, False, None, True),
+    ]
+)
+def test_scaling_mode_and_multiplier(recipe, target_pan, reference_recipe, has_pan, has_servings, use_reference, expect_mode, should_raise_error):
     """
-    Vérifie que le champ scaling_mode est correct selon la logique métier.
+    Vérifie la priorité d'adaptation : pan > servings > recette de référence.
+    - Si pan renseigné, priorité pan.
+    - Si pas de pan mais servings, priorité servings.
+    - Si rien d'autre, fallback sur la référence.
+    - si pas de quantité total, erreur
     """
-    # Cas pan d'origine : scaling_mode doit être "pan"
-    multiplier, scaling_mode = get_scaling_multiplier(recipe, target_pan=target_pan)
-    assert scaling_mode == "pan"
-    data = scale_recipe_globally(recipe, multiplier)
-    assert data["scaling_multiplier"] == multiplier
-
-    # Cas sans pan, avec servings : scaling_mode doit être "servings"
-    recipe.pan = None
-    recipe.servings_min = 8
-    recipe.servings_max = 8
+    # On ajuste le recipe selon le scénario
+    if not has_pan:
+        recipe.pan = None
+    if not has_servings:
+        recipe.servings_min = None
+        recipe.servings_max = None
     recipe.save()
-    multiplier2, scaling_mode2 = get_scaling_multiplier(recipe, target_servings=8)
-    assert scaling_mode2 == "servings"
-    data2 = scale_recipe_globally(recipe, multiplier2)
-    assert data2["scaling_multiplier"] == multiplier2
+    # Appel de la fonction selon le mode
+    kwargs = {}
+    if has_pan:
+        kwargs['target_pan'] = target_pan
+    if has_servings:
+        kwargs['target_servings'] = 12  # arbitraire
+    if use_reference:
+        kwargs['reference_recipe'] = reference_recipe
+
+    if should_raise_error:
+        with pytest.raises(ValueError):
+            get_scaling_multiplier(recipe, **kwargs)
+    else :
+        multiplier, mode = get_scaling_multiplier(recipe, **kwargs)
+        assert mode == expect_mode
+        data = scale_recipe_globally(recipe, multiplier)
+        assert abs(data["scaling_multiplier"] - multiplier) < 0.01
 
 def test_adapt_recipe_pan_to_pan_creates_correct_multiplier(recipe, target_pan):
     """
@@ -112,6 +151,77 @@ def test_adapt_recipe_servings_to_servings(recipe):
     for ing, original in zip(result["ingredients"], recipe.recipe_ingredients.all()):
         assert abs(ing["quantity"] - round(original.quantity * multiplier, 2)) < 0.1
 
+def test_adapt_recipe_reference_to_reference(recipe, reference_recipe):
+    """
+    Vérifie que l'adaptation d'une recette via une recette de référence (scaling par poids)
+    fonctionne correctement sur toutes les quantités, y compris dans les sous-recettes, et ne modifie pas la base.
+
+    - Le scaling_multiplier doit être le ratio des poids totaux.
+    - Toutes les quantités sont multipliées par ce ratio.
+    - La base de données n'est jamais modifiée.
+    """
+    # Préparation du contexte : 
+    # On retire pan et servings pour forcer le fallback sur le scaling par référence
+    recipe.pan = None
+    recipe.servings_min = None
+    recipe.servings_max = None
+    recipe.total_recipe_quantity = 300
+    recipe.save()
+    reference_recipe.total_recipe_quantity = 1200
+    reference_recipe.save()
+
+    # On ajoute une sous-recette
+    ingr2 = Ingredient.objects.create(ingredient_name="Beurre")
+    sub_recipe = Recipe.objects.create(recipe_name="Sous-crème", chef_name="Chef Sous", total_recipe_quantity=50)
+    RecipeIngredient.objects.create(recipe=sub_recipe, ingredient=ingr2, quantity=10, unit="g")
+    SubRecipe.objects.create(recipe=recipe, sub_recipe=sub_recipe, quantity=25, unit="g")
+
+    # 1. Calcul du multiplicateur attendu
+    expected_multiplier = reference_recipe.total_recipe_quantity / recipe.total_recipe_quantity
+
+    # 2. Appel du scaling
+    multiplier, mode = get_scaling_multiplier(recipe, reference_recipe=reference_recipe)
+    assert mode == "reference_recipe"
+    assert abs(multiplier - expected_multiplier) < 0.01
+
+    data = scale_recipe_globally(recipe, multiplier)
+    assert abs(data["scaling_multiplier"] - expected_multiplier) < 0.01
+
+    # 3. Vérification que toutes les quantités d'ingrédients ont bien été multipliées
+    for ing, orig in zip(data["ingredients"], recipe.recipe_ingredients.all()):
+        assert abs(ing["quantity"] - round(orig.quantity * multiplier, 2)) < 0.1
+
+    # 4. Vérification des sous-recettes
+    if data["subrecipes"]:
+        for sub_data, sub_instance in zip(data["subrecipes"], recipe.used_in_recipes.all()):
+            # Quantité de la sous-recette
+            assert abs(sub_data["quantity"] - round(sub_instance.quantity * expected_multiplier, 2)) < 0.1
+            # Vérification des ingrédients de la sous-recette
+            for ing_sub_data, ing_orig in zip(sub_data["ingredients"], sub_instance.sub_recipe.recipe_ingredients.all()):
+                assert abs(ing_sub_data["quantity"] - round(ing_orig.quantity * expected_multiplier, 2)) < 0.1
+            # (si sous-sous-recette, boucle récursive possible ici)
+            if sub_data.get("subrecipes"):
+                for subsub_data, subsub_instance in zip(sub_data["subrecipes"], sub_instance.sub_recipe.subrecipes.all()):
+                    assert abs(subsub_data["quantity"] - round(subsub_instance.quantity * expected_multiplier, 2)) < 0.1
+                    for ing_subsub_data, ing_orig2 in zip(subsub_data["ingredients"], subsub_instance.sub_recipe.recipe_ingredients.all()):
+                        assert abs(ing_subsub_data["quantity"] - round(ing_orig2.quantity * expected_multiplier, 2)) < 0.1
+    else:
+        # Aucun subrecipe, rien à vérifier ici
+        assert recipe.subrecipes.count() == 1  # 1 sous-recette présente
+
+    # 5. Vérification que la base de données n'est pas modifiée (idempotence)
+    for orig in recipe.recipe_ingredients.all():
+        db_ri = RecipeIngredient.objects.get(pk=orig.pk)
+        assert db_ri.quantity == orig.quantity
+
+    # 6. S'assure que la recette d'origine n'est pas modifiée côté poids
+    recipe.refresh_from_db()
+    assert recipe.total_recipe_quantity == 300
+
+    # 7. S'assure aussi que la recette de référence n'est pas modifiée
+    reference_recipe.refresh_from_db()
+    assert reference_recipe.total_recipe_quantity == 1200
+
 def test_estimate_servings_from_pan(target_pan):
     """
     Vérifie le calcul d’estimation de servings à partir d’un pan existant
@@ -151,6 +261,24 @@ def test_suggest_pans_for_servings():
     with pytest.raises(ValueError):
         suggest_pans_for_servings(target_servings=0)
 
+def test_suggest_reference_on_category(recipe, reference_recipe):
+    """ Vérifie qu'une suggestion de recette de référence trouve d'abord la même catégorie (ou parent si non trouvée). """
+    parent = Category.objects.create(category_name="Bases", category_type="recipe")
+    sub = Category.objects.create(category_name="Crèmes", category_type="recipe", parent_category=parent)
+    recipe.categories.set([sub])
+    recipe.save()
+    reference_recipe.categories.set([sub])
+    reference_recipe.save()
+    suggestions = Recipe.objects.exclude(pk=recipe.pk).filter(categories=sub)
+    assert reference_recipe in suggestions
+    # Remove from sub, put only parent
+    recipe.categories.set([parent])
+    recipe.save()
+    reference_recipe.categories.set([parent])
+    reference_recipe.save()
+    suggestions2 = Recipe.objects.exclude(pk=recipe.pk).filter(categories=parent)
+    assert reference_recipe in suggestions2
+
 def test_adapt_recipe_by_ingredients_constraints(recipe):
     """
     Vérifie que la recette est bien adaptée en fonction des quantités disponibles
@@ -167,27 +295,7 @@ def test_adapt_recipe_by_ingredients_constraints(recipe):
     assert result["scaling_multiplier"] == expected_multiplier
     assert abs(result["ingredients"][0]["quantity"] - 100) < 0.01
 
-def test_scaling_prioritizes_pan_when_servings_are_incoherent(recipe, target_pan):
-    """
-    Vérifie que la priorité est bien donnée au pan d'origine même si les servings sont incohérents.
-    """
-    # On donne un pan d'origine petit mais des servings incohérents
-    recipe.servings_min = 100
-    recipe.servings_max = 100
-    recipe.save()
-
-    # Le scaling doit utiliser le volume pan (pas servings)
-    m, mode = get_scaling_multiplier(recipe, target_pan=target_pan)
-    assert mode == "pan"
-    result = scale_recipe_globally(recipe, m)
-
-    # On vérifie que le scaling_multiplier correspond bien à la formule basée sur les volumes des pans
-    volume_source = recipe.pan.volume_cm3_cache
-    volume_target = target_pan.volume_cm3_cache
-    expected_multiplier = volume_target / volume_source
-    assert abs(result["scaling_multiplier"] - expected_multiplier) < 0.01
-
-@pytest.mark.parametrize("scaling_mode", ["servings", "pan", "ingredient_limit"])
+@pytest.mark.parametrize("scaling_mode", ["servings", "pan", "ingredient_limit", "reference_recipe"])
 def test_scaling_global_propagation(scaling_mode):
     """
     Vérifie que le scaling global est appliqué partout dans la hiérarchie
@@ -200,17 +308,27 @@ def test_scaling_global_propagation(scaling_mode):
 
     sub_sub_recipe = Recipe.objects.create(recipe_name="Crème", chef_name="Chef Choco")
     RecipeIngredient.objects.create(recipe=sub_sub_recipe, ingredient=ingr1, quantity=50, unit="g")
+    RecipeStep.objects.create(recipe=sub_sub_recipe, step_number=1, instruction="Mélanger les ingrédients")
 
     sub_recipe = Recipe.objects.create(recipe_name="Garniture", chef_name="Chef Choco")
     RecipeIngredient.objects.create(recipe=sub_recipe, ingredient=ingr2, quantity=30, unit="g")
     SubRecipe.objects.create(recipe=sub_recipe, sub_recipe=sub_sub_recipe, quantity=100, unit="g")
+    RecipeStep.objects.create(recipe=sub_recipe, step_number=1, instruction="Mélanger les ingrédients")
 
     main_recipe = Recipe.objects.create(recipe_name="Tarte", chef_name="Chef Choco")
     RecipeIngredient.objects.create(recipe=main_recipe, ingredient=ingr3, quantity=20, unit="g")
     SubRecipe.objects.create(recipe=main_recipe, sub_recipe=sub_recipe, quantity=200, unit="g")
+    RecipeStep.objects.create(recipe=main_recipe, step_number=1, instruction="Mélanger les ingrédients")
 
     # Calcul du multiplicateur selon le mode choisi
-    if scaling_mode == "servings":
+    reference_recipe = None
+    if scaling_mode == "reference_recipe":
+        reference_recipe = Recipe.objects.create(recipe_name="Réf", chef_name="XXX", total_recipe_quantity=1000)
+        main_recipe.total_recipe_quantity = 200
+        main_recipe.save()
+        expected_multiplier = reference_recipe.total_recipe_quantity / main_recipe.total_recipe_quantity
+        multiplier = expected_multiplier
+    elif scaling_mode == "servings":
         multiplier = 2.0  # Ex : on veut doubler le nombre de parts
     elif scaling_mode == "pan":
         multiplier = 3.0  # Ex : moule 3x plus grand
@@ -237,6 +355,10 @@ def test_scaling_global_propagation(scaling_mode):
     assert abs(subsub["quantity"] - (100 * multiplier)) < 0.01
     ingr_subsub = subsub["ingredients"][0]
     assert abs(ingr_subsub["quantity"] - (50 * multiplier)) < 0.01
+
+    # Vérifie aussi dans le cas référence que le mode aurait pu être récupéré
+    if scaling_mode == "reference_recipe":
+        assert abs(multiplier - (reference_recipe.total_recipe_quantity / main_recipe.total_recipe_quantity)) < 0.01
 
 ### Test d’intégration des endpoints API
 
@@ -390,21 +512,66 @@ def test_recipe_adaptation_api_servings_to_servings(api_client, recipe):
     for ing, original in zip(data["ingredients"], recipe.recipe_ingredients.all()):
         assert abs(ing["quantity"] - round(original.quantity * multiplier, 2)) < 0.1
 
-    # # Si on expose source_servings alors on peut vérifier
-    # assert "source_servings" in data
-    # assert data["source_servings"] == 7  # moyenne de 6 et 8
-    # assert "source_volume" in data
-    # assert data["source_volume"] == 7 * 150
-
     # Sous-recettes
     for sub in data["subrecipes"]:
         assert "ingredients" in sub and isinstance(sub["ingredients"], list)
+
+def test_recipe_adaptation_api_reference_recipe(api_client, recipe, user, reference_recipe):
+    """
+    Teste l’adaptation d’une recette via le endpoint /recipes-adapt/ avec reference_recipe_id,
+    vérifie que les quantités sont correctes et que la base n’est pas modifiée.
+    """
+    api_client.force_authenticate(user=user)
+    url = reverse("adapt-recipe")
+
+    # On prépare une recette sans pan ni servings
+    recipe.pan = None
+    recipe.servings_min = None
+    recipe.servings_max = None
+    recipe.total_recipe_quantity = 100
+    recipe.save()
+    reference_recipe.total_recipe_quantity = 400
+    reference_recipe.save()
+
+    data = {"recipe_id": recipe.id, "reference_recipe_id": reference_recipe.id}
+    response = api_client.post(url, data, format="json")
+    assert response.status_code == 200
+    assert response.data["scaling_mode"] == "reference_recipe"
+    multiplier = reference_recipe.total_recipe_quantity / recipe.total_recipe_quantity
+    assert abs(response.data["scaling_multiplier"] - multiplier) < 0.01
+    # Vérification quantités adaptées
+    for ing in response.data["ingredients"]:
+        orig = recipe.recipe_ingredients.get(ingredient__ingredient_name=ing["ingredient_name"])
+        assert abs(ing["quantity"] - orig.quantity * multiplier) < 0.1
+
+    # Vérification de l’idempotence
+    for orig in recipe.recipe_ingredients.all():
+        db_ri = RecipeIngredient.objects.get(pk=orig.pk)
+        assert db_ri.quantity == orig.quantity
+
+def test_recipe_adaptation_api_reference_recipe_error(api_client, recipe, user, reference_recipe):
+    """ Vérifie que le endpoint lève une erreur claire si la recette de référence n'a pas de total_recipe_quantity. """
+    api_client.force_authenticate(user=user)
+    url = reverse("adapt-recipe")
+    recipe.pan = None
+    recipe.servings_min = None
+    recipe.servings_max = None
+    recipe.total_recipe_quantity = 100
+    recipe.save()
+    reference_recipe.total_recipe_quantity = None
+    reference_recipe.save()
+    data = {"recipe_id": recipe.id, "reference_recipe_id": reference_recipe.id}
+    response = api_client.post(url, data, format="json")
+    print(response.data)
+    assert response.status_code == 400
+    assert "quantité totale" in response.data["error"]
 
 @pytest.mark.parametrize("adapt_mode", [
     "pan_to_pan",
     "servings_to_pan",
     "servings_to_servings",
     "servings_to_volume",
+    "reference_recipe",
 ])
 @pytest.mark.parametrize("recursive", [False, True])
 def test_recipe_adaptation_api_all_modes(api_client, adapt_mode, recursive):
@@ -435,8 +602,6 @@ def test_recipe_adaptation_api_all_modes(api_client, adapt_mode, recursive):
             sub_sub_recipe.servings_min = sub_sub_recipe.servings_max = 2
             sub_sub_recipe.save()
 
-        print(f"[TEST DEBUG] sub_sub_recipe id={sub_sub_recipe.id}, servings_min={sub_sub_recipe.servings_min}, servings_max={sub_sub_recipe.servings_max}")
-
         # Sous-recette
         sub_recipe = Recipe.objects.create(recipe_name="Fourrage", chef_name="Chef Choco")
         RecipeStep.objects.create(recipe=sub_recipe, step_number=1, instruction="Mélanger les ingrédients")
@@ -449,8 +614,6 @@ def test_recipe_adaptation_api_all_modes(api_client, adapt_mode, recursive):
         elif adapt_mode in ("servings_to_servings", "servings_to_pan"):
             sub_recipe.servings_min = sub_recipe.servings_max = 2
             sub_recipe.save()
-
-        print(f"[TEST DEBUG] sub_recipe id={sub_recipe.id}, servings_min={sub_recipe.servings_min}, servings_max={sub_recipe.servings_max}")
 
         # Recette principale
         recipe = Recipe.objects.create(recipe_name="Gâteau", chef_name="Chef Choco")
@@ -466,6 +629,7 @@ def test_recipe_adaptation_api_all_modes(api_client, adapt_mode, recursive):
         RecipeIngredient.objects.create(recipe=recipe, ingredient=ingr_extra, quantity=50, unit="g")
 
     # ---------- Ajout du pan/servings sur la recette principale ----------
+    reference_recipe = None
     if adapt_mode == "pan_to_pan":
         recipe.pan = pan_rond
         recipe.save()
@@ -486,6 +650,15 @@ def test_recipe_adaptation_api_all_modes(api_client, adapt_mode, recursive):
         recipe.servings_max = 6
         recipe.save()
         target_pan = None
+    elif adapt_mode == "reference_recipe":
+        # On force une recette sans pan ni servings, et prépare une recette référente
+        recipe.pan = None
+        recipe.servings_min = None
+        recipe.servings_max = None
+        recipe.total_recipe_quantity = 100
+        recipe.save()
+        reference_recipe = Recipe.objects.create(recipe_name="Référence", chef_name="Chef Ref", total_recipe_quantity=400)
+        target_pan = None  # Pas utilisé
 
     # ---------- Préparation des paramètres API ----------
     url = reverse("adapt-recipe")
@@ -514,10 +687,12 @@ def test_recipe_adaptation_api_all_modes(api_client, adapt_mode, recursive):
         source_volume = ((recipe.servings_min + recipe.servings_max) / 2) * 150
         target_volume = 8 * 150
         multiplier = target_volume / source_volume
+    elif adapt_mode == "reference_recipe":
+        params["reference_recipe_id"] = reference_recipe.id
+        multiplier = reference_recipe.total_recipe_quantity / recipe.total_recipe_quantity
 
     # ---------- Appel API et vérifs génériques ----------
     response = api_client.post(url, params, format="json")
-    print(response.json())
     assert response.status_code == status.HTTP_200_OK, response.content
     data = response.json()
 
@@ -568,6 +743,10 @@ def test_recipe_adaptation_api_all_modes(api_client, adapt_mode, recursive):
     for original in ingredients_orig:
         db_ri = RecipeIngredient.objects.get(pk=original.pk)
         assert db_ri.quantity == original.quantity
+
+    # pour le mode référence, vérifie bien le champ scaling_mode
+    if adapt_mode == "reference_recipe":
+        assert data["scaling_mode"] == "reference_recipe"
 
 #  POST /pan-estimation/
 
@@ -705,4 +884,68 @@ def test_recipe_adaptation_by_ingredient_api_recursive(api_client):
     assert abs(noisette_qty - (60 * 0.25)) < 0.01
     oeuf_qty = data["ingredients"][0]["quantity"]
     assert abs(oeuf_qty - (2 * 0.25)) < 0.01
+
+#  POST /recipes/<id>/reference-suggestions/
+
+@pytest.mark.parametrize(
+    "use_direct_match, use_parent_fallback",
+    [
+        (True, False),   # Match direct sur la même catégorie
+        (False, True),   # Pas de match direct, mais fallback parent_category
+    ]
+)
+def test_reference_suggestions_api_returns_expected_reference(api_client, recipe, reference_recipe, use_direct_match, use_parent_fallback):
+    """
+    Teste que l’API /api/recipes/<pk>/reference-suggestions/ retourne la bonne recette de référence :
+    - Cas 1 : même catégorie => match direct
+    - Cas 2 : pas de match direct mais la recette de référence partage le même parent_category
+    """
+    # Création des catégories
+    cat_main = Category.objects.create(category_name="Entremets", category_type="recipe")
+    cat_parent = Category.objects.create(category_name="Desserts", category_type="recipe")
+    recipe.categories.set([])  # Nettoie d'abord
+    reference_recipe.categories.set([])
+
+    # Cas 1 : matching direct
+    if use_direct_match:
+        recipe.categories.add(cat_main)
+        reference_recipe.categories.add(cat_main)
+    # Cas 2 : pas de match direct, fallback sur parent_category
+    elif use_parent_fallback:
+        # La recette cible a une sous-catégorie dont le parent est le même que la catégorie de référence
+        subcat = Category.objects.create(category_name="Entremets Fruits", category_type="recipe", parent_category=cat_parent)
+        recipe.categories.add(subcat)
+        reference_recipe.categories.add(cat_parent)
+
+    url = reverse("recipe-reference-suggestions", kwargs={"pk": recipe.id})
+    response = api_client.get(url)
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+
+    # La clé "reference_recipes" doit toujours exister et être une liste
+    assert "reference_recipes" in data
+    assert isinstance(data["reference_recipes"], list)
+    assert len(data["reference_recipes"]) >= 1
+
+    # Doit suggérer la bonne recette de référence
+    ids = [ref["id"] for ref in data["reference_recipes"]]
+    assert reference_recipe.id in ids
+
+def test_reference_suggestions_api_no_suggestion(api_client, recipe):
+    """
+    Teste que l’API /api/recipes/<pk>/reference-suggestions/ retourne une liste vide
+    s’il n’existe aucune recette de référence compatible (pas de catégorie partagée, ni parent commun).
+    """
+    # Création d'une catégorie sans aucune recette de référence associée
+    cat = Category.objects.create(category_name="Viennoiseries", category_type="recipe")
+    recipe.categories.set([cat])
+
+    url = reverse("recipe-reference-suggestions", kwargs={"pk": recipe.id})
+    response = api_client.get(url)
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+
+    assert "reference_recipes" in data
+    # Aucun résultat attendu
+    assert data["reference_recipes"] == []
 

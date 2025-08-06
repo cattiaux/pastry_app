@@ -1089,4 +1089,10 @@ class RecipeAdaptationByIngredientSerializer(serializers.Serializer):
         help_text="Dictionnaire sous la forme {ingredient_id: quantité_disponible}"
     )
 
+class RecipeReferenceSuggestionSerializer(serializers.ModelSerializer):
+    category = serializers.StringRelatedField()
+    parent_category = serializers.StringRelatedField(source='category.parent_category', default=None)
 
+    class Meta:
+        model = Recipe
+        fields = ["id", "recipe_name", "total_recipe_quantity", "category", "parent_category"]

@@ -220,6 +220,35 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
 
         return Response(self.get_serializer(new_recipe).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["get"], url_path="reference-suggestions")
+    def reference_suggestions(self, request, pk=None):
+        """
+        Suggère une ou plusieurs recettes de référence pertinentes pour la recette courante.
+        La suggestion privilégie la même catégorie, puis la catégorie parente,
+        puis toute recette de type 'recipe' ou 'both' si aucune catégorie précise n'est trouvée.
+        """
+        recipe = self.get_object()
+        recipe_cat = getattr(recipe, "category", None)
+        qs = Recipe.objects.exclude(pk=recipe.pk)
+
+        # 1. Recettes avec la même catégorie exacte (la plus fine)
+        if recipe_cat:
+            same_cat_qs = qs.filter(categories=recipe_cat)
+            if same_cat_qs.exists():
+                recipes_to_suggest = same_cat_qs
+            # 2. Sinon, fallback sur le parent_category si existe
+            elif recipe_cat.parent_category:
+                recipes_to_suggest = qs.filter(categories=recipe_cat.parent_category)
+            # 3. Sinon, fallback sur toutes les recettes du même type ("recipe" ou "both")
+            else:
+                recipes_to_suggest = qs.filter(categories__category_type__in=["recipe", "both"])
+        else:
+            # Aucun critère : proposer toutes les recettes de type "recipe" ou "both"
+            recipes_to_suggest = qs.filter(categories__category_type__in=["recipe", "both"])
+
+        serializer = RecipeReferenceSuggestionSerializer(recipes_to_suggest, many=True)
+        return Response({"reference_recipes": serializer.data})
+
     def get_queryset(self):
         """
         Retourne les recettes visibles pour l'utilisateur courant (connecté ou invité).
@@ -230,6 +259,7 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         # Étape 1 : Récupère le queryset de base (incluant user/guest_id/public/de base)
         qs = super().get_queryset()
         user = self.request.user
+
         guest_id = (
             self.request.headers.get("X-Guest-Id")
             or self.request.headers.get("X-GUEST-ID")
@@ -614,11 +644,11 @@ class IngredientUnitReferenceViewSet(OverridableReferenceQuerysetMixin, GuestUse
             return super().destroy(request, *args, **kwargs)
 
 class RecipeAdaptationAPIView(APIView):
-    """API permettant d'adapter une recette à un nouveau contexte (moule ou portions)."""
+    """API permettant d'adapter une recette à un nouveau contexte (moule, portions ou recette référente)."""
 
     def post(self, request, *args, **kwargs):
         """
-        Permet d’adapter une recette à un autre moule ou à un nombre de portions cible.
+        Permet d’adapter une recette à un autre moule, à un nombre de portions cible ou par scaling selon une recette de référence.
 
         Les cas supportés (gérés par `scale_recipe_recursively` via `get_scaling_multiplier`) :
         - Cas 1 : Adaptation entre moule source et moule cible
@@ -630,23 +660,25 @@ class RecipeAdaptationAPIView(APIView):
         recipe_id = request.data.get("recipe_id")
         target_pan_id = request.data.get("target_pan_id")
         target_servings = request.data.get("target_servings")
-        target_pan = None
-        if target_pan_id:
-            target_pan = get_object_or_404(Pan, pk=target_pan_id)
+        reference_recipe_id = request.data.get("reference_recipe_id")
 
         if not recipe_id:
             return Response({"error": "recipe_id est requis"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Chargement de la recette
         recipe = get_object_or_404(Recipe, pk=recipe_id)
+        target_pan = get_object_or_404(Pan, pk=target_pan_id) if target_pan_id else None
+        reference_recipe = get_object_or_404(Recipe, pk=reference_recipe_id) if reference_recipe_id else None
 
-        # Contrôle
-        if not target_pan and not target_servings:
-            return Response({"error": "Il faut fournir un moule cible ou un nombre de portions cible."}, status=status.HTTP_400_BAD_REQUEST)
+        # Contrôle : il faut au moins un critère d’adaptation
+        if not target_pan and not target_servings and not reference_recipe:
+            return Response({"error": "Il faut fournir un moule cible, un nombre de portions cible ou une recette de référence."}, 
+                            status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # 1. Calcul du multiplicateur global
-            multiplier, scaling_mode = get_scaling_multiplier(recipe, target_pan=target_pan, target_servings=target_servings)
+            # 1. Calcul du multiplicateur global (la logique interne gère la priorité)
+            multiplier, scaling_mode = get_scaling_multiplier(recipe, target_pan=target_pan, target_servings=target_servings, 
+                                                              reference_recipe=reference_recipe)
             # 2. Application du scaling partout
             data = scale_recipe_globally(recipe, multiplier)
             # 3. Infos utiles en plus

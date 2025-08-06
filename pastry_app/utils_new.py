@@ -102,25 +102,38 @@ def calculate_quantity_multiplier(from_volume_cm3: float, to_volume_cm3: float) 
 # 2. CALCUL DU MULTIPLICATEUR EN FONCTION DU CONTEXTE
 # ============================================================
 
-def get_scaling_multiplier(recipe, target_servings: int = None, target_pan = None) -> float:
+def get_scaling_multiplier(recipe, target_servings: int = None, target_pan = None, reference_recipe=None) -> tuple[float, str]:
     """
     Calcule le multiplicateur à appliquer à la recette selon le contexte cible :
-    Priorité au pan d'origine s'il existe, sinon base servings_min/max
+    - Priorité au pan d'origine s'il existe, sinon base servings_min/max
+    - Sinon, scaling par recette de référence si fournie
+    Retourne (multiplier, mode).
     """
-    source_volume, source_mode = get_source_volume(recipe)
-    if not source_volume:
-        raise ValueError("Impossible de déterminer le volume source de la recette (ni pan ni servings d'origine).")
+    try:
+        source_volume, source_mode = get_source_volume(recipe)
+        if target_pan:
+            target_volume = getattr(target_pan, "volume_cm3_cache", None)
+            if not target_volume:
+                raise ValueError("Le pan cible n'a pas de volume défini.")
+        elif target_servings:
+            target_volume = servings_to_volume(target_servings)
+        else:
+            raise Exception
+        return float(target_volume) / float(source_volume), source_mode
+    except Exception:
+        pass  # On tente ensuite la référence
+    
+    # 2. Si adaptation par référence possible
+    if reference_recipe:
+        if not getattr(recipe, "total_recipe_quantity", None):
+            raise ValueError("La recette à adapter n’a pas de quantité totale définie.")
+        if not getattr(reference_recipe, "total_recipe_quantity", None):
+            raise ValueError("La recette de référence n’a pas de quantité totale définie.")
+        multiplier = reference_recipe.total_recipe_quantity / recipe.total_recipe_quantity
+        return float(multiplier), "reference_recipe"
 
-    if target_pan:
-        target_volume = getattr(target_pan, "volume_cm3_cache", None)
-        if not target_volume:
-            raise ValueError("Le pan cible n'a pas de volume défini.")
-    elif target_servings:
-        target_volume = servings_to_volume(target_servings)
-    else:
-        raise ValueError("Il faut fournir une destination (target_pan ou target_servings) pour calculer le scaling.")
-
-    return float(target_volume) / float(source_volume), source_mode
+    # 3. Sinon, tout a échoué
+    raise ValueError("Impossible de calculer un scaling : ni pan, ni portions, ni recette de référence valide.")
 
 # ============================================================
 # 3. SCALING / ADAPTATION DE RECETTE (MÉTIER)

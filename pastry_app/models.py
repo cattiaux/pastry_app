@@ -571,15 +571,6 @@ class Recipe(models.Model):
     
     def save(self, *args, **kwargs):
         self.full_clean()
-
-        # # Auto-calcule la quantité totale si non renseignée
-        # if self.total_recipe_quantity is None:
-        #     try:
-        #         # On passe user/guest au cas où ça serait utile au métier (sinon on peut retirer ces args)
-        #         self.total_recipe_quantity = self.compute_total_quantity(getattr(self, "user", None), getattr(self, "guest_id", None))
-        #     except ValidationError as e:
-        #         raise e
-    
         if self.parent_recipe and not self.context_name:
             self.context_name = f"Variante de {self.parent_recipe.recipe_name}"
         super().save(*args, **kwargs)
