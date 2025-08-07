@@ -102,13 +102,56 @@ def calculate_quantity_multiplier(from_volume_cm3: float, to_volume_cm3: float) 
 # 2. CALCUL DU MULTIPLICATEUR EN FONCTION DU CONTEXTE
 # ============================================================
 
-def get_scaling_multiplier(recipe, target_servings: int = None, target_pan = None, reference_recipe=None) -> tuple[float, str]:
+# def get_scaling_multiplier(recipe, target_servings: int = None, target_pan = None, reference_recipe=None) -> tuple[float, str]:
+#     """
+#     Calcule le multiplicateur à appliquer à la recette selon le contexte cible :
+#     - Priorité au pan d'origine s'il existe, sinon base servings_min/max
+#     - Sinon, scaling par recette de référence si fournie
+#     Retourne (multiplier, mode).
+#     """
+#     try:
+#         source_volume, source_mode = get_source_volume(recipe)
+#         if target_pan:
+#             target_volume = getattr(target_pan, "volume_cm3_cache", None)
+#             if not target_volume:
+#                 raise ValueError("Le pan cible n'a pas de volume défini.")
+#         elif target_servings:
+#             target_volume = servings_to_volume(target_servings)
+#         else:
+#             raise Exception
+#         return float(target_volume) / float(source_volume), source_mode
+#     except Exception:
+#         pass  # On tente ensuite la référence
+    
+#     # 2. Si adaptation par référence possible
+#     if reference_recipe:
+#         if not getattr(recipe, "total_recipe_quantity", None):
+#             raise ValueError("La recette à adapter n’a pas de quantité totale définie.")
+#         if not getattr(reference_recipe, "total_recipe_quantity", None):
+#             raise ValueError("La recette de référence n’a pas de quantité totale définie.")
+#         multiplier = reference_recipe.total_recipe_quantity / recipe.total_recipe_quantity
+#         return float(multiplier), "reference_recipe"
+
+#     # 3. Sinon, tout a échoué
+#     raise ValueError("Impossible de calculer un scaling : ni pan, ni portions, ni recette de référence valide.")
+
+def get_scaling_multiplier(recipe, target_servings: int = None, target_pan=None, reference_recipe=None) -> tuple[float, str]:
     """
-    Calcule le multiplicateur à appliquer à la recette selon le contexte cible :
-    - Priorité au pan d'origine s'il existe, sinon base servings_min/max
-    - Sinon, scaling par recette de référence si fournie
-    Retourne (multiplier, mode).
+    Calcule le multiplicateur à appliquer à la recette selon le contexte cible.
+    - Si adaptation directe (pan/servings dispo sur la recette), l'utilise.
+    - Sinon, utilise la recette de référence :
+        - PAN : privilégie pan référence, sinon servings référence (convertis en volume)
+        - SERVINGS : privilégie servings référence, sinon pan référence (converti en volume)
     """
+    def servings_avg(rec):
+        if rec.servings_min and rec.servings_max:
+            return (rec.servings_min + rec.servings_max) / 2
+        if rec.servings_min:
+            return rec.servings_min
+        if rec.servings_max:
+            return rec.servings_max
+        return None
+
     try:
         source_volume, source_mode = get_source_volume(recipe)
         if target_pan:
@@ -122,17 +165,59 @@ def get_scaling_multiplier(recipe, target_servings: int = None, target_pan = Non
         return float(target_volume) / float(source_volume), source_mode
     except Exception:
         pass  # On tente ensuite la référence
-    
-    # 2. Si adaptation par référence possible
+
     if reference_recipe:
-        if not getattr(recipe, "total_recipe_quantity", None):
-            raise ValueError("La recette à adapter n’a pas de quantité totale définie.")
         if not getattr(reference_recipe, "total_recipe_quantity", None):
             raise ValueError("La recette de référence n’a pas de quantité totale définie.")
-        multiplier = reference_recipe.total_recipe_quantity / recipe.total_recipe_quantity
-        return float(multiplier), "reference_recipe"
+        if not getattr(recipe, "total_recipe_quantity", None):
+            raise ValueError("La recette à adapter n’a pas de quantité totale définie.")
 
-    # 3. Sinon, tout a échoué
+        # --- Si cible = PAN ---
+        if target_pan:
+            # 1. On priorise pan sur la référence
+            ref_pan = reference_recipe.pan
+            ref_pan_volume = getattr(ref_pan, "volume_cm3_cache", None) if ref_pan else None
+            if ref_pan_volume:
+                ref_volume = ref_pan_volume * (reference_recipe.pan_quantity or 1)
+                ref_density = reference_recipe.total_recipe_quantity / ref_volume  # g/cm3
+            else:
+                # 2. Sinon, fallback sur servings de la référence
+                ref_servings = servings_avg(reference_recipe)
+                if not ref_servings:
+                    raise ValueError("La recette de référence n’a ni pan ni servings pour adapter vers un pan.")
+                ref_volume = servings_to_volume(ref_servings)
+                ref_density = reference_recipe.total_recipe_quantity / ref_volume
+            # Calcul du scaling
+            target_volume = getattr(target_pan, "volume_cm3_cache", None)
+            if not target_volume:
+                raise ValueError("Le pan cible n'a pas de volume défini.")
+            target_total_quantity = target_volume * ref_density
+            multiplier = target_total_quantity / recipe.total_recipe_quantity
+            return float(multiplier), "reference_recipe_pan"
+
+        # --- Si cible = SERVINGS ---
+        elif target_servings:
+            # 1. On priorise servings sur la référence
+            ref_servings = servings_avg(reference_recipe)
+            if ref_servings:
+                ref_volume = servings_to_volume(ref_servings)
+                ref_density = reference_recipe.total_recipe_quantity / ref_volume
+            else:
+                # 2. Sinon, fallback sur pan de la référence
+                ref_pan = reference_recipe.pan
+                ref_pan_volume = getattr(ref_pan, "volume_cm3_cache", None) if ref_pan else None
+                if not ref_pan_volume:
+                    raise ValueError("La recette de référence n’a ni servings ni pan pour adapter vers un nombre de portions.")
+                ref_volume = ref_pan_volume * (reference_recipe.pan_quantity or 1)
+                ref_density = reference_recipe.total_recipe_quantity / ref_volume
+            target_volume = servings_to_volume(target_servings)
+            target_total_quantity = target_volume * ref_density
+            multiplier = target_total_quantity / recipe.total_recipe_quantity
+            return float(multiplier), "reference_recipe_servings"
+
+        else:
+            raise ValueError("Il faut préciser un pan ou un nombre de portions cible pour l’adaptation.")
+
     raise ValueError("Impossible de calculer un scaling : ni pan, ni portions, ni recette de référence valide.")
 
 # ============================================================
@@ -164,7 +249,6 @@ def scale_recipe_globally(recipe, multiplier):
     :param multiplier: float (coefficient de scaling à appliquer partout)
     :return: dict structuré (identique à l'API classique)
     """
-
     # 1. Adaptation des ingrédients directs de la recette principale
     adapted_ingredients = []
     for recipe_ingredient in recipe.recipe_ingredients.all():
@@ -314,19 +398,16 @@ def estimate_servings_from_pan(pan) -> dict:
         "estimated_servings_max": servings["max"],
     }
 
-def suggest_recipe_reference(recipe, candidates=None):
+def suggest_recipe_reference(recipe, target_servings=None, target_pan=None, candidates=None):
     """
-    Suggère les recettes de référence les plus pertinentes pour l'adaptation d'une recette.
-    - Filtre : recettes "scalables" (ayant pan avec volume ou servings_min/max).
-    - Priorité métier :
-        1. Celles avec le plus de sous-catégories en commun,
-        2. Puis celles avec une seule sous-catégorie en commun,
-        3. Puis le plus de catégories parent en commun,
-        4. Puis une seule catégorie parent en commun,
-        5. Puis fallback sur type 'recipe' ou 'both'.
-    Retourne une liste (triée du plus pertinent au moins pertinent).
+    Suggère les recettes de référence les plus pertinentes pour adapter une recette donnée.
+    - Priorise : 
+        - Recettes de référence avec pan si target_pan, ou avec servings si target_servings
+        - Puis l'autre groupe en fallback
+    - Applique ensuite le scoring sur matching catégorie (plus de sous-catégories et parents en commun)
+    - Retourne une liste triée du plus pertinent au moins pertinent
     """
-    # 1. Sélectionner les candidats (toutes sauf la recette en cours)
+    # 1. Sélectionner les candidats (sauf la recette en cours)
     if candidates is None:
         candidates = Recipe.objects.exclude(pk=recipe.pk)
 
@@ -339,10 +420,8 @@ def suggest_recipe_reference(recipe, candidates=None):
 
     # 3. Préparer les catégories de la recette cible
     recipe_cats = set(recipe.categories.all())
-    # Sous-catégories = catégories ayant un parent
-    recipe_subcats = set(cat for cat in recipe_cats if cat.parent_category is not None)
-    # Parents = parent_category de toutes les catégories de la recette cible (sans None)
-    recipe_parentcats = set(cat.parent_category for cat in recipe_cats if cat.parent_category is not None)
+    recipe_subcats = set(cat for cat in recipe_cats if cat.parent_category is not None)  # Sous-catégories = catégories ayant un parent
+    recipe_parentcats = set(cat.parent_category for cat in recipe_cats if cat.parent_category is not None)  # Parents = parent_category de toutes les catégories de la recette cible (sans None)
 
     # 4. Fonction scoring pour chaque candidat
     def score(candidate):
@@ -354,11 +433,25 @@ def suggest_recipe_reference(recipe, candidates=None):
         subcat_overlap = len(recipe_subcats & cand_subcats)
         # Score moyen : nombre de parent-catégories en commun
         parentcat_overlap = len(recipe_parentcats & cand_parentcats)
+        # On pondère fort les sous-catégories, moins les parents
+        cat_score = subcat_overlap * 100 + parentcat_overlap * 10
 
-        # On pondère (ex : sous-catégories +100, parents +10)
-        return subcat_overlap * 100 + parentcat_overlap * 10
+        # Ajoute une "priorité cible" : 1 si le candidat a pan (si target_pan), 1 si servings (si target_servings)
+        has_pan = candidate.pan and getattr(candidate.pan, "volume_cm3_cache", None)
+        has_servings = candidate.servings_min or candidate.servings_max
 
-    # 5. Transformer en liste et trier par score décroissant
+        # priorité cible = 1 si le candidat matche le mode, sinon 0
+        if target_pan:
+            mode_priority = 1 if has_pan else 0
+        elif target_servings:
+            mode_priority = 1 if has_servings else 0
+        else:
+            mode_priority = 0  # fallback
+
+        # Tri principal sur la priorité cible, puis sur le score de catégories
+        return (mode_priority, cat_score)
+
+    # 5. Transformer en liste et trier par (mode_priority, cat_score) décroissants
     candidates_list = list(candidates)
     candidates_list.sort(key=score, reverse=True)
 
