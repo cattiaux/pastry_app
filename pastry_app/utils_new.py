@@ -2,7 +2,7 @@ import math
 from django.core.exceptions import ValidationError
 from django.db import models as django_models
 from django.db.models.functions import Abs
-from .models import Pan
+from .models import Pan, Recipe
 
 """
 =================================================
@@ -138,130 +138,6 @@ def get_scaling_multiplier(recipe, target_servings: int = None, target_pan = Non
 # ============================================================
 # 3. SCALING / ADAPTATION DE RECETTE (MÉTIER)
 # ============================================================
-
-# def scale_recipe_recursively(recipe, target_servings: int = None, target_pan = None, 
-#                              custom_multiplier=None, scaling_origin=None, _global_scaling_origin=None) -> dict:
-#     """
-#     Fonction métier principale : adapte toute une recette (ingrédients ET sous-recettes, récursivement)
-#     selon un nombre de portions cible, un moule cible, ou un multiplicateur direct (custom_multiplier).
-#     - Utilise la quantité totale produite si renseignée (total_recipe_quantity, en g)
-#     - Sinon, fallback sur le volume du pan d'origine
-#     - Si scaling par ingrédient limitant (custom_multiplier passé), on ne cherche ni pan ni total_quantity
-
-#     - À la racine, on adapte via target_servings ou target_pan (calcul du scaling via get_scaling_multiplier).
-#     - À chaque niveau de sous-recette, on applique le multiplicateur calculé (custom_multiplier),
-#       sans recalculer de scaling global (plus de rappel à get_scaling_multiplier en récursion).
-
-#     NE MODIFIE RIEN EN BASE.
-#     Retourne une structure complète : ingrédients adaptés, sous-recettes adaptées, scaling utilisé, etc.
-#     """
-#     # 0. Initialise le mode de scaling global si absent (à la racine)
-#     if _global_scaling_origin is None:
-#         _global_scaling_origin = scaling_origin
-
-#     # 1. Calcule le multiplicateur de scaling pour la recette courante
-#     if custom_multiplier is not None:
-#         # Si on est dans la récursivité, on utilise directement le multiplicateur transmis
-#         scaling_multiplier = custom_multiplier
-#         scaling_mode = _global_scaling_origin or "custom"
-#     else:
-#         # Au premier niveau, on calcule le scaling à partir de la cible choisie
-#         scaling_multiplier, scaling_mode = get_scaling_multiplier(recipe, target_servings=target_servings, target_pan=target_pan)
-#         _global_scaling_origin = scaling_mode
-
-#     # 2. Scaling des ingrédients directs
-#     adapted_ingredients = _scale_ingredients_flat(recipe, scaling_multiplier)
-
-#     # 3. Scaling récursif des sous-recettes (si présentes)
-#     adapted_subrecipes = []
-#     for main_sub in recipe.main_recipes.all():
-#         sub_recipe = main_sub.sub_recipe
-#         local_ratio = None
-
-#         # ---------------------------
-#         # Calcul du multiplicateur à appliquer à la sous-recette 
-#         #  - Si la sous-recette connaît sa quantité totale produite (en g), on utilise le ratio
-#         #  - Sinon, fallback sur pan d'origine (volume)
-#         # ---------------------------
-#         if hasattr(sub_recipe, 'total_recipe_quantity') and sub_recipe.total_recipe_quantity:
-#             # Cas standard : la sous-recette connaît la quantité totale qu'elle produit (en g)
-#             if main_sub.unit != "g":
-#                 raise ValueError("L'unité de la sous-recette doit être en grammes pour le scaling automatique.")
-#             # Ex : besoin 400g / recette crème produit 1200g  → coeff = 0.333
-#             local_ratio = main_sub.quantity / sub_recipe.total_recipe_quantity
-
-#         elif sub_recipe.pan:
-#             # Cas fallback : la sous-recette n'a pas de quantité totale, on utilise le volume du pan d'origine
-#             # (Ex: une pâte pour un moule de 24cm, etc.)
-#             sub_volume = get_pan_volume(sub_recipe.pan)
-#             if main_sub.unit not in ["ml", "cm3", "g"]:
-#                 raise ValueError("L'unité attendue doit être un volume (ml, cm3) ou gramme si équivalence 1g = 1ml.")
-#             # On suppose densité ~1 si g/ml, sinon conversion volume si possible
-#             desired_volume = main_sub.quantity
-#             local_ratio = desired_volume / sub_volume
-        
-#         # Cas scaling imposé par un ingrédient limitant (pas besoin d'info de prod ou de pan)
-#         elif scaling_mode == "ingredient_constraint" or (custom_multiplier is not None and scaling_origin == "ingredient_constraint"):
-#             # On laisse local_ratio à None (ou 1), tout le scaling se fait par le multiplicateur global
-#             local_ratio = None
-
-#         elif getattr(sub_recipe, 'servings_min', None) and getattr(sub_recipe, 'servings_max', None):
-#             avg_servings = (sub_recipe.servings_min + sub_recipe.servings_max) / 2
-#             # Ici, main_sub.quantity doit représenter le nombre de portions souhaité pour cette sous-recette à ce niveau
-#             local_ratio = main_sub.quantity / avg_servings
-
-#         else:
-#             print("\n[DEBUG - scale_recipe_recursively] Problème adaptation sous-recette")
-#             print(f"  sub_recipe id: {sub_recipe.id}, name: {getattr(sub_recipe, 'recipe_name', '')}")
-#             print(f"  total_recipe_quantity: {getattr(sub_recipe, 'total_recipe_quantity', None)}")
-#             print(f"  pan: {getattr(sub_recipe, 'pan', None)}")
-#             print(f"  servings_min: {getattr(sub_recipe, 'servings_min', None)}")
-#             print(f"  servings_max: {getattr(sub_recipe, 'servings_max', None)}")
-#             print(f"  custom_multiplier: {custom_multiplier}")
-#             print(f"  scaling_mode: {scaling_mode}, scaling_origin: {scaling_origin}")
-#             print(f"  _global_scaling_origin: {_global_scaling_origin if '_global_scaling_origin' in locals() else None}\n")
-#             raise ValueError("Impossible d'adapter la sous-recette : ni quantité totale ni pan d'origine, ni scaling global (ingrédient limitant).")
-
-#         # 4. Appel récursif sur la sous-recette en passant le multiplicateur calculé
-#         adapted = scale_recipe_recursively(sub_recipe, custom_multiplier=scaling_multiplier, 
-#                                            scaling_origin=scaling_mode, _global_scaling_origin=_global_scaling_origin)
-
-#         adapted_subrecipes.append({
-#             "sub_recipe_id": sub_recipe.id,
-#             "sub_recipe_name": getattr(sub_recipe, "name", ""),
-#             "quantity": main_sub.quantity * scaling_multiplier,  # quantité de sous-recette utilisée (déjà à l’échelle du parent)
-#             "unit": main_sub.unit,
-#             "ingredients": adapted["ingredients"],   # ingrédients déjà scaled globalement
-#             "subrecipes": adapted["subrecipes"],
-#             "scaling_multiplier": scaling_multiplier,  # le scaling global appliqué à ce niveau
-#             "local_ratio": local_ratio,  # Ajouté pour debugger/comprendre la logique
-#         })
-
-#     return {
-#         "recipe_id": recipe.id,
-#         "recipe_name": getattr(recipe, "name", ""),
-#         "scaling_multiplier": scaling_multiplier,
-#         "scaling_mode": scaling_mode,
-#         "ingredients": adapted_ingredients,
-#         "subrecipes": adapted_subrecipes,
-#     }
-
-# def _scale_ingredients_flat(recipe, multiplier: float) -> list:
-#     """
-#     Helper interne : adapte seulement les ingrédients directs de la recette (sans les sous-recettes) selon le multiplicateur donné.
-#     Retourne une liste de dicts {'ingredient', 'quantity', 'unit', ...} utilisables pour la synthèse ou l’API.
-#     NE MODIFIE RIEN en base !
-#     """
-#     adapted = []
-#     for ri in recipe.recipe_ingredients.all():
-#         adapted.append({
-#             "ingredient_id": ri.ingredient.id,
-#             "ingredient_name": ri.ingredient.ingredient_name,
-#             "display_name": getattr(ri, "display_name", ""),
-#             "quantity": round(ri.quantity * multiplier, 2) if ri.quantity is not None else None,
-#             "unit": ri.unit,
-#         })
-#     return adapted
 
 def scale_recipe_globally(recipe, multiplier):
     """
@@ -438,54 +314,59 @@ def estimate_servings_from_pan(pan) -> dict:
         "estimated_servings_max": servings["max"],
     }
 
+def suggest_recipe_reference(recipe, candidates=None):
+    """
+    Suggère les recettes de référence les plus pertinentes pour l'adaptation d'une recette.
+    - Filtre : recettes "scalables" (ayant pan avec volume ou servings_min/max).
+    - Priorité métier :
+        1. Celles avec le plus de sous-catégories en commun,
+        2. Puis celles avec une seule sous-catégorie en commun,
+        3. Puis le plus de catégories parent en commun,
+        4. Puis une seule catégorie parent en commun,
+        5. Puis fallback sur type 'recipe' ou 'both'.
+    Retourne une liste (triée du plus pertinent au moins pertinent).
+    """
+    # 1. Sélectionner les candidats (toutes sauf la recette en cours)
+    if candidates is None:
+        candidates = Recipe.objects.exclude(pk=recipe.pk)
+
+    # 2. Filtrer pour ne garder que les recettes "scalables" (pan OU servings_min/max)
+    candidates = candidates.filter(
+        django_models.Q(pan__isnull=False, pan__volume_cm3_cache__isnull=False) | 
+        django_models.Q(servings_min__isnull=False) | 
+        django_models.Q(servings_max__isnull=False)
+        ).distinct()
+
+    # 3. Préparer les catégories de la recette cible
+    recipe_cats = set(recipe.categories.all())
+    # Sous-catégories = catégories ayant un parent
+    recipe_subcats = set(cat for cat in recipe_cats if cat.parent_category is not None)
+    # Parents = parent_category de toutes les catégories de la recette cible (sans None)
+    recipe_parentcats = set(cat.parent_category for cat in recipe_cats if cat.parent_category is not None)
+
+    # 4. Fonction scoring pour chaque candidat
+    def score(candidate):
+        cand_cats = set(candidate.categories.all())
+        cand_subcats = set(cat for cat in cand_cats if cat.parent_category is not None)
+        cand_parentcats = set(cat.parent_category for cat in cand_cats if cat.parent_category is not None)
+
+        # Score fort : nombre de sous-catégories en commun
+        subcat_overlap = len(recipe_subcats & cand_subcats)
+        # Score moyen : nombre de parent-catégories en commun
+        parentcat_overlap = len(recipe_parentcats & cand_parentcats)
+
+        # On pondère (ex : sous-catégories +100, parents +10)
+        return subcat_overlap * 100 + parentcat_overlap * 10
+
+    # 5. Transformer en liste et trier par score décroissant
+    candidates_list = list(candidates)
+    candidates_list.sort(key=score, reverse=True)
+
+    return candidates_list  # Peut être vide si aucun candidat scalable n'existe
+
 # ============================================================
 # 5. CAS PARTICULIERS (ADAPTATION PAR CONTRAINTE)
 # ============================================================
-# def get_limiting_multiplier(recipe, ingredient_constraints, parent_multiplier=1.0):
-#     """
-#     Parcours récursivement tous les ingrédients (y compris dans les sous-recettes)
-#     et retourne (multiplier, ingredient_id) du facteur le plus limitant
-#     """
-#     multipliers = []
-
-#     # 1. Ingrédients directs
-#     for recipe_ingredient in recipe.recipe_ingredients.all():
-#         ing_id = recipe_ingredient.ingredient.id
-#         if ing_id in ingredient_constraints:
-#             available = ingredient_constraints[ing_id]
-#             if available <= 0:
-#                 raise ValidationError(f"La quantité fournie pour l’ingrédient '{recipe_ingredient.ingredient}' doit être positive.")
-#             # On tient compte du parent_multiplier si besoin (ex: si une sous-recette n'est utilisée qu'à 80%)
-#             multiplier = available / (recipe_ingredient.quantity * parent_multiplier)
-#             multipliers.append((multiplier, ing_id))
-
-#     # 2. Sous-recettes (récursif)
-#     for main_sub in recipe.main_recipes.all():
-#         # Le facteur local = la proportion de sous-recette utilisée ici (main_sub.quantity / total_recipe_quantity)
-#         # Ou 1.0 si pas d'info
-#         local_multiplier = 1.0
-#         # Optionnel : tenir compte du ratio local si tu veux
-#         sub_recipe = main_sub.sub_recipe
-#         sub_multipliers = get_limiting_multiplier(sub_recipe, ingredient_constraints, parent_multiplier * local_multiplier)
-#         multipliers.extend(sub_multipliers)
-
-#     return multipliers
-
-# def adapt_recipe_by_ingredients_constraints_recursive(recipe, ingredient_constraints: dict) -> dict:
-#     """
-#     Adapte toute la recette (y compris sous-recettes) selon la quantité dispo pour un ou plusieurs ingrédients.
-#     """
-#     multipliers = get_limiting_multiplier(recipe, ingredient_constraints)
-#     if not multipliers:
-#         raise ValidationError("Aucune correspondance entre les ingrédients de la recette et les contraintes fournies.")
-#     # Prend le plus limitant
-#     final_multiplier, limiting_ingredient_id = min(multipliers, key=lambda x: x[0])
-
-#     # Appel du scaling global (récursif sur toute la hiérarchie)
-#     result = scale_recipe_recursively(recipe, custom_multiplier=final_multiplier, scaling_origin="ingredient_constraint")
-#     result["limiting_ingredient_id"] = limiting_ingredient_id
-#     result["multiplier"] = final_multiplier
-#     return result
 
 def get_limiting_multiplier(recipe, ingredient_constraints):
     """

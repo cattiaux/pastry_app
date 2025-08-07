@@ -37,7 +37,8 @@ def recipe(db):
 def reference_recipe(db):
     """ Recette de référence pour tester le scaling par poids. """
     ingredient = Ingredient.objects.create(ingredient_name="Noisette")
-    recipe = Recipe.objects.create(recipe_name="Crème Noisette", chef_name="Chef Noisette", total_recipe_quantity=1200, visibility="public")
+    pan = Pan.objects.create(pan_name="Rond_15", pan_type="ROUND", diameter=15, height=4)
+    recipe = Recipe.objects.create(recipe_name="Crème Noisette", chef_name="Chef Noisette", pan=pan, total_recipe_quantity=1200, visibility="public")
     RecipeIngredient.objects.create(recipe=recipe, ingredient=ingredient, quantity=200, unit="g")
     RecipeStep.objects.create(recipe=recipe, step_number=1, instruction="Mélanger les ingrédients")
     return recipe

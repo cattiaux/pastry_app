@@ -223,29 +223,14 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="reference-suggestions")
     def reference_suggestions(self, request, pk=None):
         """
-        Suggère une ou plusieurs recettes de référence pertinentes pour la recette courante.
-        La suggestion privilégie la même catégorie, puis la catégorie parente,
-        puis toute recette de type 'recipe' ou 'both' si aucune catégorie précise n'est trouvée.
+        Suggère une ou plusieurs recettes de référence pertinentes et scalables pour la recette courante.
+        - Priorité : catégorie(s) identique(s), puis parent(s), puis fallback sur tout "recipe"/"both".
+        - Exclut les recettes qui n'ont ni pan ni servings renseigné.
+        - Structure de réponse : {"reference_recipes": [...]}
         """
         recipe = self.get_object()
-        recipe_cat = getattr(recipe, "category", None)
-        qs = Recipe.objects.exclude(pk=recipe.pk)
 
-        # 1. Recettes avec la même catégorie exacte (la plus fine)
-        if recipe_cat:
-            same_cat_qs = qs.filter(categories=recipe_cat)
-            if same_cat_qs.exists():
-                recipes_to_suggest = same_cat_qs
-            # 2. Sinon, fallback sur le parent_category si existe
-            elif recipe_cat.parent_category:
-                recipes_to_suggest = qs.filter(categories=recipe_cat.parent_category)
-            # 3. Sinon, fallback sur toutes les recettes du même type ("recipe" ou "both")
-            else:
-                recipes_to_suggest = qs.filter(categories__category_type__in=["recipe", "both"])
-        else:
-            # Aucun critère : proposer toutes les recettes de type "recipe" ou "both"
-            recipes_to_suggest = qs.filter(categories__category_type__in=["recipe", "both"])
-
+        recipes_to_suggest = suggest_recipe_reference(recipe)
         serializer = RecipeReferenceSuggestionSerializer(recipes_to_suggest, many=True)
         return Response({"reference_recipes": serializer.data})
 
