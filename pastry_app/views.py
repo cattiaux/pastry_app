@@ -629,17 +629,45 @@ class IngredientUnitReferenceViewSet(OverridableReferenceQuerysetMixin, GuestUse
             return super().destroy(request, *args, **kwargs)
 
 class RecipeAdaptationAPIView(APIView):
-    """API permettant d'adapter une recette à un nouveau contexte (moule, portions ou recette référente)."""
+    """
+    API permettant d'adapter une recette à un nouveau contexte : 
+    - changement de moule,
+    - changement de nombre de portions,
+    - adaptation en se basant sur une recette de référence.
+
+    ## Modes supportés (gérés par `get_scaling_multiplier`) :
+
+    **Adaptations directes :**
+        1. `pan_to_pan` — Adaptation entre moule source et moule cible
+        2. `servings_to_pan` — Adaptation depuis un nombre de portions initial vers un moule
+        3. `pan_to_servings` — Adaptation depuis un moule source vers un nombre de portions cible
+        4. `servings_to_servings` — Adaptation entre deux nombres de portions connus
+
+    **Adaptations par recette de référence :**
+        5. `reference_recipe_pan` — Adaptation à partir d'une recette de référence avec pan connu 
+           (recette cible adaptée vers le target_pan ou target_servings en conservant les proportions de la référence)
+        6. `reference_recipe_servings` — Adaptation à partir d'une recette de référence avec servings connus 
+           (recette cible adaptée vers le target_pan ou target_servings)
+        
+    ## Règles métier :
+        - `recipe_id` est obligatoire.
+        - Il faut fournir au moins un critère : `target_pan_id`, `target_servings` ou `reference_recipe_id`.
+        - En cas de combinaison, la priorité est :
+            1. Adaptation par recette de référence si `reference_recipe_id` fourni.
+            2. Sinon adaptation directe pan/servings selon la priorité définie dans `get_scaling_multiplier`.
+    """
 
     def post(self, request, *args, **kwargs):
         """
-        Permet d’adapter une recette à un autre moule, à un nombre de portions cible ou par scaling selon une recette de référence.
+        Adapte une recette selon l’un des modes décrits dans la docstring.
+        Retourne la recette adaptée avec les nouvelles quantités, le multiplicateur appliqué 
+        et le mode d'adaptation utilisé.
 
-        Les cas supportés (gérés par `scale_recipe_recursively` via `get_scaling_multiplier`) :
-        - Cas 1 : Adaptation entre moule source et moule cible
-        - Cas 2 : Adaptation depuis un nombre de portions initial vers un moule
-        - Cas 3 : Adaptation depuis un moule source vers un nombre de portions cible
-        - Cas 4 : Adaptation d’un nombre de portions connu (servings_min/max) vers un autre nombre
+        Paramètres d'entrée attendus (au moins un critère d'adaptation requis) :
+            - recipe_id (int) : identifiant de la recette à adapter (obligatoire)
+            - target_pan_id (int, optionnel) : moule cible
+            - target_servings (int, optionnel) : nombre de portions cibles
+            - reference_recipe_id (int, optionnel) : recette servant de référence
         """
         # Extraction des paramètres du corps de la requête
         recipe_id = request.data.get("recipe_id")
