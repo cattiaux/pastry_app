@@ -821,32 +821,6 @@ Comportement des Serializers associés :
 
 
 
-##### Description des paramètres d’entrée de /recipes/adapt/
-Cette API permet d'adapter une recette existante à un nouveau contexte, selon deux logiques :
-
-Cas 1 – Adaptation d’un moule vers un autre moule :
-Requiert : recipe_id, source_pan_id, target_pan_id
-L’adaptation est basée sur les volumes des deux moules
-
-Cas 2 – Adaptation à un moule cible en connaissant les portions d’origine :
-Requiert : recipe_id, initial_servings, target_pan_id
-L’adaptation estime le volume d’origine à partir du nombre de portions (1 portion ≈ 150ml)
-
-Priorité en cas de données mixtes :
-Si à la fois source_pan_id et initial_servings sont fournis, l’API donne priorité à source_pan_id.
-Cela garantit une adaptation plus précise basée sur les volumes réels des moules.
-Le champ initial_servings est ignoré dans ce cas.
-
-Exemple :
-{
-  "recipe_id": 42,
-  "source_pan_id": 5,
-  "initial_servings": 6,
-  "target_pan_id": 8
-}
-Ici interprété comme une adaptation de pan → pan (Cas 1)
-
-
 ####### Mise à jour d'une recette (PATCH vs PUT)
 
 ### PATCH /recipes/<id>/
@@ -889,39 +863,162 @@ Utilisez ce endpoint uniquement si vous souhaitez **remplacer entièrement** tou
 ---
 
 
+##### Description des paramètres d’entrée de /recipes/adapt/
+Cette API permet d’adapter une recette existante à un nouveau contexte, selon plusieurs logiques.
+Le choix du mode dépend des paramètres fournis, avec une priorité claire entre eux.
+
+Cas 1 – Adaptation d’un moule vers un autre moule :
+Requiert : recipe_id, source_pan_id, target_pan_id
+L’adaptation est basée sur les volumes des deux moules
+
+Cas 2 – Adaptation à un moule cible en connaissant les portions d’origine :
+Requiert : recipe_id, target_pan_id, portions d’origine connues via servings_min / servings_max de la recette
+Le volume d’origine est estimé à partir des portions : volume_source = portions_moyennes × 150 ml
+Le multiplicateur = volume_target / volume_source.
+
+Cas 3 – Adaptation d’un nombre de portions vers un autre nombre de portions :
+Requiert : recipe_id, target_servings, portions d’origine connues (servings_min / servings_max)
+Basé sur le rapport des volumes estimés depuis les portions d’origine et de destination.
+
+Cas 4 – Adaptation par recette de référence
+Utilisé lorsque la recette source ne dispose pas d’informations suffisantes (ni pan, ni servings), ou sur demande explicite.
+Deux variantes :
+- Par pan de référence (reference_recipe_pan)
+    recipe_id, reference_recipe_id, target_pan_id
+    La recette de référence doit avoir un pan valide (volume connu).
+    Le calcul se base sur la densité de la référence (poids / volume).
+- Par servings de référence (reference_recipe_servings)
+    recipe_id, reference_recipe_id, target_servings
+    La recette de référence doit avoir des servings (servings_min / servings_max).
+    Le calcul se base sur la densité de la référence (poids / volume_estimé).
+
+Priorité en cas de données mixtes :
+Si source_pan_id est fourni, la logique pan → pan (Cas 1) est toujours prioritaire.
+En mode référence :
+    Si target_pan_id est fourni → reference_recipe_pan prioritaire
+    Si target_servings est fourni → reference_recipe_servings prioritaire
+
+Exemples :
+Adaptation pan → pan avec ratio des volumes :
+{
+  "recipe_id": 42,
+  "source_pan_id": 5,
+  "target_pan_id": 8
+}
+
+adaptation par recette de référence avec pan : mode reference_recipe_pan, basé sur la densité calculée depuis la recette 12.
+{
+  "recipe_id": 42,
+  "reference_recipe_id": 12,
+  "target_pan_id": 8
+}
+
+adaptation par recette de référence avec servings : mode reference_recipe_servings, basé sur la densité calculée depuis la recette 12.
+{
+  "recipe_id": 42,
+  "reference_recipe_id": 12,
+  "target_servings": 10
+}
+
+# Table de correspondance paramètres → mode d’adaptation
+
+| Mode d’adaptation                  | Paramètres obligatoires                               | Conditions / Priorité                                                                                                                                        |
+| ---------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **pan\_to\_pan**                   | `recipe_id`, `source_pan_id`, `target_pan_id`         | **Prioritaire sur tout autre mode** si `source_pan_id` présent. Basé sur le ratio des volumes de moules.                                                     |
+| **servings\_to\_pan**              | `recipe_id`, `target_pan_id`                          | Portions d’origine connues via `servings_min` / `servings_max` de la recette. Volume source = portions × 150 ml.                                             |
+| **servings\_to\_servings**         | `recipe_id`, `target_servings`                        | Portions d’origine connues via `servings_min` / `servings_max` de la recette. Basé sur ratio des volumes estimés depuis les portions.                        |
+| **reference\_recipe\_pan**         | `recipe_id`, `reference_recipe_id`, `target_pan_id`   | Utilisé si recette source sans pan ni servings. **Prioritaire** si `target_pan_id` fourni. Basé sur densité calculée depuis pan de la référence.             |
+| **reference\_recipe\_servings**    | `recipe_id`, `reference_recipe_id`, `target_servings` | Utilisé si recette source sans pan ni servings. **Prioritaire** si `target_servings` fourni. Basé sur densité calculée depuis servings de la référence.      |
+| **reference\_recipe** *(fallback)* | `recipe_id`, `reference_recipe_id`                    | Cas extrême : aucune info pan/servings dans source et référence, mais `total_recipe_quantity` présent dans les deux recettes. Ratio direct des poids totaux. |
+
+# Règles de décision
+1. Présence de source_pan_id → mode pan_to_pan immédiat
+2. Sinon, si target_pan_id fourni :
+    Si la recette source a servings_min/servings_max → servings_to_pan
+    Sinon si reference_recipe_id fourni → reference_recipe_pan
+3. Sinon, si target_servings fourni :
+    Si la recette source a servings_min/servings_max → servings_to_servings
+    Sinon si reference_recipe_id fourni → reference_recipe_servings
+4. Sinon, si reference_recipe_id fourni seul → reference_recipe (fallback par poids total)
+
+
 
 ####### Synthèse des Contraintes pour les Calculs d’Adaptation, d’Estimation et de Suggestion
 
+# Endpoint
+/api/recipes-adapt/ (adaptation de recettes)
+/api/pans/estimate-volume/
+/api/pan-suggesttion/
+/api/recipes/<pk>/reference-suggestions/ (action : suggestion de recette de référence)
+
 # Contraintes Métier
+Pour /api/recipes-adapt/ :
+- Oblige la présence d’un recipe_id.
+- Vérifie la priorité des paramètres :
+ • source_pan_id prioritaire sur tout autre mode.
+ • Si pas de source_pan_id → target_pan ou target_servings.
+- Les servings doivent être ≥ 1.
+- Les pans doivent être valides et exister si fournis.
+- Si la recette n’a pas de pan, alors servings_min et servings_max doivent être définis ou un reference_recipe_id doit être fourni.
+- Si reference_recipe_id est fourni :
+ • Mode calcul = reference_recipe_pan si target_pan fourni et que la recette de référence a un pan.
+ • Mode calcul = reference_recipe_servings si target_servings fourni et que la recette de référence a des servings.
+ • Priorité donnée à l’élément (pan ou servings) demandé par l’utilisateur.
+- Multiplier calculé à partir de la densité estimée de la recette de référence.
+- Les quantités originales de la recette source ne sont jamais modifiées en base (idempotence)
 
-        Fonction / Endpoint	                                Contraintes Métier	                                             Test Correspondant
-/api/recipes-adapt/ (adaptation de recettes)	- Oblige la présence d’un recipe_id.                                    - test_recipe_adaptation_api_pan_to_pan
-                                                - Vérifie les priorités des paramètres (source_pan_id prioritaire).     - test_recipe_adaptation_api_servings_to_volume
-                                                - Les servings doivent être ≥ 1.                                        - test_recipe_adaptation_api_servings_to_servings
-                                                - Les pans doivent être valides et exister si fournis.                  - test_recipe_adaptation_api_prioritizes_source_pan
-                                                - Si la recette n’a pas de pan, alors servings_min et servings_max 
-                                                doivent être définis pour calculer.	
+Pour /api/pans/estimate-volume/ :
+- Si pan_id est fourni, les dimensions ne doivent pas être envoyées.
+- Si pan_id est absent, les dimensions doivent être complètes selon le type de pan.
+- Les dimensions doivent être strictement positives.
 
-/api/pans/estimate-volume/	                    - Si pan_id est fourni, les dimensions ne doivent pas être envoyées.    - test_pan_estimation_api
-                                                - Si pan_id est absent, les dimensions doivent être complètes 
-                                                selon le type de pan.
-                                                - Les dimensions doivent être strictement positives.
+Pour /api/pan-suggesttion/ :
+- Le nombre de servings cible (target_servings) est requis et ≥ 1.
+- Retourne tous les pans compatibles où servings_min ≤ target ≤ servings_max.
 
-/api/pan-suggesttion/	                        - Le nombre de servings cible est requis et ≥ 1.                        - test_suggest_pans_api
-                                                - Retourne tous les pans compatibles 
-                                                (où servings_min ≤ target ≤ servings_max).	
+Pour /api/recipes/<pk>/reference-suggestions/ :
+- Retourne une ou plusieurs recettes pouvant servir de référence pour l’adaptation.
+- Cas gérés :
+ • Match direct sur une catégorie commune.
+ • Fallback sur parent_category si aucune catégorie commune trouvée.
+- Si aucun match, retourne une liste vide.
+- Peut recevoir target_pan_id ou target_servings pour filtrer/hiérarchiser les suggestions.
+- Ne suggère pas la recette courante (pk).
+
+# Tests Correspondants
+Pour /api/recipes-adapt/ :
+- test_recipe_adaptation_api_pan_to_pan
+- test_recipe_adaptation_api_servings_to_volume
+- test_recipe_adaptation_api_servings_to_servings
+- test_recipe_adaptation_api_prioritizes_source_pan
+- test_recipe_adaptation_api_reference_recipe (nouvelle version avec target_pan / target_servings)
+- test_recipe_adaptation_api_all_modes (modes reference_recipe_pan et reference_recipe_servings)
+
+Pour /api/pans/estimate-volume/ :
+test_pan_estimation_api
+
+Pour /api/pan-suggesttion/ :
+test_suggest_pans_api
+
+Pour /api/recipes/<pk>/reference-suggestions/ :
+- test_reference_suggestions_api_returns_expected_reference
+- test_reference_suggestions_api_no_suggestion
+- test_suggest_reference_on_category
 
 # Contraintes Techniques
 Les endpoints d’estimation et de suggestion sont indépendants et séparés de l’endpoint d’adaptation (/recipes-adapt/).
 Les calculs utilisent une convention métier :
 ➝ 1 portion = 150 ml par défaut (peut évoluer dans une version future).
 Les suggestions de pans sont basées sur l’intervalle (servings_min, servings_max) enregistré dans le modèle Pan.
+Les suggestions de recettes de référence se basent d’abord sur la catégorie, puis sur le parent_category en fallback.
+En mode recette de référence, la densité de la recette de référence (total_recipe_quantity / volume) sert de base au calcul.
 
 # Contraintes de Validation API
 Validation stricte des combinaisons d’entrées :
-Exemple : Il est interdit d’envoyer à la fois un pan_id et des dimensions dans /pans/estimate-volume/.
-Dans /recipes-adapt/, si un source_pan_id est présent, la logique Serving → Serving est ignorée.
-
+    /pans/estimate-volume/ : interdit d’envoyer à la fois pan_id et des dimensions.
+    /recipes-adapt/ : si source_pan_id est présent, la logique servings → servings est ignorée.
+    /recipes-adapt/ : si reference_recipe_id est présent, un et un seul des deux (target_pan ou target_servings) doit être fourni.
+    /recipes/<pk>/reference-suggestions/ : si target_pan_id est fourni, il doit exister et être valide ; si target_servings est fourni, il doit être ≥ 1.
 
 
 
@@ -958,6 +1055,7 @@ Chaque ViewSet utilise un mixin standardisé (exemple pour Recipe : GuestUserR
 - Attribuer le bon propriétaire (user ou guest_id) à la création
 - Ne jamais permettre modification/suppression d’un objet “de base” (is_default=True)
 - Supporter la recherche, le filtrage et l’ordering selon les besoins métier
+
 
 ### Synthèse des Contraintes pour l’Adaptation, la Visibilité, et la Gestion Multi-Utilisateurs
 
