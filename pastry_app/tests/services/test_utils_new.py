@@ -82,9 +82,9 @@ def test_scaling_mode_and_multiplier(recipe, target_pan, reference_recipe, has_p
 
     if should_raise_error:
         with pytest.raises(ValueError):
-            get_scaling_multiplier(recipe, **kwargs)
+            get_scaling_multiplier_old(recipe, **kwargs)
     else :
-        multiplier, mode = get_scaling_multiplier(recipe, **kwargs)
+        multiplier, mode = get_scaling_multiplier_old(recipe, **kwargs)
         if use_reference :
             expect_mode = expect_mode + "_pan" # car on simule dans ce test un target_pan
         assert mode == expect_mode
@@ -99,7 +99,7 @@ def test_scaling_mode_and_multiplier(recipe, target_pan, reference_recipe, has_p
         reference_recipe.save()
         kwargs["target_pan"] = None
         kwargs["target_servings"] = 16  # On cible servings
-        multiplier, mode = get_scaling_multiplier(recipe, **kwargs)
+        multiplier, mode = get_scaling_multiplier_old(recipe, **kwargs)
         assert mode == "reference_recipe_servings"
 
 def test_adapt_recipe_pan_to_pan_creates_correct_multiplier(recipe, target_pan):
@@ -115,7 +115,7 @@ def test_adapt_recipe_pan_to_pan_creates_correct_multiplier(recipe, target_pan):
     target_volume = target_pan.length * target_pan.width * target_pan.rect_height
     multiplier = target_volume / source_volume
 
-    m, mode = get_scaling_multiplier(recipe, target_pan=target_pan)
+    m, mode = get_scaling_multiplier_old(recipe, target_pan=target_pan)
     assert abs(m - multiplier) < 0.01
     assert mode == "pan"
     result = scale_recipe_globally(recipe, m)
@@ -135,7 +135,7 @@ def test_adapt_recipe_servings_to_volume(recipe):
     volume_target = target_servings * 150
     multiplier = volume_target / volume_source
 
-    m, mode = get_scaling_multiplier(recipe, target_servings=target_servings)
+    m, mode = get_scaling_multiplier_old(recipe, target_servings=target_servings)
     assert abs(m - multiplier) < 0.01
     assert mode == "servings"
     result = scale_recipe_globally(recipe, m)
@@ -159,7 +159,7 @@ def test_adapt_recipe_servings_to_servings(recipe):
     volume_source = ((recipe.servings_min + recipe.servings_max) / 2) * 150
     multiplier = volume_target / volume_source
 
-    m, mode = get_scaling_multiplier(recipe, target_servings=target_servings)
+    m, mode = get_scaling_multiplier_old(recipe, target_servings=target_servings)
     assert abs(m - multiplier) < 0.01
     assert mode == "servings"
     result = scale_recipe_globally(recipe, m)
@@ -240,7 +240,7 @@ def test_adapt_recipe_reference_to_pan_or_servings(recipe, reference_recipe, tar
         expected_mode = "reference_recipe_servings"
 
     # --- Calcul métier ---
-    multiplier, mode = get_scaling_multiplier(recipe, **kwargs)
+    multiplier, mode = get_scaling_multiplier_old(recipe, **kwargs)
     assert mode == expected_mode
     assert abs(multiplier - expected_multiplier) < 0.01
 
@@ -330,7 +330,7 @@ def test_suggest_reference_on_category(recipe, reference_recipe):
     recipe.save()
     reference_recipe.categories.set([sub])
     reference_recipe.save()
-    suggestions = suggest_recipe_reference(recipe, target_pan=None, target_servings=None)
+    suggestions = suggest_recipe_reference_old(recipe, target_pan=None, target_servings=None)
     assert reference_recipe in suggestions
     assert suggestions and suggestions[0] == reference_recipe
 
@@ -339,7 +339,7 @@ def test_suggest_reference_on_category(recipe, reference_recipe):
     recipe.save()
     reference_recipe.categories.set([parent])
     reference_recipe.save()
-    suggestions2 = suggest_recipe_reference(recipe, target_pan=None, target_servings=None)
+    suggestions2 = suggest_recipe_reference_old(recipe, target_pan=None, target_servings=None)
     assert reference_recipe in suggestions2
     assert suggestions2 and suggestions2[0] == reference_recipe
 
@@ -612,8 +612,8 @@ def test_recipe_adaptation_api_reference_recipe(api_client, recipe, user, refere
     assert response.data["scaling_mode"] == expected_mode
 
     # Le scaling_mode dépend du métier (servings ou pan)
-    # Pour être strict, on récupère le mode via get_scaling_multiplier
-    multiplier, mode = get_scaling_multiplier(recipe, reference_recipe=reference_recipe, 
+    # Pour être strict, on récupère le mode via get_scaling_multiplier_old
+    multiplier, mode = get_scaling_multiplier_old(recipe, reference_recipe=reference_recipe, 
                                               target_pan=target_pan if use_pan else None, 
                                               target_servings=data.get("target_servings"))
     assert abs(response.data["scaling_multiplier"] - multiplier) < 0.01
@@ -769,7 +769,7 @@ def test_recipe_adaptation_api_all_modes(api_client, adapt_mode, use_target_pan,
             params["target_servings"] = 12
 
         # Calcul du scaling métier, cf ta nouvelle fonction
-        multiplier, _ = get_scaling_multiplier(recipe,
+        multiplier, _ = get_scaling_multiplier_old(recipe,
             target_pan=pan_rect if use_target_pan else None,
             target_servings=12 if use_target_servings else None,
             reference_recipe=reference_recipe)

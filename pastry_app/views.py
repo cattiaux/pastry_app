@@ -230,9 +230,34 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         """
         recipe = self.get_object()
 
-        recipes_to_suggest = suggest_recipe_reference(recipe)
+        target_pan = None
+        target_servings = None
+
+        target_pan_id = request.query_params.get("target_pan_id")
+        if target_pan_id is not None:
+            try:
+                target_pan = get_object_or_404(Pan, pk=int(target_pan_id))
+            except (TypeError, ValueError):
+                return Response({"error": "target_pan_id doit être un entier."}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_serv = request.query_params.get("target_servings")
+        if raw_serv is not None:
+            try:
+                target_servings = int(raw_serv)
+            except (TypeError, ValueError):
+                return Response({"error": "target_servings doit être un entier."}, status=status.HTTP_400_BAD_REQUEST)
+
+        recipes_to_suggest = suggest_recipe_reference(recipe, target_servings=target_servings, target_pan=target_pan)
         serializer = RecipeReferenceSuggestionSerializer(recipes_to_suggest, many=True)
-        return Response({"reference_recipes": serializer.data})
+
+        # on renvoie aussi les critères pour traçabilité côté front
+        return Response({
+            "criteria": {
+                "target_pan_id": int(target_pan_id) if target_pan_id is not None else None,
+                "target_servings": target_servings
+            },
+            "reference_recipes": serializer.data
+        })
 
     def get_queryset(self):
         """
@@ -652,11 +677,11 @@ class RecipeAdaptationAPIView(APIView):
     ## Règles métier :
         - `recipe_id` est obligatoire.
         - Il faut fournir au moins un critère : `target_pan_id`, `target_servings` ou `reference_recipe_id`.
-        - En cas de combinaison, la priorité est :
-            1. Adaptation par recette de référence si `reference_recipe_id` fourni.
-            2. Sinon adaptation directe pan/servings selon la priorité définie dans `get_scaling_multiplier`.
-    """
 
+    ## Priorité effective :
+        - Par défaut: adaptation directe si possible, puis fallback via référence
+        - Si `prefer_reference=true` ET `reference_recipe_id` fourni: on tente d’abord par référence (puis fallback direct)
+    """
     def post(self, request, *args, **kwargs):
         """
         Adapte une recette selon l’un des modes décrits dans la docstring.
@@ -668,12 +693,14 @@ class RecipeAdaptationAPIView(APIView):
             - target_pan_id (int, optionnel) : moule cible
             - target_servings (int, optionnel) : nombre de portions cibles
             - reference_recipe_id (int, optionnel) : recette servant de référence
+            - prefer_reference (bool) [ptionnel, défaut False]  : force l’utilisation prioritaire de la référence si fournie
         """
         # Extraction des paramètres du corps de la requête
         recipe_id = request.data.get("recipe_id")
         target_pan_id = request.data.get("target_pan_id")
         target_servings = request.data.get("target_servings")
         reference_recipe_id = request.data.get("reference_recipe_id")
+        prefer_reference = bool(request.data.get("prefer_reference") or request.query_params.get("prefer_reference"))
 
         if not recipe_id:
             return Response({"error": "recipe_id est requis"}, status=status.HTTP_400_BAD_REQUEST)
@@ -691,11 +718,12 @@ class RecipeAdaptationAPIView(APIView):
         try:
             # 1. Calcul du multiplicateur global (la logique interne gère la priorité)
             multiplier, scaling_mode = get_scaling_multiplier(recipe, target_pan=target_pan, target_servings=target_servings, 
-                                                              reference_recipe=reference_recipe)
+                                                              reference_recipe=reference_recipe, prefer_reference=prefer_reference)
             # 2. Application du scaling partout
             data = scale_recipe_globally(recipe, multiplier)
             # 3. Infos utiles en plus
             data["scaling_mode"] = scaling_mode
+            data["scaling_multiplier"] = multiplier  
             return Response(data, status=status.HTTP_200_OK)
 
         except ValueError as e:
@@ -751,15 +779,22 @@ class RecipeAdaptationByIngredientAPIView(APIView):
         serializer.is_valid(raise_exception=True)
 
         recipe = get_object_or_404(Recipe, pk=serializer.validated_data["recipe_id"])
+
+        # Récupère user/guest pour choisir la bonne référence d’unité (spécifique → globale)
+        user = request.user if request.user.is_authenticated else None
+        guest_id = (request.headers.get("X-Guest-Id") or request.headers.get("X-GUEST-ID") or serializer.validated_data.get("guest_id") or request.query_params.get("guest_id"))
+
         # Conversion des clés en entier pour correspondre aux IDs en base
         ingredient_constraints = {int(k): v for k, v in serializer.validated_data["ingredient_constraints"].items()}
 
         try:
-            # 1. Calcul du multiplicateur limitant
+            # 1. Normalise vers l’unité attendue par la recette (via IngredientUnitReference)
+            normalized_constraints = normalize_constraints_for_recipe(recipe, ingredient_constraints, user=user, guest_id=guest_id)
+            # 2. Calcul du multiplicateur limitant
             multiplier, limiting_ingredient_id = get_limiting_multiplier(recipe, ingredient_constraints)
-            # 2. Adaptation globale
+            # 3. Adaptation globale
             result = scale_recipe_globally(recipe, multiplier)
-            # 3. Ajoute les infos utiles au retour
+            # 4. Ajoute les infos utiles au retour
             result["limiting_ingredient_id"] = limiting_ingredient_id
             result["multiplier"] = multiplier
             return Response(result, status=status.HTTP_200_OK)
