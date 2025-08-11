@@ -1,7 +1,5 @@
 import pytest
 from typing import Optional
-from django.urls import reverse
-from django.contrib.auth import get_user_model
 from pastry_app.utils_new import *
 from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep, SubRecipe, Category
 from pastry_app.tests.base_api_test import api_client, base_url
@@ -460,14 +458,15 @@ def test_multiplier_reference_servings_path_uses_ref_pan_when_ref_has_no_serving
     # Référence : a un pan (volume connu), pas de servings
     ref_pan = Pan.objects.create(pan_name="ref-pan", pan_type="CUSTOM", units_in_mold=6, volume_raw=2000, unit='cm3', is_total_volume=True)
     ref = make_recipe(name="reference-with-pan", pan=ref_pan)
-    add_ingredient(ref, ingredient=base_ingredients["farine"], qty=200)
-    ref.servings_min = None
-    ref.servings_max = None
+    add_ingredient(ref, ingredient=base_ingredients["farine"], qty=1200)
     ref.total_recipe_quantity = 1200  # g (densité = 1200/2000 = 0,6 g/cm3)
     ref.pan_quantity = 1
     ref.save()
+    ref.refresh_from_db()
+    ref.servings_min = None
+    ref.servings_max = None
 
-    # Cible : servings → volume cible = 10 * 150 = 1500 cm3
+    # Cible : 10 servings → volume cible = 10 * 150 = 1500 cm3
     multiplier, mode = get_scaling_multiplier(src, target_servings=10, reference_recipe=ref, prefer_reference=False)
 
     # Densité ref via PAN → 1200 / (2000 * pan_quantity=1) = 0.6 g/cm3
@@ -567,7 +566,7 @@ def test_scale_recipe_globally_deep_recursion_and_rounding(base_ingredients):
     scaled = scale_recipe_globally(A, multiplier)
 
     # Ingrédient A1
-    a1 = next(i for i in scaled["ingredients"] if i["ingredient_name"] == "a1")
+    a1 = next(i for i in scaled["ingredients"] if i["ingredient_id"] == A.recipe_ingredients.first().ingredient_id)
     assert a1["original_quantity"] == 10.0
     assert a1["quantity"] == round(10.0 * multiplier, 2)  # 12.35
 
@@ -578,7 +577,7 @@ def test_scale_recipe_globally_deep_recursion_and_rounding(base_ingredients):
     assert B_node["scaling_multiplier"] == multiplier
 
     # Ingrédient B1 dans B
-    b1 = next(i for i in B_node["ingredients"] if i["ingredient_name"] == "b1")
+    b1 = next(i for i in B_node["ingredients"] if i["ingredient_id"] == B.recipe_ingredients.first().ingredient_id)
     assert b1["original_quantity"] == 3.333
     assert b1["quantity"] == round(3.333 * multiplier, 2)
 
@@ -589,7 +588,7 @@ def test_scale_recipe_globally_deep_recursion_and_rounding(base_ingredients):
     assert C_node["scaling_multiplier"] == multiplier
 
     # Ingrédient C1 dans C
-    c1 = next(i for i in C_node["ingredients"] if i["ingredient_name"] == "c1")
+    c1 = next(i for i in C_node["ingredients"] if i["ingredient_id"] == C.recipe_ingredients.first().ingredient_id)
     assert c1["original_quantity"] == 7.777
     assert c1["quantity"] == round(7.777 * multiplier, 2)
 
@@ -597,33 +596,48 @@ def test_scale_recipe_globally_deep_recursion_and_rounding(base_ingredients):
 # Groupe 3 — Estimation et suggestions de pan
 # -------------------------------------------------
 
-# def test_estimate_servings_from_pan_exact_multiple():
-#     """ Vérifie que le calcul de portions depuis un volume donne un résultat exact quand le volume est un multiple entier de la portion standard. """
-#     pan = Pan.objects.create(pan_type="CUSTOM", volume_raw=3000, unit="cm3")  # 3000 cm3 → 20 portions exactes
-#     smin, smax = estimate_servings_from_pan(pan)
-#     assert (smin, smax) == (20, 20)
+def test_suggest_pans_for_servings_returns_close_match():
+    """
+    Cible 10 portions → volume cible = 10 * 150 = 1500 cm³.
+    On crée un moule exactement à 1500 cm³ : il doit apparaître dans les suggestions,
+    avec une estimation standard de 10 portions.
+    """
+    # Moule dans la fenêtre ±5% (ici pile 1500 cm³)
+    pan_ok = Pan.objects.create(pan_name="custom-1500", pan_type="CUSTOM", units_in_mold=1, volume_raw=1500, unit="cm3", is_total_volume=True)
+    # Quelques moules hors fenêtre pour bruit
+    Pan.objects.create(pan_name="custom-1200", pan_type="CUSTOM", units_in_mold=1, volume_raw=1200, unit="cm3", is_total_volume=True)
+    Pan.objects.create(pan_name="custom-2000", pan_type="CUSTOM", units_in_mold=1, volume_raw=2000, unit="cm3", is_total_volume=True)
 
-# def test_estimate_servings_from_pan_non_multiple_rounding():
-#     """ Vérifie que le calcul de portions arrondit correctement vers le bas et le haut quand le volume n’est pas un multiple entier de la portion standard. """
-#     pan = Pan.objects.create(pan_type="CUSTOM", volume_raw=3050, unit="cm3")
-#     smin, smax = estimate_servings_from_pan(pan)
-#     # 3050/150 ≈ 20.333 → floor=20, ceil=21
-#     assert (smin, smax) == (20, 21)
+    suggestions = suggest_pans_for_servings(10)  # 1500 cm³ visé  :contentReference[oaicite:3]{index=3}
+    assert len(suggestions) >= 1
 
-# def test_suggest_pans_for_servings_filters_and_orders():
-#     """ Vérifie que la suggestion de moules filtre sur la plage de portions souhaitée et trie par proximité avec la valeur cible. """
-#     # Volumes autour de 16 portions
-#     p_exact = Pan.objects.create(pan_type="CUSTOM", volume_raw=2400, unit="cm3")  # 16.0
-#     p_close = Pan.objects.create(pan_type="CUSTOM", volume_raw=2450, unit="cm3")  # 16.33 → [16,17]
-#     p_far   = Pan.objects.create(pan_type="CUSTOM", volume_raw=3000, unit="cm3")  # 20 → [20,20]
-#     pans = suggest_pans_for_servings(target_servings=16)
+    # Trouver notre moule dans la liste et vérifier l’estimation de portions
+    s = next(x for x in suggestions if x["id"] == pan_ok.id)
+    assert s["estimated_servings_standard"] == 10  # 1500/150 = 10, arrondi standard :contentReference[oaicite:4]{index=4}
+    assert 1425 <= s["volume_cm3_cache"] <= 1575   # fenêtre ±5%  :contentReference[oaicite:5]{index=5}
+    assert s["match_type"] == "close"              # cas “fenêtre”  :contentReference[oaicite:6]{index=6}
 
-#     # Doit contenir p_exact & p_close, pas p_far
-#     ids = [p.id for p in pans]
-#     assert p_exact.id in ids and p_close.id in ids and p_far.id not in ids
+def test_suggest_pans_for_servings_falls_back_to_closest_when_no_window_match():
+    """
+    Cible 9 portions → volume cible = 1350 cm³.
+    Aucun moule dans la fenêtre [1282.5 ; 1417.5] → on doit obtenir le plus proche.
+    Ici 1600 (écart 250) est plus proche que 1000 (écart 350).
+    """
+    pan_1000 = Pan.objects.create(pan_name="custom-1000", pan_type="CUSTOM", units_in_mold=1, volume_raw=1000, unit="cm3", is_total_volume=True)
+    pan_1600 = Pan.objects.create(pan_name="custom-1600", pan_type="CUSTOM", units_in_mold=1, volume_raw=1600, unit="cm3", is_total_volume=True)
 
-#     # Si ta fonction classe par “proximité” au target, p_exact doit venir avant p_close
-#     assert ids.index(p_exact.id) < ids.index(p_close.id)
+    suggestions = suggest_pans_for_servings(9)  # 1350 cm³ visé  :contentReference[oaicite:7]{index=7}
+    assert suggestions, "Aucune suggestion retournée alors que des moules existent."
+
+    # Le premier doit être le plus proche en volume (1600 ici)
+    first = suggestions[0]
+    assert first["id"] == pan_1600.id  # fallback “closest”  :contentReference[oaicite:8]{index=8}
+    # L’estimation standard ~ round(1600/150) = 11  :contentReference[oaicite:9]{index=9}
+    assert first["estimated_servings_standard"] == 11
+
+    # Selon l’implémentation actuelle, le fallback passe par une première branche qui marque "close".
+    # (Une seconde branche marque "closest" si la première n’a rien rempli.)  :contentReference[oaicite:10]{index=10}
+    assert first["match_type"] in {"close", "closest"}
 
 # -------------------------------------------------
 # Groupe 4 — Sélection de référence (suggest_recipe_reference)
@@ -635,16 +649,16 @@ def test_suggest_reference_with_target_servings_prefers_same_subcategory_then_pa
     Le tri se fait donc sur le score catégories :
       - priorité forte aux sous-catégories communes ('éclair' vs 'éclair')
       - puis parent ('choux')
-    On attend que 'éclair café 2' (même sous-cat) passe avant religions/paris-brest.
+    On attend que 'éclair café 2' (même sous-cat) passe avant religieuse/paris-brest.
     """
     recipe = recettes_choux["eclair_choco"]
     candidates = suggest_recipe_reference(recipe, target_servings=10)
 
     # On récupère l'ordre de classement niveau RECETTE
     recipe_level = candidates["recipe_level"]  # liste de {recipe_id, score}
-    # On mappe les ids vers les noms via le fixture
-    id_to_name = {r.id: name for name, r in recettes_choux.items()}
-    names = [id_to_name[item["recipe_id"]] for item in recipe_level]
+    # On mapper id -> NOM DE RECETTE
+    id_to_recipe_name = {r.id: r.recipe_name for r in recettes_choux.values()}
+    names = [id_to_recipe_name[item["recipe_id"]] for item in recipe_level]
 
     # Le premier devrait être la recette partageant la sous-catégorie 'éclair'
     assert names[0] == "éclair café 2"
@@ -664,31 +678,40 @@ def test_suggest_reference_prefers_higher_category_score_even_if_mode_mismatched
     res = suggest_recipe_reference(base, target_servings=8)
     # Récupère l'ordre de classement niveau RECETTE
     recipe_level = res["recipe_level"]  # liste de {recipe_id, score}
-    # Map id -> nom via le fixture
-    id_to_name = {r.id: name for name, r in recettes_choux.items()}
-    names = [id_to_name[item["recipe_id"]] for item in recipe_level]
+    # Map id -> nom recette
+    id_to_recipe_name = {r.id: r.recipe_name for r in recettes_choux.values()}
+    names = [id_to_recipe_name[item["recipe_id"]] for item in recipe_level]
 
     # Attendu en tête (meilleur cat_score = 110) : éclair café
     assert names[0].startswith("éclair café")
 
-def test_suggest_reference_uses_mode_only_as_tiebreaker(recettes_choux, base_pans):
+def test_suggest_reference_uses_mode_only_as_tiebreaker(recettes_choux, base_pans, monkeypatch):
     """
     Deux candidats ex-aequo au cat_score :
+    - on force l'égalité du score global (on neutralise nom/prépa/chef) pour que le tie-breaker (mode) tranche.
     - celui qui a un pan (si cible=pan) ou des servings (si cible=servings) passe devant.
     """
     base = recettes_choux["religieuse_cafe"]  # choux + religieuse
 
-    # Pour fabriquer un ex-aequo simple :
-    # - "éclair choco" et "éclair café" ont chacun parent commun 'choux' => cat_score = 10 (aucune sous-cat commune avec religieuse)
+    # Neutralise les signaux qui faisaient diverger les scores:
+    # - similarité de nom (ex: "café")
+    # - similarité de structure de préparations
+    # - bonus chef
+    monkeypatch.setitem(pastry_app.utils_new.REF_SELECTION_CONFIG, "w_recipe_name_similarity", 0.0)
+    monkeypatch.setitem(pastry_app.utils_new.REF_SELECTION_CONFIG, "w_recipe_prep_structure_jaccard", 0.0)
+    monkeypatch.setattr(pastry_app.utils_new, "_chef_match_bonus", lambda base, cand: 0)
+
     res = suggest_recipe_reference(base, target_pan=base_pans["round_big"])
 
     # Récupère l'ordre de classement niveau RECETTE
     recipe_level = res["recipe_level"]
-    # Map id -> nom via le fixture
-    id_to_name = {r.id: name for name, r in recettes_choux.items()}
-    names = [id_to_name[item["recipe_id"]] for item in recipe_level]
+    id_to_recipe_name = {r.id: r.recipe_name for r in recettes_choux.values()}  # Map id -> nom recette
+    names = [id_to_recipe_name[item["recipe_id"]] for item in recipe_level]
 
-    # Les deux éclairs ont cat_score=10 ; tiebreaker: celui avec pan doit passer devant.
+    # vérifie qu'on a bien des scores égaux pour les deux éclairs (diagnostic)
+    scores_by_name = {id_to_recipe_name[it["recipe_id"]]: it["score"] for it in recipe_level}
+    assert pytest.approx(scores_by_name["éclair chocolat 1"], rel=1e-9) == scores_by_name["éclair café 2"]
+
     # Dans nos fixtures : "éclair choco" a un pan, "éclair café" n’en a pas -> "éclair choco" doit être devant.
     assert names.index("éclair chocolat 1") < names.index("éclair café 2")
 

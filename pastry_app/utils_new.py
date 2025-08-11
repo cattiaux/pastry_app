@@ -394,6 +394,7 @@ def _try_reference(recipe, reference_recipe, target_servings=None, target_pan=No
             else:
                 ref_pan = reference_recipe.pan
                 ref_pan_volume = getattr(ref_pan, "volume_cm3_cache", None) if ref_pan else None
+                print("Reference pan volume:", ref_pan_volume)  # Debug log
                 if not ref_pan_volume:
                     return None, "La référence n’a ni servings ni pan exploitables pour une cible servings."
                 ref_volume = ref_pan_volume * (reference_recipe.pan_quantity or 1)
@@ -695,7 +696,6 @@ def _subrecipe_candidates_hosting_like(prep, candidates):
     return out  # liste de tuples (recette_hôte, [sous-recettes correspondantes])
 
 # 6.2 — Éligibilité des candidats
-
 def _eligible_recipe_candidates(base_recipe, target_servings=None, target_pan=None, candidates=None):
     """
     Filtre "hard" pour les références niveau recette :
@@ -709,6 +709,7 @@ def _eligible_recipe_candidates(base_recipe, target_servings=None, target_pan=No
         candidates = candidates.exclude(pk=base_recipe.pk)
 
     w = REF_SELECTION_CONFIG
+
     # 1) scalable ?
     if w["require_scalable_ref"]:
         # Filtre DB si c'est un QuerySet, sinon fallback Python avec _recipe_has_scalable_info
@@ -726,7 +727,11 @@ def _eligible_recipe_candidates(base_recipe, target_servings=None, target_pan=No
     # si on exige parent commun
     if w["require_same_parent_category"]:
         if hasattr(candidates, "filter"):
-            candidates = candidates.filter(categories__parent_category__in=list(base_parent)).distinct()
+            candidates = candidates.filter(
+                django_models.Q(categories__parent_category__in=list(base_parent)) |
+                django_models.Q(categories__in=list(base_parent))
+            ).distinct()            
+            # candidates = candidates.filter(categories__parent_category__in=list(base_parent)).distinct()
             if not base_parent and w["fallback_allow_same_category_if_no_parent"]:
                 candidates = candidates.filter(categories__in=list(base_sub)).distinct()
         else:
