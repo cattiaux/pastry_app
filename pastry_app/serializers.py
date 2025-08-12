@@ -5,7 +5,7 @@ from django.db import IntegrityError
 from django.db.models import Max
 from django.utils.timezone import now
 from .models import *
-from .constants import UNIT_CHOICES
+from .constants import UNIT_CHOICES, SUBRECIPE_UNIT_CHOICES
 from .utils_pure import normalize_case
 
 
@@ -571,6 +571,7 @@ class RecipeStepSerializer(serializers.ModelSerializer):
 class SubRecipeSerializer(serializers.ModelSerializer):
     recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), required=False)
     sub_recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all())
+    unit = serializers.ChoiceField(choices=SUBRECIPE_UNIT_CHOICES)
 
     class Meta:
         model = SubRecipe

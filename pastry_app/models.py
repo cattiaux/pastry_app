@@ -10,7 +10,7 @@ from django.contrib.postgres.fields import ArrayField
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from .utils_pure import normalize_case
-from .constants import UNIT_CHOICES
+from .constants import UNIT_CHOICES, SUBRECIPE_UNIT_CHOICES
 
 User = get_user_model()
 
@@ -653,7 +653,7 @@ class SubRecipe(models.Model):
     recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='main_recipes')
     sub_recipe = models.ForeignKey(Recipe, on_delete=models.PROTECT, related_name='used_in_recipes')
     quantity = models.FloatField(validators=[MinValueValidator(0)])
-    unit = models.CharField(max_length=50, choices=UNIT_CHOICES)
+    unit = models.CharField(max_length=50, choices=SUBRECIPE_UNIT_CHOICES)
 
     def clean(self):
         """ Validation métier avant sauvegarde """

@@ -14,6 +14,11 @@ UNIT_CHOICES = [
     # Add more units as needed
 ]
 
+SUBRECIPE_UNIT_CHOICES = [
+    ("mg", "mg"), ("g", "g"), ("kg", "kg"),
+    ("ml", "ml"), ("cl", "cl"), ("l", "l"),
+]
+
 # Liste des catégories disponibles (pour recette et/ou ingrédient) et leur type associé.
 # Format : 
 #   - clé interne : Utilisée pour les bases de données ou les API. Normalement en minuscule sans espace pour éviter les erreurs.

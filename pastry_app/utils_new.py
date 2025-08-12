@@ -473,7 +473,7 @@ def get_scaling_multiplier(recipe, target_servings: int = None, target_pan=None,
 # 3. SCALING / ADAPTATION DE RECETTE (MÉTIER)
 # ============================================================
 
-def scale_recipe_globally(recipe, multiplier):
+def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None):
     """
     Adapte récursivement une recette entière (ingrédients ET sous-recettes)
     en appliquant un coefficient multiplicateur global.
@@ -484,20 +484,76 @@ def scale_recipe_globally(recipe, multiplier):
         - une contrainte sur un ingrédient limitant
         - ou tout autre cas où l'on souhaite scaler la recette à l'identique partout
 
-    Comportement :
-        - Multiplie toutes les quantités d'ingrédients et de sous-recettes, à tous les niveaux,
-          par le multiplicateur global calculé à la racine.
-        - Ignore totalement les éventuelles informations de "quantité totale produite",
-          "pan d'origine" ou "servings" des sous-recettes : 
-          TOUT est scaled uniformément, conformément à la logique "scaling global".
+    Principe :
+        - Les ingrédients DIRECTS de `recipe` sont multipliés par `multiplier`.
+        - Pour chaque **préparation** (liaison SubRecipe) :
+            1) quantité utilisée après scaling global :
+                used_qty = SubRecipe.quantity * multiplier
+            2) conversion de used_qty → **grammes** :
+                mg/g/kg → g (direct)
+                ml/cl/l → g via la densité de la préparation :
+                    densité (g/cm³) = total_preparation_g / volume_preparation_cm3
+                    (volume obtenu par get_source_volume(preparation))
+            3) multiplicateur **local** appliqué aux ingrédients de la préparation :
+                local_multiplier = used_qty_g / total_preparation_g
+        Fallback si info insuffisante (densité/total) : local_multiplier = multiplier.
 
-    NE MODIFIE RIEN EN BASE.
-    Retourne une structure imbriquée complète avec les quantités adaptées.
+    IMPORTANT :
+        - NE MODIFIE RIEN EN BASE : Retourne une structure imbriquée complète avec les quantités adaptées.
+        - Tente de calculer `total_recipe_quantity` à la volée (save=False) si absent.
+        - Suppose que 1 ml = 1 cm³.
 
     :param recipe: instance de Recipe
-    :param multiplier: float (coefficient de scaling à appliquer partout)
-    :return: dict structuré (identique à l'API classique)
+    :param multiplier: float (coefficient global pour la recette racine)
+    :param user / guest_id: utilisés pour les conversions éventuelles à la volée
+    :return: dict structuré { recipe_id, recipe_name, scaling_multiplier, ingredients, subrecipes }
     """
+
+    # --- Helper interne : convertit la quantité utilisée d'une sous-recette en grammes ---
+    def _sub_used_grams(main_sub, sub_recipe):
+        """
+        Convertit la quantité utilisée de `sub_recipe` (après scaling global) pour une préparation donnée en grammes.
+
+        - main_sub.quantity est dans l'unité `main_sub.unit` (limitée par le modèle/serializer).
+        - Si unité massique → conversion directe.
+        - Si unité volumique → conversion via la densité de la sous-recette :
+              density_g_per_cm3 = total_preparation_g / volume_sub_cm3
+          où volume_sub_cm3 provient de get_source_volume(sub_recipe)
+        Retourne un float (grammes) ou None si la conversion est impossible.
+        """
+        used_qty = float(main_sub.quantity) * float(multiplier)
+        used_unit = main_sub.unit
+
+        # Massique
+        if used_unit == "g":
+            return used_qty
+        if used_unit == "mg":
+            return used_qty / 1000.0
+        if used_unit == "kg":
+            return used_qty * 1000.0
+
+        # Volumique → nécessite densité de B (total / volume)
+        if used_unit in ("ml", "cl", "l"):
+            # Masse totale (g) de la préparation
+            total_preparation_g = getattr(sub_recipe, "total_recipe_quantity", None)
+            if total_preparation_g is None:
+                try:
+                    total_preparation_g = sub_recipe.compute_and_set_total_quantity(force=False, user=user, guest_id=guest_id, save=False)
+                except Exception:
+                    total_preparation_g = None
+
+            # volume de B en cm³ (1 ml = 1 cm³)
+            volume_cm3, _ = get_source_volume(sub_recipe)
+            if not (total_preparation_g and volume_cm3):
+                return None
+
+            density_g_per_cm3 = float(total_preparation_g) / float(volume_cm3)  # g / cm³
+            qty_cm3 = used_unit if used_unit == "ml" else used_unit * 10.0 if used_unit == "cl" else used_unit * 1000.0  # l → ml/cm³
+            return qty_cm3 * density_g_per_cm3
+
+        # Unité inattendue (devrait être filtrée par le modèle/serializer)
+        return None
+    
     # 1. Adaptation des ingrédients directs de la recette principale
     adapted_ingredients = []
     for recipe_ingredient in recipe.recipe_ingredients.all():
@@ -512,14 +568,31 @@ def scale_recipe_globally(recipe, multiplier):
 
     # 2. Adaptation récursive des sous-recettes (si présentes)
     adapted_subrecipes = []
-    for main_sub in recipe.main_recipes.all():
-        sub_recipe = main_sub.sub_recipe
+    for main_sub in recipe.main_recipes.all():  # <- lien SubRecipe (dans la recette hôte)
+        sub_recipe = main_sub.sub_recipe    # <- la recette utilisée comme préparation
 
-        # La quantité de sous-recette utilisée est scaled globalement
-        scaled_quantity = main_sub.quantity * multiplier
+        # La quantité de sous-recette utilisée est scaled globalement (toujours dans l’unité d’origine de la liaison)
+        scaled_quantity = float(main_sub.quantity) * float(multiplier)
+
+        # conversion en g + total de la préparation
+        used_qty_g = _sub_used_grams(main_sub, sub_recipe)
+        print("used_qty_g: ", used_qty_g)  # Debug log
+        total_preparation_g = getattr(sub_recipe, "total_recipe_quantity", None)
+        print(total_preparation_g)  # Debug log
+        if total_preparation_g is None:
+            try:
+                total_preparation_g = sub_recipe.compute_and_set_total_quantity(force=False, user=user, guest_id=guest_id, save=False)
+            except Exception:
+                total_preparation_g = None
+
+        # multiplicateur local
+        if used_qty_g is not None and total_preparation_g:
+            local_multiplier = float(used_qty_g) / float(total_preparation_g)
+        else:
+            local_multiplier = float(multiplier)  # fallback: ancien comportement
 
         # Récursivité : adapte toute la sous-recette avec le même multiplicateur global
-        adapted_sub = scale_recipe_globally(sub_recipe, multiplier)
+        adapted_sub = scale_recipe_globally(sub_recipe, local_multiplier, user=user, guest_id=guest_id)
 
         adapted_subrecipes.append({
             "sub_recipe_id": sub_recipe.id,
@@ -529,7 +602,7 @@ def scale_recipe_globally(recipe, multiplier):
             "unit": main_sub.unit,
             "ingredients": adapted_sub["ingredients"],      # déjà scaled
             "subrecipes": adapted_sub["subrecipes"],        # récursivité profonde
-            "scaling_multiplier": multiplier,
+            "scaling_multiplier": local_multiplier,
         })
 
     # 3. Structure de retour
