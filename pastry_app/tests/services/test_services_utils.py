@@ -538,15 +538,26 @@ def test_scale_recipe_globally_scaling_of_direct_ingredients_and_subrecipes(rece
 
 def test_scale_recipe_globally_deep_recursion_and_rounding(base_ingredients):
     """
-    A (ingr A1=10 g) 
-      -> B (ingr B1=3.333 g)
-           -> C (ingr C1=7.777 g)
-    multiplier = 1.2345
+    Vérifie la récursion profonde, l'arrondi et l'usage du multiplicateur *local* par préparation.
 
-    On vérifie :
-      - scaling des ingrédients à chaque niveau
-      - quantité utilisée des sous-recettes (main_sub.quantity) est aussi arrondie
-      - structure imbriquée conservée
+    Structure:
+      A (ingr A1 = 10.0 g)
+        └─ B (ingr B1 = 3.333 g ; utilise C à 12.5 g)
+             └─ C (ingr C1 = 7.777 g)
+
+    Paramètres:
+      multiplier = 1.2345
+
+    Ce que l'on vérifie:
+      - Les ingrédients directs de chaque recette sont multipliés et ARRONDIS à 2 décimales.
+      - La quantité de chaque sous-recette (main_sub.quantity) est multipliée par le facteur du parent
+        et ARRONDIE à 2 décimales pour l'affichage.
+      - À chaque sous-recette, on utilise un **multiplicateur local** :
+            local_preparation = (quantité utilisée de la préparation dans le parent, en g)
+                                / (total_recipe_quantity de la préparation, en g)
+        et c’est ce multiplicateur local qui est passé à la récursion et appliqué aux ingrédients
+        **de cette préparation**.
+      - La structure imbriquée est conservée et la base n’est pas modifiée.
     """
     # C
     C = make_recipe(name="CCC", pan=None)
@@ -571,26 +582,49 @@ def test_scale_recipe_globally_deep_recursion_and_rounding(base_ingredients):
     assert a1["quantity"] == round(10.0 * multiplier, 2)  # 12.35
 
     # Sous-recette B
+    assert len(scaled["subrecipes"]) == 1
     B_node = scaled["subrecipes"][0]
+    assert B_node["sub_recipe_name"] == normalize_case("BBB")
     assert B_node["original_quantity"] == 20.0
     assert B_node["quantity"] == round(20.0 * multiplier, 2)  # 24.69
-    assert B_node["scaling_multiplier"] == multiplier
 
-    # Ingrédient B1 dans B
+    # multiplicateur local attendu = (quantité utilisée de B en g) / (total B en g)
+    used_qty_B = 20.0 * multiplier                           # B est utilisé à 20 g dans A
+    total_B = sum(ri.quantity for ri in B.recipe_ingredients.all())  # 3.333 g avec ce setup
+    expected_local_B = used_qty_B / total_B                           # ≈ 7.407740774
+    assert B_node["scaling_multiplier"] == pytest.approx(expected_local_B, rel=1e-9)
+
+    # Ingrédient B1 dans B → multiplié par le local de B
     b1 = next(i for i in B_node["ingredients"] if i["ingredient_id"] == B.recipe_ingredients.first().ingredient_id)
     assert b1["original_quantity"] == 3.333
-    assert b1["quantity"] == round(3.333 * multiplier, 2)
+    expected_b1_qty = round(3.333 * expected_local_B, 2)  # quantité attendue pour l’ingrédient B1
+    assert b1["quantity"] == expected_b1_qty
 
-    # Sous-recette C dans B
+    # Sous-recette C dans B (niveau 2)
+    assert len(B_node["subrecipes"]) == 1
     C_node = B_node["subrecipes"][0]
+    assert C_node["sub_recipe_name"] == normalize_case("CCC")
     assert C_node["original_quantity"] == 12.5
-    assert C_node["quantity"] == round(12.5 * multiplier, 2)
-    assert C_node["scaling_multiplier"] == multiplier
+    # quantité affichée pour C = 12.5 × local_B (arrondie)
+    assert C_node["quantity"] == round(12.5 * expected_local_B, 2)
+
+    # multiplicateur local attendu pour C = (quantité utilisée de C dans B) / (total standalone de C)
+    total_C = sum(ri.quantity for ri in C.recipe_ingredients.all())   # 7.777 g
+    expected_local_C = (12.5 * expected_local_B) / total_C
+    assert C_node["scaling_multiplier"] == pytest.approx(expected_local_C, rel=1e-9)
 
     # Ingrédient C1 dans C
     c1 = next(i for i in C_node["ingredients"] if i["ingredient_id"] == C.recipe_ingredients.first().ingredient_id)
     assert c1["original_quantity"] == 7.777
-    assert c1["quantity"] == round(7.777 * multiplier, 2)
+    assert c1["quantity"] == round(7.777 * expected_local_C, 2)
+
+    # --- Vérifier que la base n'a pas été modifiée ---
+    A.refresh_from_db(); B.refresh_from_db(); C.refresh_from_db()
+    assert [ri.quantity for ri in A.recipe_ingredients.all()] == [10.0]
+    assert [ri.quantity for ri in B.recipe_ingredients.all()] == [3.333]
+    assert [ri.quantity for ri in C.recipe_ingredients.all()] == [7.777]
+    assert [sr.quantity for sr in A.main_recipes.all()] == [20.0]
+    assert [sr.quantity for sr in B.main_recipes.all()] == [12.5]
 
 # -------------------------------------------------
 # Groupe 3 — Estimation et suggestions de pan

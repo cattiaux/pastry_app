@@ -548,7 +548,7 @@ def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None):
                 return None
 
             density_g_per_cm3 = float(total_preparation_g) / float(volume_cm3)  # g / cm³
-            qty_cm3 = used_unit if used_unit == "ml" else used_unit * 10.0 if used_unit == "cl" else used_unit * 1000.0  # l → ml/cm³
+            qty_cm3 = used_qty if used_unit == "ml" else used_qty * 10.0 if used_unit == "cl" else used_qty * 1000.0  # l → ml/cm³
             return qty_cm3 * density_g_per_cm3
 
         # Unité inattendue (devrait être filtrée par le modèle/serializer)
@@ -576,9 +576,7 @@ def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None):
 
         # conversion en g + total de la préparation
         used_qty_g = _sub_used_grams(main_sub, sub_recipe)
-        print("used_qty_g: ", used_qty_g)  # Debug log
         total_preparation_g = getattr(sub_recipe, "total_recipe_quantity", None)
-        print(total_preparation_g)  # Debug log
         if total_preparation_g is None:
             try:
                 total_preparation_g = sub_recipe.compute_and_set_total_quantity(force=False, user=user, guest_id=guest_id, save=False)
@@ -591,7 +589,7 @@ def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None):
         else:
             local_multiplier = float(multiplier)  # fallback: ancien comportement
 
-        # Récursivité : adapte toute la sous-recette avec le même multiplicateur global
+        # Récursivité : adapte la sous-recette avec le multiplicateur local calculé
         adapted_sub = scale_recipe_globally(sub_recipe, local_multiplier, user=user, guest_id=guest_id)
 
         adapted_subrecipes.append({
