@@ -128,9 +128,11 @@ def test_cycle_detection_db(recipe):
         recipe.full_clean()
 
 def test_auto_fill_servings_from_pan_db(recipe):
-    """Vérifie que servings_min et servings_max sont générés automatiquement si absents mais pan défini."""
+    """Vérifie que servings_min et servings_max sont générés automatiquement si absents 
+    mais pan défini avec units_in_mold supérieur à 1."""
     recipe.servings_min = None
     recipe.servings_max = None
+    recipe.pan.units_in_mold = 5
     recipe.full_clean()
     assert recipe.servings_min == recipe.pan.units_in_mold
     assert recipe.servings_max == recipe.pan.units_in_mold
@@ -185,6 +187,7 @@ def test_servings_are_scaled_by_pan_quantity(recipe):
     recipe.pan_quantity = 3
     recipe.servings_min = None
     recipe.servings_max = None
+    recipe.pan.units_in_mold = 5
     recipe.full_clean()
     assert recipe.servings_min == recipe.pan.units_in_mold * 3
     assert recipe.servings_max == recipe.pan.units_in_mold * 3

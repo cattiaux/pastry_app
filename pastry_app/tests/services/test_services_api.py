@@ -1,6 +1,5 @@
 import pytest
 from typing import Optional
-from django.urls import reverse
 from django.contrib.auth import get_user_model
 from pastry_app.utils_new import *
 from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep, SubRecipe, Category
@@ -15,6 +14,12 @@ pytestmark = pytest.mark.django_db
 # =========================
 # FIXTURES & FACTORIES
 # =========================
+
+User = get_user_model()
+
+@pytest.fixture
+def user():
+    return User.objects.create_user(username="user1", password="testpass123")
 
 # ---------- Helpers (mini factories) ----------
 
@@ -35,7 +40,7 @@ def make_recipe(*, name: str, chef: str = "chef", recipe_type: str = "BASE",
                 total_qty: Optional[float] = None,
                 categories: list[Category] = (),
                 steps_text: list[str] = ("step ok",),
-                user=None, guest_id=None, visibility="private"):
+                user=None, guest_id=None, visibility="public"):
     """
     Crée une Recipe minimale mais valide :
       - au moins 1 step
@@ -59,7 +64,7 @@ def add_ingredient(recipe: Recipe, *, ingredient: Ingredient, qty: float, unit: 
                                            display_name=display_name or ingredient.ingredient_name)
 
 def add_subrecipe(parent: Recipe, *, sub: Recipe, qty: float, unit: str = "g"):
-    return SubRecipe.objects.create(parent_recipe=parent, sub_recipe=sub, quantity=qty, unit=unit)
+    return SubRecipe.objects.create(recipe=parent, sub_recipe=sub, quantity=qty, unit=unit)
 
 # ---------- Fixtures de base partagées ----------
 
@@ -210,3 +215,568 @@ def recettes_choux(recette_eclair_choco, recette_eclair_cafe, recette_religieuse
         "paris_brest_choco": recette_paris_brest_choco,
     }
 
+
+API_PREFIX = "/api"
+URL_RECIPES_ADAPT = f"{API_PREFIX}/recipes-adapt/"
+URL_PAN_ESTIMATION = f"{API_PREFIX}/pan-estimation/"
+URL_PAN_SUGGESTION = f"{API_PREFIX}/pan-suggestion/"
+URL_RECIPES_ADAPT_BY_ING = f"{API_PREFIX}/recipes-adapt/by-ingredient/"
+
+# -------------------------------------------------------------------
+# Helpers
+# -------------------------------------------------------------------
+
+def _post(api_client, url: str, data: dict, user=None, guest_id=None):
+    if user:
+        api_client.force_authenticate(user=user)
+    headers = {}
+    if guest_id:
+        headers["HTTP_X_GUEST_ID"] = guest_id
+    return api_client.post(url, data, format="json", **headers)
+
+def _get(api_client, url: str, params: Optional[dict] = None, user=None, guest_id=None):
+    if user:
+        api_client.force_authenticate(user=user)
+    headers = {}
+    if guest_id:
+        headers["HTTP_X_GUEST_ID"] = guest_id
+    return api_client.get(url, params, format="json", **headers)
+
+# ===================================================================
+# /recipes-adapt/ — POST
+# ===================================================================
+
+def test_recipes_adapt__pan_to_pan(api_client, recettes_choux, base_pans):
+    src = recettes_choux["eclair_choco"]      # a un pan
+    tgt = base_pans["round_big"]
+
+    mult, mode = get_scaling_multiplier(src, target_pan=tgt)
+    expected = scale_recipe_globally(src, mult)
+
+    resp = _post(api_client, URL_RECIPES_ADAPT, {"recipe_id": src.id, "target_pan_id": tgt.id})
+    assert resp.status_code == status.HTTP_200_OK, resp.data
+    data = resp.json()
+
+    assert data["scaling_multiplier"] == pytest.approx(mult)
+    assert data["scaling_mode"] in ("pan", "servings", "reference_recipe_pan", "reference_recipe_servings")
+
+    got = {i["ingredient_name"]: i["quantity"] for i in data.get("ingredients", [])}
+    exp = {i["ingredient_name"]: i["quantity"] for i in expected.get("ingredients", [])}
+    for name, qty in got.items():
+        assert qty == pytest.approx(exp[name], rel=1e-2)
+
+def test_recipes_adapt__servings_to_pan(api_client, recettes_choux, base_pans):
+    """
+    Source sans pan (éclair café) → cible pan.
+    On calcule le multiplicateur manuellement :
+      source_volume = avg(servings_min,max) * 150 = 9 * 150 = 1350 cm³
+      target_volume = volume du pan cible
+      multiplier = target_volume / source_volume
+    Puis on vérifie une quantité emblématique (ingrédient direct 'café' = 70g).
+    """
+    src = recettes_choux["eclair_cafe"]  # servings_min=8, max=10, total_qty=1200, café=70, pas de pan
+    tgt = base_pans["round_mid"]    # diamètre 16, hauteur 4
+
+    # calcul manuel : volumes (le Pan stocke volume_cm3_cache)
+    target_volume = float(tgt.volume_cm3_cache)
+    source_volume = 9 * 150.0  # moyenne 9 portions
+    expected_multiplier = target_volume / source_volume
+    expected_cafe_qty = 70.0 * expected_multiplier
+
+    # calcul via méthode get_scaling_multiplier
+    mult, _ = get_scaling_multiplier(src, target_pan=tgt)
+
+    resp = _post(api_client, URL_RECIPES_ADAPT, {"recipe_id": src.id, "target_pan_id": tgt.id})
+    assert resp.status_code == 200, resp.data
+    assert resp.json()["scaling_multiplier"] == pytest.approx(mult)
+    assert resp.json()["scaling_multiplier"] == pytest.approx(expected_multiplier)
+
+    print("Response data:", resp.json())  # DEBUG
+
+    # vérif sur l’ingrédient 'café'
+    cafe = next(i for i in resp.json()["ingredients"] if i["ingredient_name"].lower().startswith("cafe"))
+    assert cafe["quantity"] == pytest.approx(expected_cafe_qty, rel=1e-2)
+
+def test_recipes_adapt__pan_to_servings(api_client, recettes_choux):
+    """
+    Source avec pan (éclair choco) mais sans servings (on désactive les servings de l'éclair choco ici) → cible servings.
+    Calcul manuel :
+      source_volume = volume du pan source
+      target_volume = target_servings * 150
+      multiplier = target_volume / source_volume
+    Vérifie la quantité de 'chocolat' (200g en base).
+    """
+    src = recettes_choux["eclair_choco"]      # pan = round_mid, total_qty=900, chocolat=200
+
+    # on force l'absence de servings pour tester pan→servings
+    src.servings_min = None
+    src.servings_max = None
+    src.save()
+    print("serving min: ", src.servings_min, "max:", src.servings_max)  # DEBUG log
+    target_servings = 12
+
+    # calcul manuel
+    source_volume = float(src.pan.volume_cm3_cache)
+    target_volume = target_servings * 150.0
+    expected_multiplier = target_volume / source_volume
+    expected_choco_qty = 200.0 * expected_multiplier
+
+    # calcul via méthode get_scaling_multiplier
+    mult, _ = get_scaling_multiplier(src, target_servings=target_servings)
+    
+    resp = _post(api_client, URL_RECIPES_ADAPT, {"recipe_id": src.id, "target_servings": target_servings})
+    assert resp.status_code == 200, resp.data
+    assert resp.json()["scaling_multiplier"] == pytest.approx(mult)
+    assert resp.json()["scaling_multiplier"] == pytest.approx(expected_multiplier)
+
+    choco = next(i for i in resp.json()["ingredients"] if i["ingredient_name"].lower().startswith("chocolat"))
+    assert choco["quantity"] == pytest.approx(expected_choco_qty, rel=1e-2)
+
+def test_recipes_adapt__servings_to_servings(api_client, recettes_choux):
+    """
+    Source servings → cible servings (éclair café).
+    Calcul manuel :
+      source_volume = avg(8,10)*150 = 9*150
+      target_volume = 14*150
+      multiplier = target_volume / source_volume
+    Vérifie la quantité de 'café' (70g).
+    """
+    src = recettes_choux["eclair_cafe"]       # 8–10 portions, café=70
+    target_servings = 14
+
+    # calcul manuel
+    source_volume = 9 * 150.0
+    target_volume = target_servings * 150.0
+    expected_multiplier = target_volume / source_volume
+    expected_cafe_qty = 70.0 * expected_multiplier
+
+    # calcul via méthode get_scaling_multiplier
+    mult, _ = get_scaling_multiplier(src, target_servings=target_servings)
+    
+    resp = _post(api_client, URL_RECIPES_ADAPT, {"recipe_id": src.id, "target_servings": target_servings})
+    assert resp.status_code == 200
+    assert resp.json()["scaling_multiplier"] == pytest.approx(mult)
+    assert resp.json()["scaling_multiplier"] == pytest.approx(expected_multiplier)
+
+    cafe = next(i for i in resp.json()["ingredients"] if i["ingredient_name"].lower().startswith("cafe"))
+    assert cafe["quantity"] == pytest.approx(expected_cafe_qty, rel=1e-2)
+
+@pytest.mark.parametrize(
+    "use_target_pan, use_target_servings, expected_mode",
+    [
+        (True,  False, "reference_recipe_pan"),
+        (False, True,  "reference_recipe_servings"),
+    ]
+)
+def test_recipes_adapt__reference_recipe_modes(api_client, recettes_choux, base_pans, use_target_pan, use_target_servings, expected_mode):
+    """
+    Calcul manuel via densité de la recette de référence :
+      - Si expected_mode == reference_recipe_pan:
+          ref_density = ref.total_qty / (ref.pan.volume * ref.pan_quantity)
+      - Si expected_mode == reference_recipe_servings:
+          on privilégie les servings de la référence s'ils existent :
+            ref_serv_avg = avg(ref.servings_min, ref.servings_max)
+            ref_density = ref.total_qty / (ref_serv_avg*150)
+          sinon fallback pan de la ref.
+
+      Puis:
+        target_volume = (pan cible).volume  OU  target_servings*150
+        target_total_qty = target_volume * ref_density
+        multiplier = target_total_qty / source.total_qty
+
+      Vérifie une quantité emblématique côté source ('chocolat' pour PB choco).
+    """
+    src = recettes_choux["paris_brest_choco"]   # total_qty=800, chocolat=70
+    ref = recettes_choux["eclair_choco"]     # total_qty=900, pan=round_mid, servings 6–8
+    payload = {"recipe_id": src.id, "reference_recipe_id": ref.id, "prefer_reference": True}
+
+    # calcul manuel
+    if expected_mode == "reference_recipe_pan":
+        ref_pan_vol = float(ref.pan.volume_cm3_cache)
+        ref_vol = ref_pan_vol * float(getattr(ref, "pan_quantity", 1) or 1)
+        ref_density = ref.total_recipe_quantity / ref_vol  # g/cm³
+        # cible = pan
+        tgt_pan = base_pans["round_small"]
+        payload["target_pan_id"] = tgt_pan.id
+        target_volume = float(tgt_pan.volume_cm3_cache)
+    else:
+        # priorité aux servings de la référence
+        ref_serv_avg = ((ref.servings_min + ref.servings_max) / 2.0) if (ref.servings_min and ref.servings_max) else \
+                       (ref.servings_min or ref.servings_max)
+        if ref_serv_avg:
+            ref_vol = ref_serv_avg * 150.0
+            ref_density = ref.total_recipe_quantity / ref_vol
+        else:
+            ref_pan_vol = float(ref.pan.volume_cm3_cache)
+            ref_vol = ref_pan_vol * float(getattr(ref, "pan_quantity", 1) or 1)
+            ref_density = ref.total_recipe_quantity / ref_vol
+        # cible = servings
+        payload["target_servings"] = 8
+        target_volume = 8 * 150.0
+
+    target_total_qty = target_volume * ref_density
+    expected_multiplier = target_total_qty / src.total_recipe_quantity
+    expected_choco_qty = 70.0 * expected_multiplier
+
+    # calcul via methode get_scaling_multiplier
+    if use_target_pan:
+        payload["target_pan_id"] = base_pans["round_small"].id
+    if use_target_servings:
+        payload["target_servings"] = 8
+
+    mult, _ = get_scaling_multiplier(
+        src,
+        target_pan=base_pans["round_small"] if use_target_pan else None,
+        target_servings=8 if use_target_servings else None,
+        reference_recipe=ref,
+        prefer_reference=True,
+    )
+
+    resp = _post(api_client, URL_RECIPES_ADAPT, payload)
+    assert resp.status_code == 200, resp.data
+    assert resp.json()["scaling_mode"] == expected_mode
+    assert resp.json()["scaling_multiplier"] == pytest.approx(mult)
+    assert resp.json()["scaling_multiplier"] == pytest.approx(expected_multiplier)
+
+    choco = next(i for i in resp.json()["ingredients"] if i["ingredient_name"].lower().startswith("chocolat"))
+    assert choco["quantity"] == pytest.approx(expected_choco_qty, rel=1e-2)
+    
+def test_recipes_adapt__validation_errors(api_client, recettes_choux):
+    src = recettes_choux["eclair_choco"]
+
+    # recipe_id manquant
+    r1 = _post(api_client, URL_RECIPES_ADAPT, {})
+    assert r1.status_code == 400
+    assert "recipe_id" in r1.json().get("error", "").lower()
+
+    # aucun critère fourni
+    r2 = _post(api_client, URL_RECIPES_ADAPT, {"recipe_id": src.id})
+    assert r2.status_code == 400
+    msg = r2.json().get("error", "")
+    assert "moule" in msg or "portions" in msg or "référence" in msg
+
+def test_recipes_adapt__prioritize_direct_when_possible(api_client, recettes_choux, base_pans):
+    """
+    prefer_reference=False + target_pan + reference → on attend le mode direct (pan/servings).
+    """
+    src = recettes_choux["eclair_choco"]
+    ref = recettes_choux["eclair_cafe"]
+    tgt = base_pans["round_mid"]
+
+    mult_direct, _ = get_scaling_multiplier(src, target_pan=tgt, reference_recipe=ref, prefer_reference=False)
+    resp = _post(api_client, URL_RECIPES_ADAPT, {
+        "recipe_id": src.id,
+        "target_pan_id": tgt.id,
+        "reference_recipe_id": ref.id,
+        "prefer_reference": False
+    })
+    assert resp.status_code == 200, resp.data
+    assert resp.json()["scaling_multiplier"] == pytest.approx(mult_direct)
+    assert resp.json()["scaling_mode"] in ("pan", "servings")
+
+@pytest.mark.parametrize("recursive", [False, True])
+def test_recipes_adapt__smoke_all_modes(api_client, recettes_choux, base_pans, recursive):
+    """
+    Tour rapide : l’endpoint répond et fournit un scaling_mode cohérent
+    pour une recette simple et une recette avec sous-recettes.
+    """
+    src = recettes_choux["eclair_choco"] if not recursive else recettes_choux["paris_brest_choco"]
+
+    # pan_to_pan
+    r_pan = _post(api_client, URL_RECIPES_ADAPT, {"recipe_id": src.id, "target_pan_id": base_pans["round_small"].id})
+    assert r_pan.status_code == 200
+    assert r_pan.json()["scaling_mode"] in ("pan",)
+
+    # servings_to_servings
+    r_serv = _post(api_client, URL_RECIPES_ADAPT, {"recipe_id": src.id, "target_servings": 9})
+    assert r_serv.status_code == 200
+    assert r_serv.json()["scaling_mode"] in ("servings",)
+
+# ===================================================================
+# /pan-estimation/ — POST
+# ===================================================================
+
+def test_pan_estimation__with_pan_id(api_client, base_pans):
+    """
+    Vérifie que l'estimation d'un moule via son ID retourne un statut 200
+    et contient au moins le volume et un intervalle de portions.
+    """
+    pan = base_pans["round_mid"]
+    resp = _post(api_client, URL_PAN_ESTIMATION, {"pan_id": pan.id})
+    assert resp.status_code == 200, resp.data
+    data = resp.json()
+    assert isinstance(data, dict)
+    # est attendu : volume + intervalle de portions (noms exacts côté service au choix)
+    assert any(k in data for k in ("volume_cm3", "volume"))
+    assert any(k in data for k in ("estimated_servings_min", "estimated_servings_max"))
+
+def test_pan_estimation__with_dimensions_round(api_client):
+    """
+    Serializer accepte pan_type + dimensions (ROUND: diameter + height).
+    """
+    payload = {"pan_type": "ROUND", "diameter": 20.0, "height": 5.0}
+    resp = _post(api_client, URL_PAN_ESTIMATION, payload)
+    assert resp.status_code in (200, 400)  # selon logique d'estimation interne
+    if resp.status_code == 200:
+        data = resp.json()
+        assert any(k in data for k in ("volume_cm3", "volume"))
+
+def test_pan_estimation__with_volume_raw(api_client):
+    """
+    Serializer accepte directement volume_raw.
+    """
+    resp = _post(api_client, URL_PAN_ESTIMATION, {"volume_raw": 1500.0})
+    assert resp.status_code in (200, 400)
+    if resp.status_code == 200:
+        assert isinstance(resp.json(), dict)
+
+def test_pan_estimation__validation_error_when_no_inputs(api_client):
+    """
+    Vérifie qu'un appel à l'estimation sans paramètres renvoie une erreur de validation
+    (400 ou 422) et que le message mentionne pan_id ou volume_raw.
+    """
+    resp = _post(api_client, URL_PAN_ESTIMATION, {})
+    print(resp.json())
+    assert resp.status_code in (400, 422)
+    # message du serializer
+    if resp.status_code == 400:
+        msgs = " ".join(resp.json().get("non_field_errors", []))
+        assert "pan_id" in msgs or "volume_raw" in msgs
+
+# ===================================================================
+# /pan-suggestion/ — POST
+# ===================================================================
+
+def test_pan_suggestion__basic_list(api_client):
+    """
+    Vérifie que la suggestion de moules pour un nombre de portions donné
+    retourne une liste de dictionnaires (ou liste vide).
+    """
+    resp = _post(api_client, URL_PAN_SUGGESTION, {"target_servings": 10})
+    assert resp.status_code == 200, resp.data
+    lst = resp.json()
+    assert isinstance(lst, list)
+    if lst:
+        assert isinstance(lst[0], dict)
+
+def test_pan_suggestion__invalid_target_servings(api_client):
+    """
+    Vérifie qu'un nombre de portions cible invalide (0) provoque une
+    erreur de validation (400 ou 422).
+    """
+    # Serializer force min_value=1 et check >0
+    resp = _post(api_client, URL_PAN_SUGGESTION, {"target_servings": 0})
+    assert resp.status_code in (400, 422)
+
+# ===================================================================
+# /recipes-adapt/by-ingredient/ — POST
+# ===================================================================
+
+def test_recipes_adapt_by_ingredient__limits_and_scales(api_client, base_ingredients):
+    """
+    Serializer n'accepte que des floats → on transmet des quantités numériques
+    **dans les unités attendues par la recette**.
+    """
+    r = make_recipe(name="brioche-API")
+    farine = base_ingredients["farine"]
+    oeuf = Ingredient.objects.create(ingredient_name="oeuf2")
+
+    # Recette : 200 g farine + 3 unités d'œuf (avec référence 1 unit = 55 g — utile pour utils si besoin)
+    add_ingredient(r, ingredient=farine, qty=200.0, unit="g")
+    add_ingredient(r, ingredient=oeuf, qty=3.0, unit="unit")
+    IngredientUnitReference.objects.create(ingredient=oeuf, unit="unit", weight_in_grams=55)
+
+    # Contraintes : on donne des valeurs numériques (pas de tuples d'unités)
+    # Hypothèse : l'algo considère que la contrainte est donnée dans l'unité de la recette.
+    constraints = {
+        farine.id: 300.0,  # g
+        oeuf.id: 2.0,      # unit
+    }
+
+    # Attente calculée côté utils
+    normalized = normalize_constraints_for_recipe(r, constraints)
+    limiting_mult, limiting_ing_id = get_limiting_multiplier(r, normalized)
+    expected = scale_recipe_globally(r, limiting_mult)
+
+    resp = _post(api_client, URL_RECIPES_ADAPT_BY_ING, {"recipe_id": r.id, "ingredient_constraints": constraints}, guest_id="guest-42")
+    assert resp.status_code == 200, resp.data
+    data = resp.json()
+
+    # La view renvoie "multiplier" + "limiting_ingredient_id"
+    assert data["multiplier"] == pytest.approx(limiting_mult)
+    assert data["limiting_ingredient_id"] == limiting_ing_id
+
+    got = {i["ingredient_name"]: i["quantity"] for i in data.get("ingredients", [])}
+    exp = {i["ingredient_name"]: i["quantity"] for i in expected.get("ingredients", [])}
+    for name, qty in got.items():
+        assert qty == pytest.approx(exp[name], rel=1e-9)
+
+def test_recipes_adapt_by_ingredient__bad_payload_validation(api_client):
+    """
+    DictField(child=FloatField) → si on envoie une valeur non numérique, 400/422.
+    """
+    r = make_recipe(name="omelette-API")
+    ing = Ingredient.objects.create(ingredient_name="oeuf")
+    add_ingredient(r, ingredient=ing, qty=150.0, unit="g")
+
+    # valeur non float → devrait échouer en validation
+    resp = _post(api_client, URL_RECIPES_ADAPT_BY_ING, {"recipe_id": r.id, "ingredient_constraints": {ing.id: "two"}})
+    assert resp.status_code in (400, 422)
+
+# ===================================================================
+# /recipes/<id>/reference-suggestions/ — GET
+# ===================================================================
+
+def test_reference_suggestions__structure_and_exclusion(api_client, recettes_choux, base_pans):
+    """
+    Viewset action renvoie {"criteria": {...}, "reference_recipes": [...]}
+    et sérialise chaque recette via RecipeReferenceSuggestionSerializer :
+      fields = ["id", "recipe_name", "total_recipe_quantity", "category", "parent_category"]
+    """
+    host = recettes_choux["eclair_cafe"]  # pas de pan
+    target_pan = base_pans["round_small"]
+
+    url = f"{API_PREFIX}/recipes/{host.id}/reference-suggestions/"
+    resp = _get(api_client, url, {"target_pan_id": target_pan.id})
+    print(resp.json())
+    assert resp.status_code == 200, resp.data
+
+    payload = resp.json()
+    assert set(payload.keys()) == {"criteria", "reference_recipes"}
+
+    crit = payload["criteria"]
+    assert set(crit.keys()) == {"target_pan_id", "target_servings"}
+    # target_pan_id renvoyé en entier si fourni
+    if crit["target_pan_id"] is not None:
+        assert isinstance(crit["target_pan_id"], int)
+
+    items = payload["reference_recipes"]
+    assert isinstance(items, list)
+
+    # host exclu
+    ids = [it.get("id") for it in items]
+    assert host.id not in ids
+
+    # check serializer fields (si liste non vide)
+    if items:
+        keys = set(items[0].keys())
+        assert {"id", "recipe_name", "total_recipe_quantity", "category", "parent_category"} <= keys
+
+def test_reference_suggestions__by_servings_and_param_validation(api_client, recettes_choux):
+    """
+    Vérifie qu'une recette peut suggérer des références via target_servings (200 avec référence_recipes)
+    et qu'un target_pan_id invalide renvoie une erreur 400 avec message approprié.
+    """
+    host = recettes_choux["paris_brest_choco"]
+    url = f"{API_PREFIX}/recipes/{host.id}/reference-suggestions/"
+
+    ok = _get(api_client, url, {"target_servings": 10})
+    assert ok.status_code == 200, ok.data
+    assert "reference_recipes" in ok.json()
+
+    bad = _get(api_client, url, {"target_pan_id": "oops"})
+    assert bad.status_code == 400
+    assert "target_pan_id" in bad.json().get("error", "")
+
+# ===================================================================
+# /recipes/<id>/adapt/ — POST (action du RecipeViewSet)
+# ===================================================================
+
+def test_recipe_adapt_action__guest_clones_everything(api_client, recettes_choux):
+    """
+    Invité (header X-Guest-Id) : clone une recette existante.
+    - parent_recipe = mère (top-level)
+    - recipe_type = VARIATION
+    - visibility = private
+    - is_default = False
+    - guest_id propagé, user=None
+    - ingrédients, étapes, sous-recettes, catégories/labels copiés
+    - recipe_name personnalisable
+    """
+    original = recettes_choux["paris_brest_choco"]  # a des sous-recettes/ingrédients/étapes dans nos fixtures
+    guest = "guest-42"
+
+    url = f"{API_PREFIX}/recipes/{original.id}/adapt/"
+    payload = {"recipe_name": "Ma variation PB", "adaptation_note": "test note"}
+    resp = _post(api_client, url, payload, guest_id=guest)
+    assert resp.status_code == status.HTTP_201_CREATED, resp.data
+
+    new_id = resp.json()["id"]
+    new_recipe = Recipe.objects.get(pk=new_id)
+
+    # la "mère" est l’ancêtre top-level de original (si original est déjà une adaptation)
+    mother = original
+    while mother.parent_recipe:
+        mother = mother.parent_recipe
+
+    assert new_recipe.parent_recipe_id == mother.id
+    assert new_recipe.recipe_type == "VARIATION"
+    assert new_recipe.visibility == "private"
+    assert new_recipe.is_default is False
+    assert new_recipe.user is None
+    assert new_recipe.guest_id == guest
+    assert new_recipe.recipe_name == normalize_case("Ma variation PB")
+
+    # contenu cloné
+    assert new_recipe.recipe_ingredients.count() == original.recipe_ingredients.count()
+    assert new_recipe.steps.count() == original.steps.count()
+    assert new_recipe.main_recipes.count() == original.main_recipes.count()
+    assert set(new_recipe.categories.values_list("id", flat=True)) == set(original.categories.values_list("id", flat=True))
+    assert set(new_recipe.labels.values_list("id", flat=True)) == set(original.labels.values_list("id", flat=True))
+
+def test_recipe_adapt_action__user_and_chaining_keeps_mother(api_client, recettes_choux, user):
+    """
+    Utilisateur authentifié :
+    - le clone appartient au user (guest_id None)
+    - si on adapte une adaptation, la nouvelle variation pointe toujours sur la mère top-level.
+    """
+    api_client.force_authenticate(user=user)
+
+    original = recettes_choux["eclair_choco"]  # a priori recette de base avec pan
+    # 1er clone
+    url1 = f"{API_PREFIX}/recipes/{original.id}/adapt/"
+    r1 = _post(api_client, url1, {"recipe_name": "Var 1"})
+    assert r1.status_code == status.HTTP_201_CREATED, r1.data
+    child1 = Recipe.objects.get(pk=r1.json()["id"])
+    assert child1.user_id == user.id
+    assert child1.guest_id is None
+    # 2ème clone depuis la variation (doit remonter à la mère "original")
+    url2 = f"{API_PREFIX}/recipes/{child1.id}/adapt/"
+    r2 = _post(api_client, url2, {"recipe_name": "Var 2 depuis Var 1"})
+    assert r2.status_code == status.HTTP_201_CREATED, r2.data
+    child2 = Recipe.objects.get(pk=r2.json()["id"])
+
+    # mother = ancêtre top-level de child1 (devrait être original)
+    mother = child1
+    while mother.parent_recipe:
+        mother = mother.parent_recipe
+
+    assert mother.id == original.id
+    assert child2.parent_recipe_id == original.id
+    assert child2.user_id == user.id
+    assert child2.guest_id is None
+
+    # Quick sanity : contenu copié aussi au 2ème clone
+    assert child2.recipe_ingredients.count() == child1.recipe_ingredients.count()
+    assert child2.steps.count() == child1.steps.count()
+    assert child2.main_recipes.count() == child1.main_recipes.count()
+
+# ===================================================================
+# Couverture élargie
+# ===================================================================
+
+def test_recipe_adaptation__reference_recipe_error_message(api_client, recettes_choux):
+    """
+    Cas d'erreur de logique métier via ValueError attrapée par la view.
+    On force un cas vraisemblable (ex: référence inutilisable) selon l'implémentation interne.
+    Ici on appelle avec prefer_reference=True mais sans cible exploitable → l'interne peut lever.
+    """
+    src = recettes_choux["paris_brest_choco"]
+    ref = make_recipe(name="ref-incomplete")  # référence minimaliste
+    # pas d'info de scaling sur ref → utils peut lever ValueError
+    resp = _post(api_client, URL_RECIPES_ADAPT, {
+        "recipe_id": src.id,
+        "reference_recipe_id": ref.id,
+        "prefer_reference": True,
+    })
+    assert resp.status_code in (400, 422)

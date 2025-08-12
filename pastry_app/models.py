@@ -442,7 +442,7 @@ class Recipe(models.Model):
         return self.total_recipe_quantity
     
     def _auto_fill_servings_from_pan(self):
-        """Tente de deviner le nombre de portions si un pan est présent mais pas les servings renseignés."""
+        """Tente de deviner le nombre de portions si un pan CUSTOM est présent mais pas les servings renseignés."""
         if not self.pan:
             return
 
@@ -452,16 +452,9 @@ class Recipe(models.Model):
             self.servings_min = self.servings_max
         elif not self.servings_min and not self.servings_max:
             # Si aucun des deux n'est renseigné, on utilise le nombre de cavités du moule utilisé
-            if self.pan.units_in_mold and self.pan_quantity:
-                # cas : 1 cercle individuel utilisé 5 fois => 5 portions
+            if self.pan.units_in_mold > 1: # cas d'un moule à empreintes multiples
                 self.servings_min = self.pan.units_in_mold * self.pan_quantity
                 self.servings_max = self.servings_min
-            elif self.pan.units_in_mold:
-                self.servings_min = self.pan.units_in_mold
-                self.servings_max = self.pan.units_in_mold
-            elif self.pan_quantity:
-                self.servings_min = self.pan_quantity
-                self.servings_max = self.pan_quantity
 
     def _validate_servings_range(self):
         if self.servings_min and self.servings_max and self.servings_min > self.servings_max:

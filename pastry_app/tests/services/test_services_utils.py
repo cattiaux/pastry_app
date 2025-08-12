@@ -654,19 +654,18 @@ def test_suggest_reference_with_target_servings_prefers_same_subcategory_then_pa
     recipe = recettes_choux["eclair_choco"]
     candidates = suggest_recipe_reference(recipe, target_servings=10)
 
-    # On récupère l'ordre de classement niveau RECETTE
-    recipe_level = candidates["recipe_level"]  # liste de {recipe_id, score}
-    # On mapper id -> NOM DE RECETTE
-    id_to_recipe_name = {r.id: r.recipe_name for r in recettes_choux.values()}
-    names = [id_to_recipe_name[item["recipe_id"]] for item in recipe_level]
+    # On ne garde que les suggestions niveau "recette"
+    recipe_cand = [cand for cand in candidates if cand.get("level") == "recipe"]
+    assert recipe_cand, "Aucune suggestion niveau 'recipe' retournée"
+    names = [it["recipe_name"] for it in recipe_cand]
 
     # Le premier devrait être la recette partageant la sous-catégorie 'éclair'
     assert names[0] == "éclair café 2"
     # Les deux suivants sont les autres de la famille "choux" (ordre exact non garanti)
     assert set(names[1:3]) == {"religieuse café 3", "paris-brest chocolat 4"}
 
-    assert "auto_selected" in candidates
-    assert "preparation_level" in candidates
+    base_keys = {"id", "recipe_name", "total_recipe_quantity", "category", "parent_category"}
+    assert base_keys <= set(recipe_cand[0].keys())
 
 def test_suggest_reference_prefers_higher_category_score_even_if_mode_mismatched(recettes_choux):
     """
@@ -675,12 +674,12 @@ def test_suggest_reference_prefers_higher_category_score_even_if_mode_mismatched
     """
     base = recettes_choux["eclair_choco"]  # choux + éclair
     # target_servings: tous ont des servings -> tiebreaker inutile si cat_score différent
-    res = suggest_recipe_reference(base, target_servings=8)
+    candidates = suggest_recipe_reference(base, target_servings=8)
+
     # Récupère l'ordre de classement niveau RECETTE
-    recipe_level = res["recipe_level"]  # liste de {recipe_id, score}
-    # Map id -> nom recette
-    id_to_recipe_name = {r.id: r.recipe_name for r in recettes_choux.values()}
-    names = [id_to_recipe_name[item["recipe_id"]] for item in recipe_level]
+    recipe_cand = [cand for cand in candidates if cand.get("level") == "recipe"]
+    assert recipe_cand
+    names = [cand["recipe_name"] for cand in recipe_cand]
 
     # Attendu en tête (meilleur cat_score = 110) : éclair café
     assert names[0].startswith("éclair café")
@@ -701,15 +700,15 @@ def test_suggest_reference_uses_mode_only_as_tiebreaker(recettes_choux, base_pan
     monkeypatch.setitem(pastry_app.utils_new.REF_SELECTION_CONFIG, "w_recipe_prep_structure_jaccard", 0.0)
     monkeypatch.setattr(pastry_app.utils_new, "_chef_match_bonus", lambda base, cand: 0)
 
-    res = suggest_recipe_reference(base, target_pan=base_pans["round_big"])
+    candidates = suggest_recipe_reference(base, target_pan=base_pans["round_big"])
 
     # Récupère l'ordre de classement niveau RECETTE
-    recipe_level = res["recipe_level"]
-    id_to_recipe_name = {r.id: r.recipe_name for r in recettes_choux.values()}  # Map id -> nom recette
-    names = [id_to_recipe_name[item["recipe_id"]] for item in recipe_level]
+    recipe_cand = [cand for cand in candidates if cand.get("level") == "recipe"]
+    assert recipe_cand
+    names = [it["recipe_name"] for it in recipe_cand]
 
     # vérifie qu'on a bien des scores égaux pour les deux éclairs (diagnostic)
-    scores_by_name = {id_to_recipe_name[it["recipe_id"]]: it["score"] for it in recipe_level}
+    scores_by_name = {cand["recipe_name"]: cand["score"] for cand in recipe_cand}
     assert pytest.approx(scores_by_name["éclair chocolat 1"], rel=1e-9) == scores_by_name["éclair café 2"]
 
     # Dans nos fixtures : "éclair choco" a un pan, "éclair café" n’en a pas -> "éclair choco" doit être devant.
@@ -764,13 +763,14 @@ def test_suggest_reference_excludes_non_scalable_candidates(base_ingredients):
     cand_none.save()
 
     # On passe la liste complète en "candidates" → l'algo doit exclure cand_none
-    payload = suggest_recipe_reference(base, target_pan=pan, candidates=Recipe.objects.filter(id__in=[cand_pan.id, cand_serv.id, cand_none.id]))
+    candidates = suggest_recipe_reference(base, target_pan=pan, candidates=Recipe.objects.filter(id__in=[cand_pan.id, cand_serv.id, cand_none.id]))
 
-    # payload["recipe_level"] = [{"recipe_id", "score"}, ...]
-    ids = [d["recipe_id"] for d in payload["recipe_level"]]
+    recipe_cand = [cand for cand in candidates if cand.get("level") == "recipe"]
+    ids = [cand["id"] for cand in recipe_cand]
+
     assert cand_pan.id in ids
     assert cand_serv.id in ids
-    assert cand_none.id not in ids, "Un candidat sans pan ET sans servings ne doit pas apparaître dans les suggestions."
+    assert cand_none.id not in ids, "Un candidat sans pan ET sans servings ne doit pas apparaître."
 
 # -------------------------------------------------
 # Groupe 5 — Limitation par ingrédients

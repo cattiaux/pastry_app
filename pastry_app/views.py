@@ -207,8 +207,7 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
 
         # Copie les sous-recettes
         for sr in original.main_recipes.all():
-            sr.__class__.objects.create(
-                parent_recipe=new_recipe,
+            new_recipe.main_recipes.create(
                 sub_recipe=sr.sub_recipe,
                 quantity=sr.quantity,
                 unit=sr.unit,
@@ -248,15 +247,24 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
                 return Response({"error": "target_servings doit être un entier."}, status=status.HTTP_400_BAD_REQUEST)
 
         recipes_to_suggest = suggest_recipe_reference(recipe, target_servings=target_servings, target_pan=target_pan)
-        serializer = RecipeReferenceSuggestionSerializer(recipes_to_suggest, many=True)
 
+        # Si la première entrée ressemble à notre format plat, on passe tel quel
+        items = recipes_to_suggest
+        if isinstance(recipes_to_suggest, list) and recipes_to_suggest:
+            first = recipes_to_suggest[0]
+            is_flat = isinstance(first, dict) and {"id","recipe_name","total_recipe_quantity","category","parent_category"} <= set(first.keys())
+            if not is_flat:
+                # Fallback: ancien retour (list de Recipe) -> sérialiser
+                serializer = RecipeReferenceSuggestionSerializer(recipes_to_suggest, many=True)
+                items = serializer.data
+                
         # on renvoie aussi les critères pour traçabilité côté front
         return Response({
             "criteria": {
                 "target_pan_id": int(target_pan_id) if target_pan_id is not None else None,
                 "target_servings": target_servings
             },
-            "reference_recipes": serializer.data
+            "reference_recipes": items
         })
 
     def get_queryset(self):

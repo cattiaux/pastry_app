@@ -1,4 +1,5 @@
 import math
+from typing import Optional
 from django.core.exceptions import ValidationError
 from django.db import models as django_models
 from django.db.models.functions import Abs
@@ -171,36 +172,46 @@ def get_pan_volume(pan) -> float:
 
     raise ValueError("Impossible de déterminer le volume du moule (pan) fourni.")
 
-def get_source_volume(recipe):
+def get_source_volume(recipe, prefer: Optional[str] = None):
     """
-    Retourne un tuple (volume_source, mode) :
-        - mode = 'pan' si la base est le pan d'origine,
-        - mode = 'servings' sinon.
-
-    Si la recette possède un pan : utilise le volume du pan, et on multiplie par pan_quantity (>=1).
-    Sinon : utilise la moyenne servings_min/servings_max (via serving_to_volume)
+    Retourne (volume_source, mode) où mode ∈ {"pan", "servings"}.
+    Si `prefer` est fourni, tente d'abord ce mode s'il est disponible,
+    puis bascule sur l'autre. Fallback final: None, None.
     """
-    # 1) Base pan
+    # Pan (avec pan_quantity >= 1)
     pan = getattr(recipe, "pan", None)
     pan_vol = getattr(pan, "volume_cm3_cache", None) if pan else None
-    if pan and pan_vol:
+    if pan_vol:
         qty = getattr(recipe, "pan_quantity", 1) or 1
-        if qty < 1:
-            qty = 1
-        return pan_vol * qty, "pan"
-    
-    # 2) Base servings
-    # Si pas de pan, on tente la moyenne des servings
+        pan_total_vol = float(pan_vol) * float(qty)
+    else:
+        pan_total_vol = None
+
+    # Servings (moyenne si min & max, sinon min ou max)
     servings_min = getattr(recipe, "servings_min", None)
     servings_max = getattr(recipe, "servings_max", None)
+    servings_avg = None
     if servings_min and servings_max:
-        return servings_to_volume((servings_min + servings_max) / 2), "servings"
-    if servings_min:
-        return servings_to_volume(servings_min), "servings"
-    if servings_max:
-        return servings_to_volume(servings_max), "servings"
-    
-    # 3) Rien d’exploitable
+        servings_avg = (float(servings_min) + float(servings_max)) / 2.0
+    elif servings_min:
+        servings_avg = float(servings_min)
+    elif servings_max:
+        servings_avg = float(servings_max)
+
+    servings_vol = servings_to_volume(servings_avg) if servings_avg else None
+
+    # 1) Respecte la préférence si possible
+    if prefer == "servings" and servings_vol:
+        return servings_vol, "servings"
+    if prefer == "pan" and pan_total_vol:
+        return pan_total_vol, "pan"
+
+    # 2) Fallback: pan sinon servings (ancien comportement)
+    if pan_total_vol:
+        return pan_total_vol, "pan"
+    if servings_vol:
+        return servings_vol, "servings"
+
     return None, None
 
 def calculate_quantity_multiplier(from_volume_cm3: float, to_volume_cm3: float) -> float:
@@ -318,7 +329,10 @@ def _try_direct(recipe, target_servings=None, target_pan=None):
     Retourne (multiplier, mode) OU (None, "raison de l'échec").
     """
     try:
-        source_volume, source_mode = get_source_volume(recipe)
+        prefer = "servings" if (target_servings is not None and target_pan is None) else \
+                 "pan" if (target_pan is not None and target_servings is None) else None
+
+        source_volume, source_mode = get_source_volume(recipe, prefer=prefer)
         if not source_volume:
             return None, "La recette source n'a ni pan ni servings pour servir de base."
 
@@ -1065,39 +1079,86 @@ def suggest_recipe_reference_old(recipe, target_servings=None, target_pan=None, 
 
 def suggest_recipe_reference(recipe, target_servings=None, target_pan=None, candidates=None):
     """
-    Porte d’entrée publique :
-    1) Tente la référence NIVEAU RECETTE (classement + auto-select possible si score fort)
-    2) Sinon, classe des références NIVEAU PRÉPARATION
-    3) Retourne une structure uniforme exploitable par l’API/Front :
-       {
-         "auto_selected": Optional[{recipe_id, score}],
-         "recipe_level": [{"recipe_id", "score"}, ...],
-         "preparation_level": [{"host_recipe_id","score","preparation_id","preparation_name","matched_subrecipes_count"}, ...]
-       }
+    Règle :
+    - On classe d’abord au NIVEAU RECETTE.
+    - Si le meilleur match dépasse le seuil d’auto-select → on marque l’item correspondant avec selected=True,
+      et on NE calcule pas le niveau préparation.
+    - Sinon, on renvoie aussi le NIVEAU PRÉPARATION (items "level": "preparation").
+    - La recette hôte est exclue des résultats.
+
+    Retourne une LISTE d'items prêts pour le front (format plat et stable) :
+    [
+      {
+        "id": <recipe_id>,
+        "recipe_name": <str>,
+        "total_recipe_quantity": <float|null>,
+        "category": <str|null>,
+        "parent_category": <str|null>,
+        "score": <float|null>,
+        "level": "recipe" | "preparation",
+        "selected": <bool>,                   # True si auto-select
+        # champs optionnels utiles en niveau préparation :
+        "preparation_id": <int|None>,
+        "preparation_name": <str|None>,
+        "matched_subrecipes_count": <int|None>,
+      },
+      ...
+    ]
     """
+    # --------- helpers locaux (inline, pas de fonctions globales) ---------
+    def _str_or_none(obj):
+        return str(obj) if obj is not None else None
+
+    def _flat_from_recipe(r, *, score=None, level="recipe", selected=False,
+                          preparation_id=None, preparation_name=None, matched_subrecipes_count=None):
+        cat = getattr(r, "category", None)
+        parent_cat = getattr(cat, "parent_category", None) if cat else None
+        return {
+            "id": r.id,
+            "recipe_name": getattr(r, "recipe_name", None),
+            "total_recipe_quantity": getattr(r, "total_recipe_quantity", None),
+            "category": _str_or_none(cat),
+            "parent_category": _str_or_none(parent_cat),
+            "score": float(score) if score is not None else None,
+            "level": level,
+            "selected": bool(selected),
+            "preparation_id": preparation_id,
+            "preparation_name": preparation_name,
+            "matched_subrecipes_count": matched_subrecipes_count,
+        }
+    
     # 1) Niveau recette
-    ranked_recipe = _rank_recipe_level_references(recipe, target_servings, target_pan, candidates)
-    payload_recipe = [{"recipe_id": r.id, "score": s} for (r, s) in ranked_recipe]
-    auto_selected = None
+    ranked_recipe = _rank_recipe_level_references(recipe, target_servings, target_pan, candidates=candidates) or []
+
+    auto_selected_id = None
     if ranked_recipe:
-        best = ranked_recipe[0]
-        if _should_autoselect(best[1]):
-            auto_selected = {"recipe_id": best[0].id, "score": best[1]}
+        top_r, top_s = ranked_recipe[0]
+        if _should_autoselect(top_s):
+            auto_selected_id = top_r.id
+
+    items = []
+    for r, s in ranked_recipe:
+        if r.id == recipe.id:
+            continue  # exclure la recette courante
+        items.append(_flat_from_recipe(r, score=s, level="recipe", selected=(r.id == auto_selected_id)))
 
     # 2) Niveau préparation (si pas d’auto-select)
-    payload_prep = []
-    if auto_selected is None:
-        ranked_prep = _rank_preparation_level_references(recipe, target_servings, target_pan, candidates)
-        payload_prep = [{
-            "host_recipe_id": d["host_recipe"].id,
-            "score": d["score"],
-            "preparation_id": d["preparation_id"],
-            "preparation_name": d["preparation_name"],
-            "matched_subrecipes_count": d["matched_subrecipes_count"],
-        } for d in ranked_prep]
+    if auto_selected_id is None:
+        ranked_prep = _rank_preparation_level_references(
+            recipe, target_servings=target_servings, target_pan=target_pan, candidates=candidates
+        ) or []
+        for d in ranked_prep:
+            host = d["host_recipe"]
+            if host.id == recipe.id:
+                continue
+            items.append(_flat_from_recipe(
+                host,
+                score=d.get("score"),
+                level="preparation",
+                selected=False,
+                preparation_id=d.get("preparation_id"),
+                preparation_name=d.get("preparation_name"),
+                matched_subrecipes_count=d.get("matched_subrecipes_count"),
+            ))
 
-    return {
-        "auto_selected": auto_selected,
-        "recipe_level": payload_recipe,
-        "preparation_level": payload_prep,
-    }
+    return items
