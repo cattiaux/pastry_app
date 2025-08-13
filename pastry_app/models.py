@@ -345,6 +345,7 @@ class Recipe(models.Model):
 
     # Informations principales
     parent_recipe = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="versions")
+    owned_by_recipe = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="owned_variants")  # variante créée spécifiquement pour un hôte
     recipe_name = models.CharField(max_length=200)
     chef_name = models.CharField(max_length=100, null=True, blank=True)
     context_name = models.CharField(max_length=100, null=True, blank=True, default="")
@@ -384,6 +385,8 @@ class Recipe(models.Model):
         ordering = ['recipe_name', 'chef_name']
         constraints = [
             models.UniqueConstraint(fields=["recipe_name", "chef_name", "context_name"], name="unique_recipe_per_context"),
+            models.UniqueConstraint(fields=["owned_by_recipe", "parent_recipe"], name="uniq_owned_variant_per_host_and_source", 
+                                    condition=~models.Q(owned_by_recipe=None) & ~models.Q(parent_recipe=None)),
             ]
 
     def __str__(self):

@@ -9,7 +9,7 @@ from .permissions import *
 from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
-from django.db.models import ProtectedError, Q
+from django.db.models import ProtectedError
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as filters
@@ -128,7 +128,7 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     """
     queryset = Recipe.objects.all()\
         .prefetch_related("categories", "labels", "recipe_ingredients", "steps", "main_recipes")\
-        .select_related("pan", "parent_recipe")\
+        .select_related("pan", "parent_recipe", "owned_by_recipe")\
         .order_by("recipe_name", "chef_name")
     serializer_class = RecipeSerializer
     permission_classes = [CanSoftHideRecipeOrIsOwnerOrGuest]
@@ -265,6 +265,65 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
             },
             "reference_recipes": items
         })
+
+    @action(detail=True, methods=["post"], url_path=r"subrecipes/(?P<sub_id>\d+)/ingredients/bulk-edit")
+    @transaction.atomic
+    def bulk_edit_subrecipe_ingredients(self, request, pk=None, sub_id=None):
+        """
+        Édite en une fois plusieurs ingrédients d'une sous-recette liée à l'hôte `pk` (copy-on-write automatique).
+        Body:
+          {
+            "updates": [
+              {"ingredient_id": 123, "quantity": 75, "unit": "g", "display_name": "farine T55"},
+              ...
+            ],
+            "multiplier": 1.0   # optionnel, pour recalcul de l'aperçu
+          }
+        """
+        host: Recipe = self.get_object()  # A (main recipe)
+        try:
+            link: SubRecipe = host.main_recipes.get(pk=sub_id)  # lien A→B
+        except SubRecipe.DoesNotExist:
+            return Response({"detail": "Sous-recette introuvable sur cet hôte."}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user if request.user.is_authenticated else None
+        guest_id = request.headers.get("X-Guest-Id") if not user else None
+
+        # Assurer la variante (copy-on-write)
+        target_variant = create_variant_for_host_and_rewire(link, host, user=user, guest_id=guest_id)
+
+        updates = request.data.get("updates", [])
+        if not isinstance(updates, list) or not updates:
+            return Response({"detail": "Champ 'updates' requis (liste non vide)."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Index des RecipeIngredient de la variante par ingredient_id
+        ri_by_ing = {ri.ingredient_id: ri for ri in target_variant.recipe_ingredients.select_related("ingredient")}
+
+        changed = 0
+        for u in updates:
+            try:
+                ing_id = int(u["ingredient_id"])
+            except Exception:
+                return Response({"detail": "Chaque update doit contenir 'ingredient_id' entier."}, status=status.HTTP_400_BAD_REQUEST)
+
+            ri = ri_by_ing.get(ing_id)
+            if not ri:
+                return Response({"detail": f"Ingrédient {ing_id} absent de la préparation."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Appliquer les champs fournis
+            if "quantity" in u:
+                ri.quantity = float(u["quantity"])
+            if "unit" in u and u["unit"]:
+                ri.unit = u["unit"]
+            if "display_name" in u:
+                ri.display_name = u["display_name"]
+            ri.save()
+            changed += 1
+
+        # Recalcul d'aperçu
+        m = float(request.data.get("multiplier", 1.0))
+        out = scale_recipe_globally(host, m, user=user, guest_id=guest_id)
+        return Response({"changed": changed, "recipe": out}, status=status.HTTP_200_OK)
 
     def get_queryset(self):
         """

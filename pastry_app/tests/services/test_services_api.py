@@ -763,6 +763,160 @@ def test_recipe_adapt_action__user_and_chaining_keeps_mother(api_client, recette
     assert child2.main_recipes.count() == child1.main_recipes.count()
 
 # ===================================================================
+# /recipes/{host_id}/subrecipes/{sub_id}/ingredients/bulk-edit — POST (action du RecipeViewSet)
+# ===================================================================
+
+def _bulk_edit_url(base_url, host_id: int, sub_id: int) -> str:
+    """Construit l’URL de l’action bulk-edit sur une sous-recette d’un hôte."""
+    return base_url("recipes") + f"{host_id}/subrecipes/{sub_id}/ingredients/bulk-edit/"
+
+def test_variant_bulk_edit__not_impact_source(api_client, base_url, base_ingredients):
+    """
+    GIVEN A→B (B: farine=100, sucre=30)
+    WHEN  on POST bulk-edit avec 2 updates (farine=120, sucre=40)
+    THEN  A est rebranchée sur B', B est inchangé, B' contient les nouvelles quantités,
+          et le nom de B' est suffixé.
+    """
+    # A → B (B: farine=100, sucre=30)
+    B = make_recipe(name="BBB", chef="Chef B", visibility="private")
+    far = add_ingredient(B, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    suc = add_ingredient(B, ingredient=base_ingredients["sucre"], qty=30.0, unit="g")
+
+    A = make_recipe(name="AAA", chef="Chef A", visibility="private")
+    link = add_subrecipe(A, sub=B, qty=200.0, unit="g")
+
+    for r in (A, B):
+        r.user = None
+        r.guest_id = "guest-1"
+        r.save()
+
+    payload = {
+        "updates": [
+            {"ingredient_id": far.ingredient_id, "quantity": 120.0, "unit": "g"},
+            {"ingredient_id": suc.ingredient_id, "quantity": 40.0, "unit": "g"},
+        ],
+        "multiplier": 1.0,
+    }
+    resp = _post(api_client, _bulk_edit_url(base_url, A.id, link.id), payload, guest_id="guest-1")
+    print(resp.json())  # DEBUG log
+    assert resp.status_code == 200, getattr(resp, "data", resp.content)
+
+    # Rewire + clone OK
+    link.refresh_from_db(); A.refresh_from_db(); B.refresh_from_db()
+    variant = link.sub_recipe
+    assert variant.id != B.id
+    assert variant.parent_recipe_id == B.id
+    assert variant.owned_by_recipe_id == A.id
+    assert normalize_case("[usage: AAA]") in variant.recipe_name
+
+    # B inchangé
+    got_B = {ri.ingredient.ingredient_name: ri.quantity for ri in B.recipe_ingredients.all()}
+    assert got_B["farine"] == 100.0
+    assert got_B["sucre"] == 30.0
+
+    # B′ mis à jour
+    got_V = {ri.ingredient.ingredient_name: ri.quantity for ri in variant.recipe_ingredients.all()}
+    assert got_V["farine"] == 120.0
+    assert got_V["sucre"] == 40.0
+
+def test_variant_bulk_edit__reuse_variant_no_duplicate(api_client, base_url, base_ingredients):
+    """
+    GIVEN A→B
+    WHEN  on POST bulk-edit deux fois
+    THEN  la première crée B' et la seconde réutilise B' (même id), et un seul clone existe pour (A,B).
+    """
+    B = make_recipe(name="BBB", chef="Chef B", visibility="private")
+    far = add_ingredient(B, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    A = make_recipe(name="AAA", chef="Chef A", visibility="private")
+    link = add_subrecipe(A, sub=B, qty=200.0, unit="g")
+
+    for r in (A, B):
+        r.user = None
+        r.guest_id = "guest-1"
+        r.save()
+
+    # 1er edit → crée B′
+    url = _bulk_edit_url(base_url, A.id, link.id)
+    payload = {"updates": [{"ingredient_id": far.ingredient_id, "quantity": 120.0}]}
+    r1 = _post(api_client, url, payload, guest_id="guest-1")
+    assert r1.status_code == 200
+
+    link.refresh_from_db()
+    variant_id = link.sub_recipe_id
+
+    # 2e edit → réutilise B′
+    r2 = _post(api_client, url, {"updates": [{"ingredient_id": far.ingredient_id, "quantity": 130.0}]}, guest_id="guest-1")
+    assert r2.status_code == 200
+
+    link.refresh_from_db()
+    assert link.sub_recipe_id == variant_id
+
+    # Un seul clone pour (A,B)
+    clones = Recipe.objects.filter(parent_recipe=B, owned_by_recipe=A)
+    assert clones.count() == 1
+    assert clones.first().recipe_ingredients.get(ingredient_id=far.ingredient_id).quantity == 130.0
+
+def test_variant_modif_source_not_impact_variant(api_client, base_url, base_ingredients):
+    """
+    Isolation API :
+    - modifier B (source) après création de B' ne modifie pas B',
+    - modifier B' ne modifie pas B.
+    """
+    B = make_recipe(name="BBB", chef="Chef B", visibility="private")
+    far = add_ingredient(B, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    A = make_recipe(name="AAA", chef="Chef A", visibility="private")
+    link = add_subrecipe(A, sub=B, qty=200.0, unit="g")
+
+    for r in (A, B):
+        r.user = None
+        r.guest_id = "guest-1"
+        r.save()
+    
+    # Créer la variante via 1er edit
+    url = _bulk_edit_url(base_url, A.id, link.id)
+    r = _post(api_client, url, {"updates": [{"ingredient_id": far.ingredient_id, "quantity": 120.0, "unit": "g"}]}, guest_id="guest-1")
+    assert r.status_code == 200
+
+    link.refresh_from_db()
+    variant = link.sub_recipe
+
+    # Modifier B directement → B′ inchangé
+    ri_B = B.recipe_ingredients.get(ingredient_id=far.ingredient_id)
+    ri_B.quantity = 999.0
+    ri_B.save()
+    assert variant.recipe_ingredients.get(ingredient_id=far.ingredient_id).quantity == 120.0
+
+    # Modifier B′ → B inchangé
+    ri_V = variant.recipe_ingredients.get(ingredient_id=far.ingredient_id)
+    ri_V.quantity = 111.0
+    ri_V.save()
+    assert B.recipe_ingredients.get(ingredient_id=far.ingredient_id).quantity == 999.0
+    assert variant.recipe_ingredients.get(ingredient_id=far.ingredient_id).quantity == 111.0
+
+def test_variant__check_name_after_clone(api_client, base_url, base_ingredients):
+    """
+    Vérifie le nommage de la variante : le nom est suffixé avec le contexte d’usage (ex. "[usage: AAA]").
+    """
+    B = make_recipe(name="BBB", chef="Chef B", visibility="private")
+    far = add_ingredient(B, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    A = make_recipe(name="AAA", chef="Chef A", visibility="private")
+    link = add_subrecipe(A, sub=B, qty=200.0, unit="g")
+
+    for r in (A, B):
+        r.user = None
+        r.guest_id = "guest-1"
+        r.save()
+
+    url = _bulk_edit_url(base_url, A.id, link.id)
+    r = api_client.post(url, {"updates": [{"ingredient_id": far.ingredient_id, "quantity": 120.0}]}, format="json", HTTP_X_GUEST_ID="guest-1")
+    print(r.json())
+    assert r.status_code == 200
+
+    link.refresh_from_db()
+    variant = link.sub_recipe
+    assert normalize_case("[usage: AAA]") in variant.recipe_name
+
+# ===================================================================
 # Couverture élargie
 # ===================================================================
 

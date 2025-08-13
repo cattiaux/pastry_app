@@ -2,8 +2,9 @@ import math
 from typing import Optional
 from django.core.exceptions import ValidationError
 from django.db import models as django_models
+from django.db import transaction
 from django.db.models.functions import Abs
-from .models import Pan, Recipe, IngredientUnitReference
+from .models import Pan, Recipe, IngredientUnitReference, SubRecipe, RecipeIngredient, RecipeStep
 from .text_utils import normalize_case
 
 """
@@ -975,7 +976,7 @@ def _should_autoselect(best_score: float) -> bool:
     return best_score >= REF_SELECTION_CONFIG["auto_select_threshold"]
 
 # ============================================================
-# 4. SUGGESTIONS ET ESTIMATIONS
+# 7. SUGGESTIONS ET ESTIMATIONS
 # ============================================================
 
 def _get_servings_interval(volume_cm3: float) -> dict:
@@ -1224,3 +1225,51 @@ def suggest_recipe_reference(recipe, target_servings=None, target_pan=None, cand
             ))
 
     return items
+
+# ============================================================
+# 8. HELPERS : SÉLECTION DE RECETTE DE RÉFÉRENCE
+# ============================================================
+
+def clone_recipe_for_host(source: Recipe, host: Recipe, *, user=None, guest_id=None, name_suffix=None) -> Recipe:
+    """Clone `source` en variante possédée par `host` (parent=source, owned_by_recipe=host).
+       Réutilise la variante existante si déjà créée."""
+    with transaction.atomic():
+        existing = Recipe.objects.filter(parent_recipe=source, owned_by_recipe=host).first()
+        if existing:
+            return existing
+
+        variant = Recipe.objects.create(
+            recipe_name=f"{source.recipe_name} [usage: {host.recipe_name}]" if not name_suffix else f"{source.recipe_name} {name_suffix}",
+            chef_name=source.chef_name or "",
+            recipe_type="VARIATION",
+            pan=source.pan, pan_quantity=source.pan_quantity,
+            servings_min=source.servings_min, servings_max=source.servings_max,
+            total_recipe_quantity=source.total_recipe_quantity,
+            user=host.user or source.user, guest_id=host.guest_id or source.guest_id,
+            visibility="private", is_default=False,
+            parent_recipe=source, owned_by_recipe=host,
+            context_name=(source.context_name or "") 
+        )
+        # Ingrédients
+        for ri in source.recipe_ingredients.all():
+            RecipeIngredient.objects.create(recipe=variant, ingredient=ri.ingredient, quantity=ri.quantity, unit=ri.unit, display_name=ri.display_name)
+        # Étapes
+        for st in source.steps.all():
+            RecipeStep.objects.create(recipe=variant, step_number=st.step_number, instruction=st.instruction, trick=st.trick)
+        # Sous-recettes (liaisons)
+        for sr in source.main_recipes.all():
+            SubRecipe.objects.create(recipe=variant, sub_recipe=sr.sub_recipe, quantity=sr.quantity, unit=sr.unit)
+        # M2M
+        variant.categories.set(source.categories.all())
+        variant.labels.set(source.labels.all())
+        return variant
+
+def create_variant_for_host_and_rewire(subrecipe: SubRecipe, host: Recipe, *, user=None, guest_id=None) -> Recipe:
+    """Si subrecipe.sub_recipe n’est pas encore une variante pour `host`, créer/brancher la variante et retourner la cible."""
+    target = subrecipe.sub_recipe
+    if target.owned_by_recipe_id == host.id:
+        return target
+    variant = clone_recipe_for_host(target, host, user=user, guest_id=guest_id)
+    subrecipe.sub_recipe = variant
+    subrecipe.save(update_fields=["sub_recipe"])
+    return variant

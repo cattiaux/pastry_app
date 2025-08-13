@@ -662,6 +662,7 @@ class RecipeSerializer(serializers.ModelSerializer):
     # Relations simples
     pan = serializers.PrimaryKeyRelatedField(queryset=Pan.objects.all(), allow_null=True, required=False)
     parent_recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all(), allow_null=True, required=False)
+    owned_by_recipe = serializers.PrimaryKeyRelatedField(read_only=True)
     categories = serializers.PrimaryKeyRelatedField(many=True, queryset=Recipe.categories.rel.model.objects.all(), required=False)
     labels = serializers.PrimaryKeyRelatedField(many=True, queryset=Recipe.labels.rel.model.objects.all(), required=False)
     ingredients = RecipeIngredientSerializer(many=True, required=False, context={"is_nested": True}, source="recipe_ingredients")
@@ -678,7 +679,8 @@ class RecipeSerializer(serializers.ModelSerializer):
         model = Recipe
         fields = ["id", 
                   "recipe_name", "chef_name", "context_name", 
-                  "source", "recipe_type", "parent_recipe", "parent_recipe_name", "adaptation_note", "tags",
+                  "source", "recipe_type", "parent_recipe", "parent_recipe_name", "owned_by_recipe", 
+                  "adaptation_note", "tags",
                   "servings_min", "servings_max", "total_recipe_quantity", "description", "trick", "image", 
                   "pan", "categories", "labels", "ingredients", "steps", "sub_recipes", 
                   "created_at", "updated_at",

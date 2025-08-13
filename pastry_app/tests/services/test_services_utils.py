@@ -1013,3 +1013,102 @@ def test_get_limiting_multiplier_multi_limit_with_unit_reference():
     mult2, limiting2 = get_limiting_multiplier(r, stock_equal)
     assert mult2 == pytest.approx(2/3, rel=1e-5)
     assert limiting2 in {farine.id, oeuf.id}  # égalité acceptée, un seul id est renvoyé
+
+# =========================
+# Groupe 6 — Variantes (copy-on-write)
+# =========================
+
+def test_variant_creation_clone_recipe_for_host_without_modify_source(base_ingredients):
+    """
+    GIVEN une recette source B (avec ingrédients et sous-recettes) et un hôte A
+    WHEN  on clone B pour A via clone_recipe_for_host
+    THEN  on obtient une variante B' : parent=B, owned_by_recipe=A, type=VARIATION,
+          le nom est suffixé "[usage: A]", les ingrédients/étapes sont copiés,
+          les liens de sous-recettes sont conservés (pas de deep-clone),
+          et B (standalone) reste inchangée.
+    """
+    # Source B
+    B = make_recipe(name="BBB", chef="Chef B")
+    far = add_ingredient(B, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    # Une sous-recette quelconque pour vérifier les liens conservés (pas de deep clone)
+    C = make_recipe(name="CCC", chef="Chef C")
+    add_ingredient(C, ingredient=base_ingredients["sucre"], qty=20.0, unit="g")
+    add_subrecipe(B, sub=C, qty=50.0, unit="g")
+
+    # Hôte A
+    A = make_recipe(name="AAA", chef="Chef A")
+    link = add_subrecipe(A, sub=B, qty=200.0, unit="g")
+
+    # Clone utilitaire
+    variant = clone_recipe_for_host(B, A)
+
+    # Vérifs structure variante
+    assert variant.id != B.id
+    assert variant.parent_recipe_id == B.id
+    assert variant.owned_by_recipe_id == A.id
+    assert variant.recipe_type == "VARIATION"
+    assert normalize_case("[usage: AAA]") in variant.recipe_name
+
+    # B non modifiée
+    assert list(B.recipe_ingredients.order_by("ingredient_id").values_list("quantity", flat=True)) == [100.0]
+
+    # B′ a bien copié les ingrédients/étapes
+    q_variant = list(variant.recipe_ingredients.order_by("ingredient_id").values_list("quantity", flat=True))
+    assert q_variant == [100.0]
+
+    # Les sous-recettes de B sont recopiées comme liens vers les mêmes recettes (pas de deep clone de C)
+    assert variant.main_recipes.count() == 1
+    sr_v = variant.main_recipes.first()
+    assert sr_v.sub_recipe_id == C.id
+    assert B.main_recipes.first().sub_recipe_id == C.id
+
+def test_variant_creation_for_host_and_rewire_reutilise_variant(base_ingredients):
+    """
+    GIVEN A→B
+    WHEN  ensure_variant_for_host_and_rewire est appelé deux fois
+    THEN  le premier appel crée B' et rebranche A→B', le second réutilise B' (aucun doublon),
+          et une seule variante existe pour la paire (A,B).
+    """
+    B = make_recipe(name="BBB", chef="Chef B")
+    far = add_ingredient(B, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    A = make_recipe(name="AAAA", chef="Chef A")
+    link = add_subrecipe(A, sub=B, qty=200.0, unit="g")
+
+    # 1er passage : crée la variante et rewire
+    v1 = create_variant_for_host_and_rewire(link, A)
+    link.refresh_from_db()
+    assert link.sub_recipe_id == v1.id
+
+    # 2e passage : réutilise la même variante (pas de doublon)
+    v2 = create_variant_for_host_and_rewire(link, A)
+    assert v2.id == v1.id
+
+    # Un seul clone pour (A,B)
+    clones = Recipe.objects.filter(parent_recipe=B, owned_by_recipe=A)
+    assert clones.count() == 1
+
+def test_variant_modifs_source_not_impact_variant(base_ingredients):
+    """
+    GIVEN une variante B' créée pour A
+    WHEN  on modifie B (source) puis B' (variante)
+    THEN  B' reste inchangée après modif de B, et B reste inchangée après modif de B'.
+    """
+    B = make_recipe(name="BBB", chef="Chef B")
+    far = add_ingredient(B, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    A = make_recipe(name="AAAA", chef="Chef A")
+    link = add_subrecipe(A, sub=B, qty=200.0, unit="g")
+
+    v = create_variant_for_host_and_rewire(link, A)
+
+    # Modifier B → B′ inchangé
+    ri_B = B.recipe_ingredients.get(ingredient_id=far.ingredient_id)
+    ri_B.quantity = 999.0
+    ri_B.save()
+    assert v.recipe_ingredients.get(ingredient_id=far.ingredient_id).quantity == 100.0
+
+    # Modifier B′ → B inchangé
+    ri_V = v.recipe_ingredients.get(ingredient_id=far.ingredient_id)
+    ri_V.quantity = 111.0
+    ri_V.save()
+    assert B.recipe_ingredients.get(ingredient_id=far.ingredient_id).quantity == 999.0
+    assert v.recipe_ingredients.get(ingredient_id=far.ingredient_id).quantity == 111.0
