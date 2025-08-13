@@ -626,6 +626,121 @@ def test_scale_recipe_globally_deep_recursion_and_rounding(base_ingredients):
     assert [sr.quantity for sr in A.main_recipes.all()] == [20.0]
     assert [sr.quantity for sr in B.main_recipes.all()] == [12.5]
 
+def test_scale_recipe_globally_local_multiplier_equals_global_when_used_equals_total(base_ingredients):
+    """
+    Cas de référence : la quantité de préparation utilisée == sa quantité totale standalone.
+    ⇒ Le multiplicateur local de la préparation retombe exactement sur le multiplicateur global.
+
+    A (ingr A1 = 10 g)
+      └─ B (total standalone = 20 g)
+
+    A utilise 20 g de B, multiplier = 1.2345
+    Attendus :
+      - B_node.quantity = round(20 * m, 2)
+      - B_node.scaling_multiplier ≈ m
+      - Ingrédients de B x m (puis arrondis à 2 déc.)
+    """
+    # B (standalone = 20 g)
+    B = make_recipe(name="BBB", pan=None)
+    add_ingredient(B, ingredient=base_ingredients["farine"], qty=20.0, unit="g")
+
+    # A utilise 20 g de B
+    A = make_recipe(name="AAA", pan=None)
+    add_ingredient(A, ingredient=base_ingredients["farine"], qty=10.0, unit="g")
+    add_subrecipe(A, sub=B, qty=20.0, unit="g")
+
+    m = 1.2345
+    out = scale_recipe_globally(A, m)
+
+    # A1
+    a1 = next(i for i in out["ingredients"])
+    assert a1["original_quantity"] == 10.0
+    assert a1["quantity"] == round(10.0 * m, 2)
+
+    # B (niveau 1)
+    B_node = out["subrecipes"][0]
+    assert B_node["sub_recipe_name"] == normalize_case("BBB")
+    assert B_node["original_quantity"] == 20.0
+    assert B_node["quantity"] == round(20.0 * m, 2)
+
+    # local_B = (20 * m) / total_B ; ici total_B = 20 ⇒ local_B = m
+    total_B = sum(ri.quantity for ri in B.recipe_ingredients.all())
+    expected_local_B = (20.0 * m) / total_B
+    assert B_node["scaling_multiplier"] == pytest.approx(expected_local_B, rel=1e-12)
+
+    # Ingrédient de B
+    b1 = next(i for i in B_node["ingredients"])
+    assert b1["original_quantity"] == 20.0
+    assert b1["quantity"] == round(20.0 * expected_local_B, 2)  # = round(20 * m, 2)
+
+def test_scale_recipe_globally_volumetric_subrecipe_uses_density_when_available(base_ingredients):
+    """
+    Préparation volumique (ml/cl/l) : conversion vers g via la densité déduite de la préparation.
+    Densité ρ = total_preparation_g / volume_preparation_cm3 (1 ml = 1 cm³)
+
+    Setup :
+      - B : total = 800 g, pan volume = 2000 cm³ ⇒ ρ = 0.4 g/cm³
+      - A utilise 500 ml de B, multiplier global = 2.0 ⇒ used = 1000 ml = 1000 cm³ ⇒ 400 g
+      - local_B = 400 / 800 = 0.5
+
+    Attendus :
+      - B_node.quantity = round(500 * 2.0, 2) = 1000.00 (affichage)
+      - B_node.scaling_multiplier ≈ 0.5
+      - Ingrédients de B x 0.5 (arrondi à 2 déc.)
+    """
+    pan = Pan.objects.create(pan_name="b-pan", pan_type="CUSTOM", volume_raw=2000.0, unit="cm3")
+    B = make_recipe(name="BBB", pan=pan, total_qty=800.0)
+    add_ingredient(B, ingredient=base_ingredients["farine"], qty=800.0, unit="g")
+
+    A = make_recipe(name="AAA", pan=None)
+    add_subrecipe(A, sub=B, qty=500.0, unit="ml")
+
+    m = 2.0
+    out = scale_recipe_globally(A, m)
+
+    B_node = out["subrecipes"][0]
+    assert B_node["quantity"] == round(500.0 * m, 2)  # 1000.0 ml
+
+    expected_local_B = 0.5  # démontré dans le docstring
+    assert B_node["scaling_multiplier"] == pytest.approx(expected_local_B, rel=1e-12)
+
+    b1 = next(i for i in B_node["ingredients"])
+    assert b1["original_quantity"] == 800.0
+    assert b1["quantity"] == round(800.0 * expected_local_B, 2)  # 400.0
+
+def test_scale_recipe_globally_volumetric_subrecipe_fallback_to_global_when_no_density(base_ingredients):
+    """
+    Préparation volumique sans densité déductible (pas de pan volumé ni servings exploitables) :
+    ⇒ Fallback sur le multiplicateur global.
+
+    Setup :
+      - B : 100 g, pas de pan/servings ⇒ densité inconnue
+      - A utilise 50 ml de B, multiplier = 1.1
+      - local_B = fallback = m = 1.1
+
+    Attendus :
+      - B_node.quantity = round(50 * 1.1, 2) = 55.0 (affichage)
+      - B_node.scaling_multiplier ≈ 1.1
+      - Ingrédients de B x 1.1 (arrondi à 2 déc.)
+    """
+    B = make_recipe(name="BBB", pan=None)
+    add_ingredient(B, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+
+    A = make_recipe(name="AAA", pan=None)
+    add_subrecipe(A, sub=B, qty=50.0, unit="ml")
+
+    m = 1.1
+    out = scale_recipe_globally(A, m)
+
+    B_node = out["subrecipes"][0]
+    assert B_node["quantity"] == round(50.0 * m, 2)  # 55.0 ml
+
+    assert B_node["scaling_multiplier"] == pytest.approx(m, rel=1e-12)
+
+    b1 = next(i for i in B_node["ingredients"])
+    assert b1["original_quantity"] == 100.0
+    assert b1["quantity"] == round(100.0 * m, 2)  # 110.0
+
 # -------------------------------------------------
 # Groupe 3 — Estimation et suggestions de pan
 # -------------------------------------------------
