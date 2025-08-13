@@ -379,7 +379,7 @@ def test_multiplier_stays_on_direct_path_when_prefer_reference_false_and_direct_
     def fail_if_called(*args, **kwargs):
         raise AssertionError("_try_reference ne doit pas être appelée quand la voie directe est possible et prefer_reference=False.")
 
-    monkeypatch.setattr("pastry_app.utils_new._try_reference", fail_if_called, raising=True)
+    monkeypatch.setattr("pastry_app.utils._try_reference", fail_if_called, raising=True)
 
     multiplier, mode = get_scaling_multiplier(src, target_pan=pan_tgt, reference_recipe=ref, prefer_reference=False)
 
@@ -846,9 +846,9 @@ def test_suggest_reference_uses_mode_only_as_tiebreaker(recettes_choux, base_pan
     # - similarité de nom (ex: "café")
     # - similarité de structure de préparations
     # - bonus chef
-    monkeypatch.setitem(pastry_app.utils_new.REF_SELECTION_CONFIG, "w_recipe_name_similarity", 0.0)
-    monkeypatch.setitem(pastry_app.utils_new.REF_SELECTION_CONFIG, "w_recipe_prep_structure_jaccard", 0.0)
-    monkeypatch.setattr(pastry_app.utils_new, "_chef_match_bonus", lambda base, cand: 0)
+    monkeypatch.setitem(pastry_app.utils.REF_SELECTION_CONFIG, "w_recipe_name_similarity", 0.0)
+    monkeypatch.setitem(pastry_app.utils.REF_SELECTION_CONFIG, "w_recipe_prep_structure_jaccard", 0.0)
+    monkeypatch.setattr(pastry_app.utils, "_chef_match_bonus", lambda base, cand: 0)
 
     candidates = suggest_recipe_reference(base, target_pan=base_pans["round_big"])
 
