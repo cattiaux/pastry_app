@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from django.db import models as django_models
 from django.db.models.functions import Abs
 from .models import Pan, Recipe, IngredientUnitReference
+from .text_utils import normalize_case
 
 """
 =================================================
@@ -17,16 +18,6 @@ L’entrée principale pour le scaling est :
 
 Les helpers sont soit internes, soit exposés pour la suggestion/estimation.
 """
-
-# ============================================================
-# 0. NORMALISATION & HELPERS GÉNÉRAUX
-# ============================================================
-
-def normalize_case(value):
-    """ Normalise une chaîne (minuscules, strip, espaces) """
-    if isinstance(value, str):  # Vérifie que c'est bien une chaîne
-        return " ".join(value.strip().lower().split())  
-    return value  # Retourne la valeur telle quelle si ce n'est pas une chaîne
 
 # ============================================================
 # 0. Gestion de la conversion des units

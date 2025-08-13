@@ -15,6 +15,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as filters
 from django.shortcuts import get_object_or_404
 from .utils import *
+from .text_utils import *
 from .models import *
 from .serializers import *
 from .mixins import *
