@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.postgres.fields import ArrayField
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
-from .utils_pure import normalize_case
+from .utils import normalize_case
 from .constants import UNIT_CHOICES, SUBRECIPE_UNIT_CHOICES
 
 User = get_user_model()

@@ -14,9 +14,7 @@ from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as filters
 from django.shortcuts import get_object_or_404
-# from .utils_pure import normalize_case
-# from .utils import *
-from .utils_new import *
+from .utils import *
 from .models import *
 from .serializers import *
 from .mixins import *

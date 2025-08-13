@@ -1,7 +1,7 @@
 import pytest
 from typing import Optional
 from django.contrib.auth import get_user_model
-from pastry_app.utils_new import *
+from pastry_app.utils import *
 from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep, SubRecipe, Category
 from pastry_app.tests.base_api_test import api_client, base_url
 import importlib

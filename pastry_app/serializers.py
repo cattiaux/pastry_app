@@ -6,7 +6,7 @@ from django.db.models import Max
 from django.utils.timezone import now
 from .models import *
 from .constants import UNIT_CHOICES, SUBRECIPE_UNIT_CHOICES
-from .utils_pure import normalize_case
+from .utils import normalize_case
 
 
 class StoreSerializer(serializers.ModelSerializer):
