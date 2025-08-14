@@ -14,14 +14,6 @@ from .constants import UNIT_CHOICES, SUBRECIPE_UNIT_CHOICES
 
 User = get_user_model()
 
-class BaseModel(models.Model):
-    class Meta:
-        abstract = True
-
-    def save(self, *args, **kwargs):
-        self.name = self.name.lower() if self.name else None
-        super().save(*args, **kwargs)
-
 class Pan(models.Model):
     PAN_TYPE_CHOICES = [
         ('ROUND', 'Rond'),
@@ -96,7 +88,7 @@ class Pan(models.Model):
     def clean(self):
         """Validation métier avant sauvegarde."""
         if self.user and self.guest_id:
-            raise ValidationError("Une recette ne peut pas avoir à la fois un user et un guest_id.")
+            raise ValidationError("Un moule ne peut pas avoir à la fois un user et un guest_id.")
 
         # Normalisation
         if self.pan_name:
@@ -175,15 +167,8 @@ class Pan(models.Model):
         super().save(*args, **kwargs)
 
 class Category(models.Model):
-    """
-    ⚠️ IMPORTANT ⚠️
-    - Actuellement, `category_name` N'A PAS `unique=True` pour éviter les conflits en développement.
-    - Une fois en production, AJOUTER `unique=True` sur `category_name`.
-    """
     CATEGORY_CHOICES = [('ingredient', 'Ingrédient'), ('recipe', 'Recette'), ('both', 'Les deux'),]
-    # Note : `unique=True` dans le field 'category_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
-    # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
-    category_name = models.CharField(max_length=200,  verbose_name="category_name")#, unique=True) #unique=True à activer en production
+    category_name = models.CharField(max_length=200,  verbose_name="category_name", unique=True)
     category_type = models.CharField(max_length=10, choices=CATEGORY_CHOICES, blank=False, null=False)
     parent_category = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="subcategories")
 
@@ -254,19 +239,12 @@ class Category(models.Model):
         super().delete(*args, **kwargs)
 
 class Label(models.Model):
-    """
-    ⚠️ IMPORTANT ⚠️
-    - Actuellement, `label_name` N'A PAS `unique=True` pour éviter les conflits en développement.
-    - Une fois en production, AJOUTER `unique=True` sur `label_name`.
-    """
     LABEL_CHOICES = [
         ('ingredient', 'Ingrédient'),
         ('recipe', 'Recette'),
         ('both', 'Les deux'),
     ]
-    # Note : `unique=True` dans le field 'label_name' empêche les doublons en base, mais bloque l'API avant même qu'elle ne puisse gérer l'erreur.
-    # Pour l'unicité avec pytest, enlève `unique=True` et gère l'unicité dans `serializers.py`.
-    label_name = models.CharField(max_length=200,  verbose_name="label_name", unique=True) #unique=True à activer en production
+    label_name = models.CharField(max_length=200,  verbose_name="label_name", unique=True) 
     label_type = models.CharField(max_length=10, choices=LABEL_CHOICES, default='both')
 
     def __str__(self):
@@ -1160,6 +1138,14 @@ class IngredientUnitReference(models.Model):
         ordering = ['ingredient', 'unit', 'is_hidden']
         constraints = [models.UniqueConstraint(fields=["ingredient", "unit", "user", "guest_id", "is_hidden"], 
                                                name="unique_ingredient_unit_user_guest_hidden")]
+        indexes = [
+            # Chemin principal de lookup
+            models.Index(fields=["ingredient", "unit", "is_hidden", "user", "guest_id"], name="iur_ing_unit_visible_owner"),
+            # Variante partielle plus efficace (PostgreSQL) car on requête is_hidden=False
+            models.Index(fields=["ingredient", "unit", "user", "guest_id"], name="iur_ing_unit_owner_visible", condition=models.Q(is_hidden=False)),
+            # Petit index de soutien pour le fallback global
+            models.Index(fields=["ingredient", "unit"], name="iur_ing_unit_only", condition=models.Q(is_hidden=False)),
+        ]
 
     def __str__(self):
         return f"{self.ingredient.ingredient_name} ({self.unit}) : {self.weight_in_grams} g"

@@ -64,8 +64,9 @@ class StoreViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         zip_code = request.data.get("zip_code")
         zip_code = zip_code.strip() if zip_code else ""  # Si 'zip_code' est None alors on transforme None en ""
 
-        if Store.objects.filter(store_name=store_name, city=city, zip_code=zip_code).exists():
-            return Response({"error": "Ce magasin existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
+        # # Vérifier si un magasin avec le même nom, ville et code postal existe déjà -> DEJA FAIT DANS LE SERIALIZER
+        # if Store.objects.filter(store_name=store_name, city=city, zip_code=zip_code).exists():
+        #     return Response({"error": "Ce magasin existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
 
         return super().create(request, *args, **kwargs)
 
@@ -104,11 +105,11 @@ class IngredientPriceViewSet(viewsets.ModelViewSet):
         quantity = validated_data.get("quantity")
         unit = validated_data.get("unit")
 
-        # Vérifie si un IngredientPrice existe déjà pour ce tuple 
-        exists = IngredientPrice.objects.filter(ingredient=ingredient, store=store, brand_name=brand_name, quantity=quantity, unit=unit).exists()
-        if exists:
-            return Response(
-                {"error": "Un prix existe déjà pour ce tuple. Veuillez le modifier plutôt que d’en créer un nouveau."}, status=status.HTTP_400_BAD_REQUEST)
+        # # Vérifie si un IngredientPrice existe déjà pour ce tuple -> DEJA FAIT DANS LE SERIALIZER
+        # exists = IngredientPrice.objects.filter(ingredient=ingredient, store=store, brand_name=brand_name, quantity=quantity, unit=unit).exists()
+        # if exists:
+        #     return Response(
+        #         {"error": "Un prix existe déjà pour ce tuple. Veuillez le modifier plutôt que d’en créer un nouveau."}, status=status.HTTP_400_BAD_REQUEST)
             
         return super().create(request, *args, **kwargs)
 
