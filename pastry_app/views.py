@@ -20,6 +20,10 @@ from .models import *
 from .serializers import *
 from .mixins import *
 
+# Alias pour ?q= en plus de ?search=
+class QSearchFilter(SearchFilter):
+    search_param = "q"
+
 class RecipeFilter(filters.FilterSet):
     """
     FilterSet personnalisé pour le modèle Recipe, permettant de filtrer
@@ -30,20 +34,30 @@ class RecipeFilter(filters.FilterSet):
     contiennent tous les tags recherchés.
     """
     tags = filters.CharFilter(method='filter_tags')
+    tags_mode = filters.ChoiceFilter(choices=[("any","any"),("all","all")], method="noop", required=False)
 
     class Meta:
         model = Recipe
-        fields = ['recipe_type', 'chef_name', 'categories', 'labels', 'pan', 'parent_recipe', 'tags']
+        fields = ['recipe_type', 'chef_name', 'categories', 'labels', 'pan', 'parent_recipe']
+
+    def noop(self, qs, name, value):
+        return qs
 
     def filter_tags(self, queryset, name, value):
         """
         Permet de filtrer les recettes qui contiennent TOUS les tags donnés dans le paramètre.
-        Exemple : ?tags=vegan,healthy retournera les recettes qui ont au moins 'vegan' ET 'healthy' dans leur liste tags.
+        Exemple : ?tags=vegan,healthy retournera les recettes qui ont au moins 'vegan' ET 'healthy' dans leur liste tags. 
+        (+ ?tags_mode=any|all (defaut any))
         """
         tags_list = [tag.strip() for tag in value.split(',') if tag.strip()]
-        for tag in tags_list:
-            queryset = queryset.filter(**{f"{name}__contains": [tag]})
-        return queryset
+        if not tags_list:
+            return queryset
+        mode = self.data.get("tags_mode", "any")
+        if mode == "all":
+            for tag in tags_list:
+                queryset = queryset.filter(tags__contains=[tag])   # AND
+            return queryset
+        return queryset.filter(tags__overlap=tags_list)          # OR
 
 class StoreViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     """ API CRUD pour gérer les magasins. """
@@ -135,10 +149,10 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     permission_classes = [CanSoftHideRecipeOrIsOwnerOrGuest]
 
     filterset_class = RecipeFilter
-    filter_backends = [SearchFilter, DjangoFilterBackend, OrderingFilter]
-    search_fields = ["recipe_name", "chef_name", "context_name", "tags"]
+    filter_backends = [QSearchFilter, SearchFilter, DjangoFilterBackend, OrderingFilter]
+    search_fields = ["recipe_name", "chef_name", "context_name","categories__category_name", "labels__label_name"]
     filterset_fields = ["recipe_type", "chef_name", "categories", "labels", "pan", "parent_recipe", "tags"]
-    ordering_fields = ["recipe_name", "chef_name", "recipe_type", "created_at", "parent_recipe"]
+    ordering_fields = ["recipe_name", "chef_name", "recipe_type", "created_at", "updated_at", "parent_recipe"]
     ordering = ["recipe_name", "chef_name"]
 
     @action(detail=True, methods=["post"], url_path="adapt", permission_classes=[AllowAny])
@@ -328,15 +342,18 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         """
-        Retourne les recettes visibles pour l'utilisateur courant (connecté ou invité).
+        1) Retourne les recettes visibles pour l'utilisateur courant (connecté ou invité).
         - Filtre de base : recettes accessibles selon GuestUserRecipeMixin (user, guest_id, visibilité, is_default).
         - Exclut les recettes masquées pour l'utilisateur courant (UserRecipeVisibility).
         - Si query param `parent_recipe`, filtre uniquement les adaptations de cette recette mère.
+
+        2) Ajoute select_related/prefetch selon le contexte:
+        - list: léger
+        - retrieve/actions: complet
         """
         # Étape 1 : Récupère le queryset de base (incluant user/guest_id/public/de base)
         qs = super().get_queryset()
         user = self.request.user
-
         guest_id = (
             self.request.headers.get("X-Guest-Id")
             or self.request.headers.get("X-GUEST-ID")
@@ -357,8 +374,23 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         if parent_recipe:
             qs = qs.filter(parent_recipe=parent_recipe)
 
-        return qs
-        
+        # --- Étape enrichissement conditionnel ---
+        qs = qs.select_related("pan").order_by("recipe_name","chef_name")
+
+        heavy = {"retrieve","adapt_recipe","reference_suggestions","bulk_edit_subrecipe_ingredients"}
+        if getattr(self, "action", None) in heavy:
+            return qs.prefetch_related(
+                "categories","labels",
+                "recipe_ingredients__ingredient",
+                "steps",
+                "main_recipes__sub_recipe",
+            )
+        else:
+            return qs.prefetch_related("categories","labels")
+
+    def get_serializer_class(self):
+        return RecipeListSerializer if self.action == "list" else RecipeSerializer
+
     def destroy(self, request, *args, **kwargs):
         """
         - Empêche la suppression d'une recette mère si elle a des adaptations (versions) ou si elle est utilisée comme sous-recette.

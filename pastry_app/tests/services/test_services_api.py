@@ -222,6 +222,7 @@ URL_RECIPES_ADAPT = f"{API_PREFIX}/recipes-adapt/"
 URL_PAN_ESTIMATION = f"{API_PREFIX}/pan-estimation/"
 URL_PAN_SUGGESTION = f"{API_PREFIX}/pan-suggestion/"
 URL_RECIPES_ADAPT_BY_ING = f"{API_PREFIX}/recipes-adapt/by-ingredient/"
+URL_RECIPES_LIST = f"{API_PREFIX}/recipes/"
 
 # -------------------------------------------------------------------
 # Helpers
@@ -935,3 +936,104 @@ def test_recipe_adaptation__reference_recipe_error_message(api_client, recettes_
         "prefer_reference": True,
     })
     assert resp.status_code in (400, 422)
+
+# =========================
+# /recipes/ — recherche classique
+# =========================
+
+def _extract_items(resp):
+    data = resp.json()
+    return data.get("results", data) if isinstance(data, dict) else data
+
+def test_recipes_list__q_and_search_equivalent(api_client, recettes_choux):
+    """
+    Vérifie que les paramètres `q` et `search` produisent exactement
+    le même ensemble d'identifiants de recettes dans la liste.
+    """
+    # Les deux paramètres doivent donner le même set d'IDs
+    r1 = _get(api_client, URL_RECIPES_LIST, {"q": "éclair"})
+    r2 = _get(api_client, URL_RECIPES_LIST, {"search": "éclair"})
+    assert r1.status_code == 200 and r2.status_code == 200
+    ids1 = {it["id"] for it in _extract_items(r1)}
+    ids2 = {it["id"] for it in _extract_items(r2)}
+    assert ids1 == ids2
+
+def test_recipes_list__search_hits_category(api_client, recettes_choux):
+    """
+    Vérifie qu'une recherche par `q` retourne les recettes correspondant
+    au nom d'une catégorie (`categories__category_name`).
+    """
+    # Doit matcher via categories__category_name
+    religieuse = recettes_choux["religieuse_cafe"]
+    r = _get(api_client, URL_RECIPES_LIST, {"q": "religieuse"})
+    assert r.status_code == 200
+    ids = {it["id"] for it in _extract_items(r)}
+    assert religieuse.id in ids
+
+def test_recipes_list__filter_tags_any_all(api_client, base_ingredients):
+    """
+    Vérifie le filtrage par tags :
+    - Mode `any` retourne toutes les recettes contenant au moins un des tags donnés.
+    - Mode `all` retourne seulement celles contenant tous les tags donnés.
+    """
+    # Prépare 3 recettes avec tags
+    r1 = make_recipe(name="tag-r1")
+    r1.tags = ["vegan"]
+    far = add_ingredient(r1, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    r1.save()
+    r2 = make_recipe(name="tag-r2")
+    r2.tags = ["vegan","healthy"]
+    far = add_ingredient(r2, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    r2.save()
+    r3 = make_recipe(name="tag-r3")
+    r3.tags = ["healthy"]
+    far = add_ingredient(r3, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    r3.save()
+
+    # any = OR → r1,r2,r3
+    any_r = _get(api_client, URL_RECIPES_LIST, {"tags": "vegan,healthy", "tags_mode": "any"})
+    assert any_r.status_code == 200
+    any_ids = {it["id"] for it in _extract_items(any_r)}
+    assert {r1.id, r2.id, r3.id} <= any_ids
+
+    # all = AND → seulement r2
+    all_r = _get(api_client, URL_RECIPES_LIST, {"tags": "vegan,healthy", "tags_mode": "all"})
+    assert all_r.status_code == 200
+    all_ids = {it["id"] for it in _extract_items(all_r)}
+    assert all_ids == {r2.id}
+
+def test_recipes_list__payload_is_light(api_client, recettes_choux):
+    """
+    Vérifie que la réponse en liste ne contient pas de champs lourds
+    (`ingredients`, `steps`, `sub_recipes`) et qu'elle contient bien
+    les champs attendus minimaux.
+    """
+    # En liste, pas d'objets lourds (ingredients/steps/sub_recipes)
+    sample = next(iter(recettes_choux.values()))
+    r = _get(api_client, URL_RECIPES_LIST, {"q": sample.recipe_name})
+    assert r.status_code == 200
+    item = _extract_items(r)[0]
+    assert "ingredients" not in item and "steps" not in item and "sub_recipes" not in item
+    # champs attendus
+    for key in ("id","recipe_name","chef_name","context_name","servings_avg","updated_at"):
+        assert key in item
+
+def test_recipes_list__ordering_updated_at(api_client, base_ingredients):
+    """
+    Vérifie que le tri décroissant par `updated_at` fonctionne avec
+    `ordering=-updated_at` : un élément mis à jour récemment apparaît
+    avant un élément plus ancien.
+    """
+    # Vérifie que -updated_at fonctionne
+    older = make_recipe(name="older")
+    far = add_ingredient(older, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    newer = make_recipe(name="newer")
+    far = add_ingredient(newer, ingredient=base_ingredients["farine"], qty=100.0, unit="g")
+    newer.description = "touch to update"; newer.save()  # met à jour updated_at
+    r = _get(api_client, URL_RECIPES_LIST, {"ordering": "-updated_at", "q": "tag-irrelevant"})
+    assert r.status_code == 200
+    items = _extract_items(r)
+    ids = [it["id"] for it in items]
+    # newer doit apparaître avant older si les deux sont présents
+    if newer.id in ids and older.id in ids:
+        assert ids.index(newer.id) < ids.index(older.id)

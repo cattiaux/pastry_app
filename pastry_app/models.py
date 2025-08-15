@@ -7,6 +7,7 @@ from django.db.models import UniqueConstraint
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.fields import ArrayField
+from django.contrib.postgres.indexes import GinIndex
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from .text_utils import normalize_case
@@ -366,6 +367,12 @@ class Recipe(models.Model):
             models.UniqueConstraint(fields=["owned_by_recipe", "parent_recipe"], name="uniq_owned_variant_per_host_and_source", 
                                     condition=~models.Q(owned_by_recipe=None) & ~models.Q(parent_recipe=None)),
             ]
+        indexes = [
+            GinIndex(fields=["recipe_name"], name="idx_recipe_name_trgm", opclasses=["gin_trgm_ops"]),
+            GinIndex(fields=["chef_name"],   name="idx_chef_name_trgm",   opclasses=["gin_trgm_ops"]),
+            GinIndex(fields=["context_name"],name="idx_context_name_trgm",opclasses=["gin_trgm_ops"]),
+            GinIndex(fields=["tags"],        name="idx_recipe_tags_gin"),  # ArrayField
+        ]
 
     def __str__(self):
         base = f"{self.recipe_name} ({self.chef_name})"

@@ -56,8 +56,8 @@ def test_create_duplicate_store(api_client, base_url, setup_store):
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     # Vérifier que le message d'erreur apparaît sous la bonne clé
     response_data = response.json()
-    assert "error" in response_data  # Vérifie que l'erreur est bien présente
-    assert response_data["error"] == "Ce magasin existe déjà."
+    assert "non_field_errors" in response_data  # Vérifie que l'erreur est bien présente
+    assert response_data["non_field_errors"] == ["Ce magasin existe déjà."]
 
 # Lecture
 def test_get_store(api_client, base_url, setup_store):

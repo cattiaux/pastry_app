@@ -72,24 +72,34 @@ class StoreSerializer(serializers.ModelSerializer):
         zip_code = data.get("zip_code", getattr(self.instance, "zip_code", ""))
         address = data.get("address", getattr(self.instance, "address", ""))
 
-        # Appliquer la normalisation car le champ PATCH peut ne pas passer par validate_<field>
-        store_name = normalize_case(store_name) if store_name else ""
-        city = normalize_case(city) if city else ""
-        address = normalize_case(address) if address else ""
+        # Appliquer la normalisation car le champ PATCH peut ne pas passer par validate_<field> 
+        # Normalisation pour stockage: ne pas convertir "" → None
+        if store_name not in (None, ""):
+            store_name = normalize_case(store_name)
+        if city not in (None, ""):
+            city = normalize_case(city)
+        if address not in (None, ""):
+            address = normalize_case(address)
 
-        # Validation métier : il faut au moins une city OU un zip_code OU une address
-        if not city and not zip_code and not address:
-            raise serializers.ValidationError(
-                "Si un magasin est renseigné, vous devez indiquer une ville ou un code postal ou une adresse.",
-                code="missing_location")
+        # remplacement dans data pour l’enregistrement
+        data["store_name"], data["city"], data["zip_code"], data["address"] = store_name, city, zip_code, address
 
-        # Vérification de l'unicité, même pour PATCH (mise à jour partielle)
-        qs = Store.objects.filter(store_name=store_name, city=city, zip_code=zip_code, address=address)
+        # Règle métier: au moins un des trois non vide ("" ≡ None)
+        city_key    = None if city in ("", None) else city
+        zip_key     = None if zip_code in ("", None) else zip_code
+        address_key = None if address in ("", None) else address
+        if city_key is None and zip_key is None and address_key is None:
+            raise serializers.ValidationError("Si un magasin est renseigné, vous devez indiquer une ville ou un code postal ou une adresse.",
+                                              code="missing_location")
+
+        # Unicité en traitant "" comme None
+        sn_key = normalize_case(store_name) if store_name not in ("", None) else None
+        qs = Store.objects.filter(store_name=sn_key, city=city_key, zip_code=zip_key, address=address_key)
         if self.instance:
             qs = qs.exclude(id=self.instance.id)
         if qs.exists():
             raise serializers.ValidationError("Ce magasin existe déjà.")
-        
+
         return data
 
 class IngredientPriceSerializer(serializers.ModelSerializer):
@@ -681,7 +691,8 @@ class RecipeSerializer(serializers.ModelSerializer):
                   "recipe_name", "chef_name", "context_name", 
                   "source", "recipe_type", "parent_recipe", "parent_recipe_name", "owned_by_recipe", 
                   "adaptation_note", "tags",
-                  "servings_min", "servings_max", "total_recipe_quantity", "description", "trick", "image", 
+                  "servings_min", "servings_max", "total_recipe_quantity", 
+                  "description", "trick", "image", 
                   "pan", "categories", "labels", "ingredients", "steps", "sub_recipes", 
                   "created_at", "updated_at",
                   "user", "guest_id", "visibility", "is_default"]
@@ -930,6 +941,29 @@ class RecipeSerializer(serializers.ModelSerializer):
 
         # Cas 2 : c'est sa propre recette (user ou guest_id)
         return super().destroy(request, *args, **kwargs)
+
+class RecipeListSerializer(serializers.ModelSerializer):
+    """
+    Liste/recherche des recettes.
+    - Payload compact pour la page de résultats.
+    - Pas d’ingrédients/étapes/sous-recettes.
+    - Inclut un résumé portions (servings_avg) et les IDs des M2M.
+    """
+    servings_avg = serializers.SerializerMethodField()
+    pan = serializers.PrimaryKeyRelatedField(read_only=True)
+    categories = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    labels = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+
+    class Meta:
+        model = Recipe
+        fields = [
+            "id", "recipe_name", "chef_name", "context_name", "recipe_type",
+            "servings_min", "servings_max", "servings_avg", "pan",
+            "categories", "labels", "tags", "updated_at",
+        ]
+
+    def get_servings_avg(self, obj):
+        return obj.servings_avg
 
 class PanSerializer(serializers.ModelSerializer):
     pan_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
