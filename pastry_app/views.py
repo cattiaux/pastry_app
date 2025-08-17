@@ -9,7 +9,7 @@ from .permissions import *
 from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Q, QuerySet
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as filters
@@ -19,27 +19,52 @@ from .text_utils import *
 from .models import *
 from .serializers import *
 from .mixins import *
+from .constants import *
 
 # Alias pour ?q= en plus de ?search=
 class QSearchFilter(SearchFilter):
     search_param = "q"
 
+def _sanitize_params(qp, allowed: set) -> dict:
+    """
+    Filtre les query params : garde seulement ceux de 'allowed'.
+    Intérêt:
+      - verrouille le contrat API (les clés inconnues sont ignorées)
+      - évite que des paramètres “bruit” affectent le filtrage
+      - stabilise les clés de cache (si tu caches les réponses par params)
+    """
+    return {k: v for k, v in qp.items() if k in allowed}
+
 class RecipeFilter(filters.FilterSet):
     """
-    FilterSet personnalisé pour le modèle Recipe, permettant de filtrer
-    sur le champ tags (ArrayField). Supporte la recherche de plusieurs tags à la fois
-    via un paramètre de requête séparé par des virgules (ex: ?tags=vegan,healthy).
-
-    L'intérêt est de pouvoir utiliser l'API pour retourner toutes les recettes qui
-    contiennent tous les tags recherchés.
+    FilterSet personnalisé pour le modèle Recipe : "classique" et "lego".
+    - tags: OR (overlap) ou AND (contains) via tags_mode (Supporte la recherche de plusieurs tags à la fois ; ex: ?tags=vegan,healthy)
+    - usage_type: standalone|preparation|both
+    - has_pan / has_servings: présence d'info scalable
+    - mine: limiter aux recettes de l'utilisateur courant (user ou guest_id)    
     """
+    # tags
     tags = filters.CharFilter(method='filter_tags')
     tags_mode = filters.ChoiceFilter(choices=[("any","any"),("all","all")], method="noop", required=False)
+
+    # portée d'usage
+    usage_type = filters.ChoiceFilter(
+        choices=[("standalone","standalone"),("preparation","preparation"),("both","both")],
+        method="filter_usage", required=False
+    )
+
+    # scalabilité
+    has_pan = filters.BooleanFilter(method="filter_has_pan")
+    has_servings = filters.BooleanFilter(method="filter_has_servings")
+
+    # ownership
+    mine = filters.BooleanFilter(method="filter_mine")
 
     class Meta:
         model = Recipe
         fields = ['recipe_type', 'chef_name', 'categories', 'labels', 'pan', 'parent_recipe']
 
+    # ---- helpers ----
     def noop(self, qs, name, value):
         return qs
 
@@ -58,6 +83,44 @@ class RecipeFilter(filters.FilterSet):
                 queryset = queryset.filter(tags__contains=[tag])   # AND
             return queryset
         return queryset.filter(tags__overlap=tags_list)          # OR
+
+    def filter_usage(self, qs, name, value):
+        if value == "preparation":
+            # recettes déjà utilisées comme sous-recette
+            return qs.filter(used_in_recipes__isnull=False).distinct()
+        # "standalone" = pas de restriction; "both" idem
+        return qs
+
+    def filter_has_pan(self, qs, name, value: bool):
+        """Filtre les objets selon la présence d’un PAN."""
+        return qs.filter(pan__isnull=not value)
+
+    def filter_has_servings(self, qs, name, value: bool):
+        """Filtre selon la présence de portions min/max."""
+        if value:
+            return qs.filter(Q(servings_min__isnull=False) | Q(servings_max__isnull=False))
+        return qs.filter(Q(servings_min__isnull=True) & Q(servings_max__isnull=True))
+
+    def filter_mine(self, qs, name, value: bool):
+        """Filtre les objets appartenant à l’utilisateur ou invité courant."""
+        if not value:
+            return qs
+        req = getattr(self, "request", None)
+        if not req:
+            return qs
+        user = req.user if req.user and req.user.is_authenticated else None
+        guest_id = (
+            req.headers.get("X-Guest-Id")
+            or req.headers.get("X-GUEST-ID")
+            or req.query_params.get("guest_id")
+            or req.data.get("guest_id")
+        )
+        if user:
+            return qs.filter(user=user)
+        if guest_id:
+            return qs.filter(guest_id=guest_id)
+        # si anonyme sans identifiant, rien
+        return qs.none()
 
 class StoreViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     """ API CRUD pour gérer les magasins. """
@@ -340,6 +403,35 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         out = scale_recipe_globally(host, m, user=user, guest_id=guest_id)
         return Response({"changed": changed, "recipe": out}, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=["get"], url_path="lego-candidates")
+    def lego_candidates(self, request):
+        """
+        GET /api/recipes/lego-candidates/
+        Liste paginée des recettes candidates pour le mode LEGO.
+        - Repose sur RecipeFilter + Search/Ordering DRF.
+        - Par défaut, aucune restriction d'usage (standalone ou déjà utilisées).
+        """
+        params = _sanitize_params(request.query_params, ALLOWED_LEGO_SEARCH_PARAMS)
+        # Option stricte: refuse toute clé non whitelistée
+        unknown = set(request.query_params.keys()) - set(params.keys())
+        if unknown:
+            return Response({"detail": f"Paramètres non supportés: {sorted(unknown)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Applique SearchFilter + DjangoFilterBackend + OrderingFilter + RecipeFilter
+        qs = self.filter_queryset(self.get_queryset())
+
+        # Tri par défaut si 'ordering' non fourni
+        if "ordering" not in params:
+            qs = qs.order_by("recipe_name", "-updated_at")
+
+        # Pagination DRF standard:
+        page = self.paginate_queryset(qs)  # paginate_queryset(qs) renvoie la page courante (liste) ou None si pas de pagination.
+        data_qs = page if page is not None else qs
+        ser = RecipeListSerializer(data_qs, many=True, context=self.get_serializer_context())
+
+        # get_paginated_response sérialise en {count,next,previous,results:[...]}
+        return self.get_paginated_response(ser.data) if page is not None else Response(ser.data, status=status.HTTP_200_OK)
+    
     def get_queryset(self):
         """
         1) Retourne les recettes visibles pour l'utilisateur courant (connecté ou invité).

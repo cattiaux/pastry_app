@@ -643,6 +643,12 @@ class SubRecipe(models.Model):
     quantity = models.FloatField(validators=[MinValueValidator(0)])
     unit = models.CharField(max_length=50, choices=SUBRECIPE_UNIT_CHOICES)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["sub_recipe"], name="idx_subrecipe_on_sub"),
+            models.Index(fields=["recipe"], name="idx_subrecipe_on_host"),
+        ]
+
     def clean(self):
         """ Validation métier avant sauvegarde """
         if self.recipe == self.sub_recipe:

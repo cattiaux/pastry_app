@@ -19,6 +19,20 @@ SUBRECIPE_UNIT_CHOICES = [
     ("ml", "ml"), ("cl", "cl"), ("l", "l"),
 ]
 
+ALLOWED_CLASSIC_SEARCH_PARAMS = {
+    "q","search","recipe_type","chef_name","categories","labels","pan","parent_recipe",
+    "tags","tags_mode","usage_type","has_pan","has_servings","mine",
+    "ordering","page","page_size",
+}
+
+ALLOWED_LEGO_SEARCH_PARAMS = {
+    "q","search","recipe_type","chef_name","categories","labels","pan","parent_recipe",
+    "tags","tags_mode","usage_type","has_pan","has_servings","mine",
+    "ordering","page","page_size",
+    "target_servings","target_pan_id","include_non_scalable",
+}
+
+
 # Liste des catégories disponibles (pour recette et/ou ingrédient) et leur type associé.
 # Format : 
 #   - clé interne : Utilisée pour les bases de données ou les API. Normalement en minuscule sans espace pour éviter les erreurs.

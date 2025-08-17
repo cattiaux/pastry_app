@@ -605,7 +605,7 @@ def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None):
     }
 
 # ============================================================
-# 5. CAS PARTICULIERS (ADAPTATION PAR CONTRAINTE)
+# 4. CAS PARTICULIERS (ADAPTATION PAR CONTRAINTE)
 # ============================================================
 
 def get_limiting_multiplier(recipe, ingredient_constraints):
@@ -653,10 +653,10 @@ def get_limiting_multiplier(recipe, ingredient_constraints):
     return min(multipliers, key=lambda x: x[0])  # (multiplier, ing_id)
 
 # ============================================================
-# 6. HELPERS : SÉLECTION DE RECETTE DE RÉFÉRENCE
+# 5. HELPERS : SÉLECTION DE RECETTE DE RÉFÉRENCE
 # ============================================================
 
-# 6.0 — Mini-config interne (règles, poids, seuils)
+# 5.0 — Mini-config interne (règles, poids, seuils)
 REF_SELECTION_CONFIG = {
     # RÈGLES "dures" (filtres éliminatoires)
     "require_same_parent_category": True,     # une référence doit partager >= 1 parent_category avec la recette hôte
@@ -687,7 +687,7 @@ REF_SELECTION_CONFIG = {
     "suggest_threshold": 1.0,                  # sous ce score on peut ne pas proposer du tout (optionnel, ici on liste tout de même)
 }
 
-# 6.1 — Helpers utilitaires
+# 5.1 — Helpers utilitaires
 
 def _name_tokens(s: str) -> set:
     """Tokenisation naïve (espaces) après normalisation."""
@@ -772,7 +772,7 @@ def _subrecipe_candidates_hosting_like(prep, candidates):
             out.append((cand, []))
     return out  # liste de tuples (recette_hôte, [sous-recettes correspondantes])
 
-# 6.2 — Éligibilité des candidats
+# 5.2 — Éligibilité des candidats
 def _eligible_recipe_candidates(base_recipe, target_servings=None, target_pan=None, candidates=None):
     """
     Filtre "hard" pour les références niveau recette :
@@ -832,7 +832,7 @@ def _eligible_preparation_candidates(base_recipe, target_servings=None, target_p
     """
     return _eligible_recipe_candidates(base_recipe, target_servings, target_pan, candidates)
 
-# 6.3 — Scoring
+# 5.3 — Scoring
 
 def _score_recipe_level(candidate, base_recipe, target_servings=None, target_pan=None) -> float:
     """
@@ -918,7 +918,7 @@ def _score_preparation_level(base_recipe, prep, host_candidate, matched_subrecip
     )
     return float(score)
 
-# 6.4 — Ranking + wrapper public
+# 5.4 — Ranking + wrapper public
 
 def _rank_recipe_level_references(recipe, target_servings=None, target_pan=None, candidates=None):
     """
@@ -975,8 +975,38 @@ def _should_autoselect(best_score: float) -> bool:
     """Décide si l'on peut auto-sélectionner (niveau recette) sans demander l'avis utilisateur."""
     return best_score >= REF_SELECTION_CONFIG["auto_select_threshold"]
 
+def taxonomy_score(host, wanted_category_ids=None, wanted_label_ids=None, wanted_tags=None):
+    """
+    Calcule un score purement taxonomique pour classer un usage 'as_preparation'.
+    - host: recette hôte (obj Recipe) dans laquelle la préparation est utilisée.
+    - wanted_category_ids: iterable[int] de catégories à favoriser (peut être None).
+    - wanted_label_ids: iterable[int] de labels à favoriser (peut être None).
+    - wanted_tags: iterable[str] de tags à favoriser (peut être None).
+    Règles:
+      +3 si l'hôte possède ≥1 des catégories voulues
+      +2 par label commun
+      +1 par tag commun
+      +0.5 si l'hôte a un pan
+      +0.5 si l'hôte a des servings (min ou max)
+    Retourne: float (score). N’utilise pas le volume ni la popularité.
+    """
+    score = 0.0
+    if wanted_category_ids:
+        if host.categories.filter(id__in=wanted_category_ids).exists():
+            score += 3.0
+    if wanted_label_ids:
+        score += 2.0 * host.labels.filter(id__in=wanted_label_ids).count()
+    if wanted_tags:
+        host_tags = set(host.tags or [])
+        score += 1.0 * len(host_tags.intersection(set(wanted_tags)))
+    if host.pan_id:
+        score += 0.5
+    if host.servings_min or host.servings_max:
+        score += 0.5
+    return score
+
 # ============================================================
-# 7. SUGGESTIONS ET ESTIMATIONS
+# 6. SUGGESTIONS ET ESTIMATIONS
 # ============================================================
 
 def _get_servings_interval(volume_cm3: float) -> dict:
@@ -1227,7 +1257,7 @@ def suggest_recipe_reference(recipe, target_servings=None, target_pan=None, cand
     return items
 
 # ============================================================
-# 8. HELPERS : SÉLECTION DE RECETTE DE RÉFÉRENCE
+# 7. HELPERS : SÉLECTION DE RECETTE DE RÉFÉRENCE
 # ============================================================
 
 def clone_recipe_for_host(source: Recipe, host: Recipe, *, user=None, guest_id=None, name_suffix=None) -> Recipe:

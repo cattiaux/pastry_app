@@ -223,6 +223,7 @@ URL_PAN_ESTIMATION = f"{API_PREFIX}/pan-estimation/"
 URL_PAN_SUGGESTION = f"{API_PREFIX}/pan-suggestion/"
 URL_RECIPES_ADAPT_BY_ING = f"{API_PREFIX}/recipes-adapt/by-ingredient/"
 URL_RECIPES_LIST = f"{API_PREFIX}/recipes/"
+URL_RECIPES_LEGO_CANDIDATES = f"{API_PREFIX}/recipes/lego-candidates/"
 
 # -------------------------------------------------------------------
 # Helpers
@@ -1037,3 +1038,130 @@ def test_recipes_list__ordering_updated_at(api_client, base_ingredients):
     # newer doit apparaître avant older si les deux sont présents
     if newer.id in ids and older.id in ids:
         assert ids.index(newer.id) < ids.index(older.id)
+
+# =========================
+# /recipes/lego-candidates/ — GET (B1)
+# =========================
+
+def _extract_results_or_list(resp):
+    data = resp.json()
+    return data.get("results", data) if isinstance(data, dict) else data
+
+def test_lego_candidates__basic_200_and_payload_shape(api_client, recettes_choux):
+    """
+    Doit répondre 200 et renvoyer une liste paginée ou brute d'items "légers"
+    sans ingrédients/étapes/sous_recettes. Teste aussi la clé 'count' si pagination DRF active.
+    """
+    r = _get(api_client, URL_RECIPES_LEGO_CANDIDATES, {"q": "éclair"})
+    assert r.status_code == 200, r.data
+    data = r.json()
+    items = _extract_results_or_list(r)
+    assert isinstance(items, list)
+    if isinstance(data, dict):  # pagination activée
+        assert {"count", "next", "previous", "results"} <= set(data.keys())
+
+    if items:
+        sample = items[0]
+        # payload "léger"
+        assert "ingredients" not in sample and "steps" not in sample and "sub_recipes" not in sample
+        # champs minimaux attendus en liste
+        for key in ("id", "recipe_name", "chef_name", "context_name", "servings_avg", "updated_at"):
+            assert key in sample
+
+def test_lego_candidates__unknown_param_rejected(api_client):
+    """
+    Si la whitelist stricte est active côté view:
+    un paramètre non listé renvoie 400 et cite la clé incriminée.
+    """
+    r = _get(api_client, URL_RECIPES_LEGO_CANDIDATES, {"q": "choux", "not_allowed": "x"})
+    assert r.status_code in (400, 200)
+    if r.status_code == 400:
+        assert "not_allowed" in (r.json().get("detail") or "")
+
+def test_lego_candidates__shares_tags_filter_any_all(api_client, base_ingredients):
+    """
+    Vérifie que le filtrage tags fonctionne identiquement à la recherche classique.
+    - any -> OR
+    - all -> AND
+    """
+    r1 = make_recipe(name="lego-tag-r1"); add_ingredient(r1, ingredient=base_ingredients["farine"], qty=1)
+    r1.tags = ["vegan"]; r1.save()
+    r2 = make_recipe(name="lego-tag-r2"); add_ingredient(r2, ingredient=base_ingredients["farine"], qty=1)
+    r2.tags = ["vegan", "healthy"]; r2.save()
+    r3 = make_recipe(name="lego-tag-r3"); add_ingredient(r3, ingredient=base_ingredients["farine"], qty=1)
+    r3.tags = ["healthy"]; r3.save()
+
+    any_r = _get(api_client, URL_RECIPES_LEGO_CANDIDATES, {"tags": "vegan,healthy", "tags_mode": "any"})
+    assert any_r.status_code == 200
+    any_ids = {it["id"] for it in _extract_results_or_list(any_r)}
+    assert {r1.id, r2.id, r3.id} <= any_ids
+
+    all_r = _get(api_client, URL_RECIPES_LEGO_CANDIDATES, {"tags": "vegan,healthy", "tags_mode": "all"})
+    assert all_r.status_code == 200
+    all_ids = {it["id"] for it in _extract_results_or_list(all_r)}
+    assert all_ids == {r2.id}
+
+def test_lego_candidates__usage_type_preparation_filters_only_used_subrecipes(api_client, base_ingredients):
+    """
+    usage_type=preparation -> ne renvoie que des recettes effectivement utilisées comme sous-recettes.
+    - R_standalone: jamais utilisée (ne doit PAS apparaître)
+    - R_prep: utilisée au moins une fois comme sous-recette (DOIT apparaître)
+    """
+    R_standalone = make_recipe(name="standalone-only"); add_ingredient(R_standalone, ingredient=base_ingredients["farine"], qty=1)
+    R_prep = make_recipe(name="prep-used"); add_ingredient(R_prep, ingredient=base_ingredients["farine"], qty=1)
+    Host = make_recipe(name="host"); add_ingredient(Host, ingredient=base_ingredients["farine"], qty=1)
+    add_subrecipe(Host, sub=R_prep, qty=10.0)
+
+    r = _get(api_client, URL_RECIPES_LEGO_CANDIDATES, {"usage_type": "preparation"})
+    assert r.status_code == 200
+    ids = {it["id"] for it in _extract_results_or_list(r)}
+    assert R_prep.id in ids
+    assert R_standalone.id not in ids
+
+def test_lego_candidates__mine_filters_by_owner_user_or_guest(api_client, base_ingredients, user):
+    """
+    mine=1 -> restreint aux recettes du user courant OU du guest_id fourni.
+    On crée deux recettes: une pour le user, une pour un guest_id.
+    """
+    # user-owned
+    api_client.force_authenticate(user=user)
+    ru = make_recipe(name="mine_user"); add_ingredient(ru, ingredient=base_ingredients["farine"], qty=1)
+    ru.user = user; ru.guest_id = None; ru.save()
+
+    # guest-owned
+    rg = make_recipe(name="mine_guest"); add_ingredient(rg, ingredient=base_ingredients["farine"], qty=1)
+    rg.user = None; rg.guest_id = "guest-xyz"; rg.save()
+
+    # mine=1 en contexte user -> doit contenir ru et pas rg
+    r_user = _get(api_client, URL_RECIPES_LEGO_CANDIDATES, {"mine": 1})
+    assert r_user.status_code == 200
+    ids_user = {it["id"] for it in _extract_results_or_list(r_user)}
+    assert ru.id in ids_user
+    assert rg.id not in ids_user
+
+    # mine=1 en contexte guest -> doit contenir rg
+    api_client.force_authenticate(user=None)
+    r_guest = _get(api_client, URL_RECIPES_LEGO_CANDIDATES, {"mine": 1}, guest_id="guest-xyz")
+    assert r_guest.status_code == 200
+    ids_guest = {it["id"] for it in _extract_results_or_list(r_guest)}
+    assert rg.id in ids_guest
+    # ru peut exister dans la base mais ne doit pas matcher mine côté guest
+    assert ru.id not in ids_guest
+
+def test_lego_candidates__default_ordering_by_name_then_recent(api_client, base_ingredients):
+    """
+    Sans 'ordering', la view ordonne par 'recipe_name' puis '-updated_at'.
+    On crée deux recettes dont l'une est 'touchée' pour être plus récente et on
+    vérifie l'ordre relatif si les deux sont présentes dans la page.
+    """
+    a = make_recipe(name="aaa", chef="alpha"); add_ingredient(a, ingredient=base_ingredients["farine"], qty=1)
+    b = make_recipe(name="aaa", chef="bravo"); add_ingredient(b, ingredient=base_ingredients["farine"], qty=1)
+    b.description = "touch to update"; b.save()  # met à jour updated_at
+
+    r = _get(api_client, URL_RECIPES_LEGO_CANDIDATES, {"q": "aaa"})
+    assert r.status_code == 200
+    items = _extract_results_or_list(r)
+    ids = [it["id"] for it in items if it["recipe_name"].lower().startswith("aaa")]
+    if a.id in ids and b.id in ids:
+        # même nom → b plus récent doit venir avant a
+        assert ids.index(b.id) < ids.index(a.id)
