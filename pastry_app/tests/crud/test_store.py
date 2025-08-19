@@ -72,10 +72,10 @@ def test_get_store(api_client, base_url, setup_store):
      {"store_name": "Carrefour2", "zip_code": "75001"}, # Sans `city`
      {"store_name": "Intermarché", "city": "Toulouse"}]  # Sans `zip_code`
 ])
-def test_get_store_list(api_client, base_url, setup_store, additional_stores):
+def test_get_store_list(api_client, base_url, setup_store, additional_stores, user):
     """Vérifie qu'on peut récupérer la liste des magasins via `GET /stores/`."""
     url = base_url(model_name)
-
+    api_client.force_authenticate(user=user)
     # Création des magasins additionnels via l'API pour rester cohérent avec le GET
     for store_data in additional_stores:
         store_data["visibility"] = "public"

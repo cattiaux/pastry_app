@@ -80,9 +80,9 @@ class TestGenericPermissions:
         obj_id = response.json()["id"]
         patch_url = f"{url}{obj_id}/"
         # Modification par le même guest_id
-        response2 = api_client.patch(patch_url, {"visibility": "public"}, format="json", HTTP_X_GUEST_ID=guest_id)
+        response2 = api_client.patch(patch_url, {"visibility": "private"}, format="json", HTTP_X_GUEST_ID=guest_id)
         assert response2.status_code == 200
-        assert response2.json()["visibility"] == "public"
+        assert response2.json()["visibility"] == "private"
 
     def test_guest_cannot_modify_others_object(self, api_client, base_url, model_name, base_data_func, guest_id, name_field, model_cls):
         url = base_url(model_name)
@@ -329,13 +329,19 @@ class TestGenericPermissions:
 
     # --- TESTS VISIBILITY ---
 
-    def test_guest_can_create_public_object(self, api_client, base_url, model_name, base_data_func, guest_id, name_field, model_cls):
+    # def test_guest_can_create_public_object(self, api_client, base_url, model_name, base_data_func, guest_id, name_field, model_cls):
+    #     url = base_url(model_name)
+    #     data = base_data_func(visibility="public")
+    #     response = api_client.post(url, data, format="json", HTTP_X_GUEST_ID=guest_id)
+    #     assert response.status_code == 201
+    #     assert response.json()["visibility"] == "public"
+    #     assert normalize_case(base_data_func(visibility="public")[name_field]) == normalize_case(response.json()[name_field])
+
+    def test_guest_cannot_create_public_object(self, api_client, base_url, model_name, base_data_func, guest_id, name_field, model_cls):
         url = base_url(model_name)
         data = base_data_func(visibility="public")
         response = api_client.post(url, data, format="json", HTTP_X_GUEST_ID=guest_id)
-        assert response.status_code == 201
-        assert response.json()["visibility"] == "public"
-        assert normalize_case(base_data_func(visibility="public")[name_field]) == normalize_case(response.json()[name_field])
+        assert response.status_code in (400, 403)
 
     def test_user_can_create_public_object(self, api_client, base_url, model_name, base_data_func, user, name_field, model_cls):
         url = base_url(model_name)

@@ -1,4 +1,5 @@
 from django.db.models import Q
+from rest_framework.exceptions import PermissionDenied
 
 class GuestUserRecipeMixin:
     """
@@ -8,7 +9,6 @@ class GuestUserRecipeMixin:
     - Attribue la recette à user ou guest_id lors de la création.
     - Forçage : les éléments créées par un invité sont privées par défaut, sauf si "public" est explicitement demandé.
     """
-
     def get_guest_id(self):
         """Récupère le guest_id depuis le header, les données du body ou les query params."""
         return (
@@ -39,13 +39,35 @@ class GuestUserRecipeMixin:
         """
         user = self.request.user if self.request.user.is_authenticated else None
         guest_id = self.get_guest_id() if not user else None
-        visibility = self.request.data.get("visibility")
 
-        # Par défaut toujours "private", sauf si explicitement public
-        if not visibility or visibility != "public":
-            visibility = "private"
-        save_kwargs = dict(user=user, guest_id=guest_id, visibility=visibility)
-        serializer.save(**save_kwargs)
+        # Si le modèle n’a pas de champ visibility (Store/Ingredient/Pan éventuels), on n’impose rien.
+        model_has_visibility = hasattr(serializer.Meta.model, "visibility")
+
+        if model_has_visibility:
+            visibility = (self.request.data.get("visibility") or "private").lower()
+            # Invité ne peut pas publier
+            if not user and visibility == "public":
+                raise PermissionDenied("Un invité ne peut pas publier en public.")
+            serializer.save(user=user, guest_id=guest_id, visibility=visibility)
+        else:
+            serializer.save(user=user, guest_id=guest_id)
+
+        # visibility = self.request.data.get("visibility")
+
+        # # Par défaut toujours "private", sauf si explicitement public
+        # if not visibility or visibility != "public":
+        #     visibility = "private"
+        # save_kwargs = dict(user=user, guest_id=guest_id, visibility=visibility)
+        # serializer.save(**save_kwargs)
+
+    def perform_update(self, serializer):
+        user = self.request.user if self.request.user.is_authenticated else None
+        model = serializer.Meta.model
+        if hasattr(model, "visibility") and not user:
+            new_visibility = (self.request.data.get("visibility") or "").lower()
+            if new_visibility == "public":
+                raise PermissionDenied("Un invité ne peut pas publier en public.")
+        serializer.save()
 
 class GuestUserReferenceMixin:
     """

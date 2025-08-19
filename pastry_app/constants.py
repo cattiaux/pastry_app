@@ -32,6 +32,18 @@ ALLOWED_LEGO_SEARCH_PARAMS = {
     "target_servings","target_pan_id","include_non_scalable",
 }
 
+ALLOWED_REFERENCE_USES_PARAMS = {
+    # filtres hôte
+    "host_category","host_label","host_tags","has_pan","has_servings",
+    # tri
+    "order",  # score|recent|name
+    # cible
+    "target_pan_id","target_servings",
+    # options UX
+    "include_standalone","include_preview","include_non_scalable",
+    # pagination
+    "page","page_size",
+}
 
 # Liste des catégories disponibles (pour recette et/ou ingrédient) et leur type associé.
 # Format : 

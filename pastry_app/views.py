@@ -9,7 +9,7 @@ from .permissions import *
 from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
-from django.db.models import ProtectedError, Q, QuerySet
+from django.db.models import ProtectedError, Q
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as filters
@@ -431,7 +431,150 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
 
         # get_paginated_response sérialise en {count,next,previous,results:[...]}
         return self.get_paginated_response(ser.data) if page is not None else Response(ser.data, status=status.HTTP_200_OK)
-    
+
+    @action(detail=True, methods=["get"], url_path="reference-uses", permission_classes=[AllowAny])
+    def reference_uses(self, request, pk=None):
+        """
+        Liste les usages d’une préparation.
+
+        Cible: la recette {pk} (préparation). Cette cible n’est pas filtrée par les
+        filter_backends globaux pour cette action (à désactiver via get_filter_backends()).
+
+        Filtres hôte (query params):
+        - has_pan=0|1            (alias: host_has_pan)
+        - has_servings=0|1       (alias: host_has_servings)
+        - host_category=<id>     (cat M2M de l’hôte)
+        - include_standalone=0|1 (inclure l’usage “standalone” de la préparation)
+        - order=name|recent      (par nom d’hôte ou par updated_at décroissant; défaut=name)
+
+        Réponse: liste paginée d’items:
+        {
+            "usage_type": "as_preparation" | "standalone",
+            "host_recipe_id": <int|null>,
+            "host_recipe_name": <str|null>,
+            "has_pan": <bool>,           # pour l’hôte si as_preparation ; pour la prep si standalone
+            "has_servings": <bool>,      # idem
+            "score": <float>             # réservé, aujourd’hui 0.0
+        }
+        """
+        # 1) Préparation visible (pas de filter_queryset ici)
+        prep = get_object_or_404(self.get_queryset(), pk=pk)
+
+        qp = request.query_params
+        def _tobool(v):
+            return str(v).lower() in {"1", "true", "yes"}
+
+        include_standalone = _tobool(qp.get("include_standalone", "0"))
+
+        # Alias côté hôte
+        has_pan_param = qp.get("host_has_pan", qp.get("has_pan"))
+        has_serv_param = qp.get("host_has_servings", qp.get("has_servings"))
+
+        host_category = qp.get("host_category")
+        order = (qp.get("order") or "name").lower()
+
+        # 2) Récupère tous les liens hôte ← préparation
+        #    SubRecipe: recipe = hôte, sub_recipe = préparation
+        links_qs = SubRecipe.objects.filter(sub_recipe_id=prep.id).select_related(
+            "recipe", "recipe__pan"
+        ).only("id", "recipe_id")  # on charge hôte via select_related
+
+        host_ids = [l.recipe_id for l in links_qs]
+        if host_ids:
+            # Restreint aux hôtes visibles via le même périmètre que get_queryset()
+            visible_hosts_qs = (
+                self.get_queryset()
+                .filter(id__in=host_ids)
+                .select_related("pan")
+                .prefetch_related("categories")
+                .only("id", "recipe_name", "updated_at", "pan", "servings_min", "servings_max")
+            )
+            host_by_id = {r.id: r for r in visible_hosts_qs}
+        else:
+            host_by_id = {}
+
+        # 3) Construit les items
+        items = []
+
+        if include_standalone:
+            items.append({
+                "usage_type": "standalone",
+                "host_recipe_id": None,
+                "host_recipe_name": None,
+                "pan_id": prep.pan_id,
+                "servings_min": prep.servings_min,
+                "servings_max": prep.servings_max,
+                "has_pan": prep.pan_id is not None,
+                "has_servings": bool(prep.servings_min or prep.servings_max),
+                "score": 0.0,
+                "_updated_at": prep.updated_at,
+            })
+
+        for link in links_qs:
+            host = host_by_id.get(link.recipe_id)
+            if not host:
+                continue  # hôte non visible pour cet utilisateur/guest
+            items.append({
+                "usage_type": "as_preparation",
+                "host_recipe_id": host.id,
+                "host_recipe_name": host.recipe_name,
+                "pan_id": host.pan_id,
+                "servings_min": host.servings_min,
+                "servings_max": host.servings_max,
+                "has_pan": host.pan_id is not None,
+                "has_servings": bool(host.servings_min or host.servings_max),
+                "score": 0.0,
+                "_updated_at": host.updated_at,
+            })
+
+        # 4) Filtres au niveau HÔTE (ne touchent pas la préparation elle-même)
+        if has_pan_param is not None:
+            want = _tobool(has_pan_param)
+            items = [it for it in items if it["usage_type"] == "standalone" or it["has_pan"] == want]
+
+        if has_serv_param is not None:
+            want = _tobool(has_serv_param)
+            items = [it for it in items if it["usage_type"] == "standalone" or it["has_servings"] == want]
+
+        if host_category:
+            try:
+                cat_id = int(host_category)
+            except ValueError:
+                cat_id = None
+            if cat_id:
+                allowed = set(
+                    self.get_queryset()
+                    .filter(id__in=[it["host_recipe_id"] for it in items if it["usage_type"] == "as_preparation"],
+                            categories__id=cat_id)
+                    .values_list("id", flat=True)
+                )
+                items = [
+                    it for it in items
+                    if it["usage_type"] == "standalone" or it["host_recipe_id"] in allowed
+                ]
+
+        # 5) Tri
+        if order == "recent":
+            items.sort(key=lambda it: it.get("_updated_at"), reverse=True)
+        else:  # name
+            items.sort(key=lambda it: (it["host_recipe_name"] or "").lower())
+
+        # 6) Nettoyage champ interne et pagination
+        for it in items:
+            it.pop("_updated_at", None)
+
+        page = self.paginate_queryset(items)
+        if page is not None:
+            ser = ReferenceUseSerializer(page, many=True)
+            return self.get_paginated_response(ser.data)
+        ser = ReferenceUseSerializer(items, many=True)
+        return Response(ser.data)
+
+    def get_filter_backends(self):
+        if getattr(self, "action", None) in {"reference_uses"}:
+            return []
+        return super().get_filter_backends()
+
     def get_queryset(self):
         """
         1) Retourne les recettes visibles pour l'utilisateur courant (connecté ou invité).
@@ -442,7 +585,7 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         2) Ajoute select_related/prefetch selon le contexte:
         - list: léger
         - retrieve/actions: complet
-        """
+        """    
         # Étape 1 : Récupère le queryset de base (incluant user/guest_id/public/de base)
         qs = super().get_queryset()
         user = self.request.user
@@ -465,6 +608,9 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         parent_recipe = self.request.query_params.get("parent_recipe")
         if parent_recipe:
             qs = qs.filter(parent_recipe=parent_recipe)
+
+
+        print("[get_queryset] end visible_count=", qs.count())
 
         # --- Étape enrichissement conditionnel ---
         qs = qs.select_related("pan").order_by("recipe_name","chef_name")
@@ -851,6 +997,17 @@ class RecipeAdaptationAPIView(APIView):
     - changement de nombre de portions,
     - adaptation en se basant sur une recette de référence.
 
+    ## Contrat:
+      - POST /api/recipe-adapt/
+      - Body JSON:
+          recipe_id (int, requis)
+          target_pan_id (int, optionnel)
+          target_servings (int, optionnel)
+          reference_recipe_id (int, optionnel)
+          prefer_reference (bool, optionnel, défaut False)
+      - Au moins un critère parmi target_pan_id | target_servings | reference_recipe_id.
+      - target_pan_id et target_servings peuvent être fournis ensemble (le moteur gère).
+
     ## Modes supportés (gérés par `get_scaling_multiplier`) :
 
     **Adaptations directes :**
@@ -864,15 +1021,21 @@ class RecipeAdaptationAPIView(APIView):
            (recette cible adaptée vers le target_pan ou target_servings en conservant les proportions de la référence)
         6. `reference_recipe_servings` — Adaptation à partir d'une recette de référence avec servings connus 
            (recette cible adaptée vers le target_pan ou target_servings)
-        
-    ## Règles métier :
-        - `recipe_id` est obligatoire.
-        - Il faut fournir au moins un critère : `target_pan_id`, `target_servings` ou `reference_recipe_id`.
 
     ## Priorité effective :
         - Par défaut: adaptation directe si possible, puis fallback via référence
         - Si `prefer_reference=true` ET `reference_recipe_id` fourni: on tente d’abord par référence (puis fallback direct)
+
+    ## Sortie:
+      - Données scalées (format de scale_recipe_globally)
+      - scaling_mode (str)
+      - scaling_multiplier (float)
+
+    ## Sécurité:
+      - Aucune persistance ici. Pour créer une variation, utiliser POST /api/recipes/{id}/adapt/.
     """
+    permission_classes = [AllowAny]
+
     def post(self, request, *args, **kwargs):
         """
         Adapte une recette selon l’un des modes décrits dans la docstring.
@@ -895,26 +1058,60 @@ class RecipeAdaptationAPIView(APIView):
 
         if not recipe_id:
             return Response({"error": "recipe_id est requis"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            recipe_id = int(recipe_id)
+        except (TypeError, ValueError):
+            return Response({"error": "recipe_id doit être un entier."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Chargement de la recette
         recipe = get_object_or_404(Recipe, pk=recipe_id)
-        target_pan = get_object_or_404(Pan, pk=target_pan_id) if target_pan_id else None
-        reference_recipe = get_object_or_404(Recipe, pk=reference_recipe_id) if reference_recipe_id else None
+        target_pan = None
+
+        if target_pan_id is not None:
+            try:
+                target_pan = get_object_or_404(Pan, pk=int(target_pan_id))
+            except (TypeError, ValueError):
+                return Response({"error": "target_pan_id doit être un entier."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if target_servings is not None:
+            try:
+                target_servings = int(target_servings)
+            except (TypeError, ValueError):
+                return Response({"error": "target_servings doit être un entier."}, status=status.HTTP_400_BAD_REQUEST)
+
+        reference_recipe = None
+        if reference_recipe_id is not None:
+            try:
+                reference_recipe = get_object_or_404(Recipe, pk=int(reference_recipe_id))
+            except (TypeError, ValueError):
+                return Response({"error": "reference_recipe_id doit être un entier."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Contrôle : il faut au moins un critère d’adaptation
         if not target_pan and not target_servings and not reference_recipe:
             return Response({"error": "Il faut fournir un moule cible, un nombre de portions cible ou une recette de référence."}, 
                             status=status.HTTP_400_BAD_REQUEST)
 
+        # Contexte conversions (unit→g)
+        user = request.user if request.user.is_authenticated else None
+        guest_id = (
+            request.headers.get("X-Guest-Id")
+            or request.headers.get("X-GUEST-ID")
+            or request.data.get("guest_id")
+            or request.query_params.get("guest_id")
+        )
+        if user:
+            guest_id = None  # jamais les deux
+
+        # Calcul + scaling
         try:
             # 1. Calcul du multiplicateur global (la logique interne gère la priorité)
             multiplier, scaling_mode = get_scaling_multiplier(recipe, target_pan=target_pan, target_servings=target_servings, 
                                                               reference_recipe=reference_recipe, prefer_reference=prefer_reference)
             # 2. Application du scaling partout
-            data = scale_recipe_globally(recipe, multiplier)
+            data = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id)
             # 3. Infos utiles en plus
             data["scaling_mode"] = scaling_mode
-            data["scaling_multiplier"] = multiplier  
+            data["scaling_multiplier"] = float(multiplier)  
             return Response(data, status=status.HTTP_200_OK)
 
         except ValueError as e:

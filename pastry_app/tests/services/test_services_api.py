@@ -224,6 +224,7 @@ URL_PAN_SUGGESTION = f"{API_PREFIX}/pan-suggestion/"
 URL_RECIPES_ADAPT_BY_ING = f"{API_PREFIX}/recipes-adapt/by-ingredient/"
 URL_RECIPES_LIST = f"{API_PREFIX}/recipes/"
 URL_RECIPES_LEGO_CANDIDATES = f"{API_PREFIX}/recipes/lego-candidates/"
+URL_RECIPES_REFERENCE_USES = f"{API_PREFIX}/recipes/{{id}}/reference-uses/"
 
 # -------------------------------------------------------------------
 # Helpers
@@ -1040,7 +1041,7 @@ def test_recipes_list__ordering_updated_at(api_client, base_ingredients):
         assert ids.index(newer.id) < ids.index(older.id)
 
 # =========================
-# /recipes/lego-candidates/ — GET (B1)
+# /recipes/lego-candidates/ — GET
 # =========================
 
 def _extract_results_or_list(resp):
@@ -1165,3 +1166,166 @@ def test_lego_candidates__default_ordering_by_name_then_recent(api_client, base_
     if a.id in ids and b.id in ids:
         # même nom → b plus récent doit venir avant a
         assert ids.index(b.id) < ids.index(a.id)
+
+# =========================
+# /recipes/{id}/reference-uses/ — GET
+# =========================
+
+def _extract_uses(resp):
+    data = resp.json()
+    return data.get("results", data) if isinstance(data, dict) else data
+
+def test_reference_uses__basic_200_and_payload_shape(api_client, subrecipes, recettes_choux):
+    """
+    Doit répondre 200 et renvoyer une liste d'usages.
+    Chaque item expose au minimum: usage_type, host_recipe_id, host_recipe_name.
+    Les hôtes attendus pour 'pâte à choux' sont les 4 recettes “choux”.
+    """
+    prep = subrecipes["pate_choux"]
+    r = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id))
+    assert r.status_code == 200, r.data
+
+    items = _extract_uses(r)
+    assert isinstance(items, list)
+    if items:
+        must_keys = {"usage_type", "host_recipe_id", "host_recipe_name"}
+        assert must_keys <= set(items[0].keys())
+
+    expected_hosts = {
+        recettes_choux["eclair_choco"].id,
+        recettes_choux["eclair_cafe"].id,
+        recettes_choux["religieuse_cafe"].id,
+        recettes_choux["paris_brest_choco"].id,
+    }
+    got_hosts = {it["host_recipe_id"] for it in items}
+    assert expected_hosts <= got_hosts
+
+def test_reference_uses__filter_by_host_category(api_client, subrecipes, base_categories):
+    """
+    Filtre par catégorie hôte: host_category=<id cat>.
+    Pour 'pâte à choux' et cat 'éclair', on ne garde que les usages dont l’hôte a cette catégorie.
+    """
+    prep = subrecipes["pate_choux"]
+    cat_eclair_id = base_categories["eclair"].id
+
+    r = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id), {"host_category": cat_eclair_id})
+    assert r.status_code == 200
+    items = _extract_uses(r)
+    assert all("éclair" in it["host_recipe_name"].lower() for it in items)
+
+def test_reference_uses__has_pan_and_has_servings_filters(api_client, subrecipes, recettes_choux):
+    """
+    has_pan=1 -> garde seulement les hôtes avec pan.
+    has_servings=1 -> garde seulement les hôtes avec servings.
+    """
+    prep = subrecipes["pate_choux"]
+
+    # has_pan=1
+    r_pan = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id), {"has_pan": 1, "guest_id":"test-guest"})
+    print(r_pan.json())
+    assert r_pan.status_code == 200
+    ids_pan = {it["host_recipe_id"] for it in _extract_uses(r_pan)}
+    assert recettes_choux["eclair_choco"].id in ids_pan
+    assert recettes_choux["religieuse_cafe"].id in ids_pan
+    assert recettes_choux["paris_brest_choco"].id in ids_pan
+    # l’éclair café n’a pas de pan → absent
+    assert recettes_choux["eclair_cafe"].id not in ids_pan
+
+    # has_servings=1
+    r_serv = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id), {"has_servings": 1})
+    assert r_serv.status_code == 200
+    ids_serv = {it["host_recipe_id"] for it in _extract_uses(r_serv)}
+    # nos 4 hôtes ont des servings dans les fixtures
+    assert {
+        recettes_choux["eclair_choco"].id,
+        recettes_choux["eclair_cafe"].id,
+        recettes_choux["religieuse_cafe"].id,
+        recettes_choux["paris_brest_choco"].id,
+    } <= ids_serv
+
+def test_reference_uses__order_recent(api_client, subrecipes):
+    """
+    Valide un tri supporté par l’API: order=name (alphabétique).
+    """
+    prep = subrecipes["pate_choux"]
+    r = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id), {"order": "name"})
+    assert r.status_code == 200
+    items = _extract_uses(r)
+    names = [it["host_recipe_name"] for it in items]
+    assert names == sorted(names, key=lambda s: s.lower())
+
+def test_reference_uses__pagination_keys_when_paginated(api_client, subrecipes):
+    """
+    Si la pagination DRF est active, la réponse doit exposer count/next/previous/results.
+    """
+    prep = subrecipes["pate_choux"]
+    r = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id), {"page": 1})
+    assert r.status_code == 200
+    data = r.json()
+    if isinstance(data, dict):
+        assert {"count", "next", "previous", "results"} <= set(data.keys())
+
+def test_end_to_end__candidates_then_reference_uses(api_client, recettes_choux):
+    """
+    Enchaînement global:
+      1) recherche candidats avec q="choux"
+      2) on prend l’item dont le nom contient "pâte à choux"
+      3) on appelle /reference-uses/ et on vérifie que les hôtes attendus sont listés.
+    """
+    r1 = _get(api_client, URL_RECIPES_LEGO_CANDIDATES, {"q": "choux"})
+    assert r1.status_code == 200
+    candidates = _extract_results_or_list(r1)
+    assert isinstance(candidates, list) and candidates
+
+    # pick 'pâte à choux'
+    cand = next(c for c in candidates if "choux" in c["recipe_name"].lower())
+    uses_resp = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=cand["id"]))
+    assert uses_resp.status_code == 200
+    uses = _extract_uses(uses_resp)
+    host_ids = {u["host_recipe_id"] for u in uses}
+
+    assert {
+        recettes_choux["eclair_choco"].id,
+        recettes_choux["eclair_cafe"].id,
+        recettes_choux["religieuse_cafe"].id,
+        recettes_choux["paris_brest_choco"].id,
+    } <= host_ids
+
+def test_reference_uses__standalone_toggle(api_client, subrecipes):
+    """
+    Par défaut, pas de ligne 'standalone'.
+    Avec include_standalone=1, on doit voir un item usage_type='standalone' et host_* = null.
+    """
+    prep = subrecipes["pate_choux"]
+
+    r0 = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id))
+    assert r0.status_code == 200
+    items0 = _extract_uses(r0)
+    assert not any(it["usage_type"] == "standalone" for it in items0)
+
+    r1 = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id), {"include_standalone": 1})
+    assert r1.status_code == 200
+    items1 = _extract_uses(r1)
+    st = [it for it in items1 if it["usage_type"] == "standalone"]
+    assert len(st) == 1
+    assert st[0]["host_recipe_id"] is None and st[0]["host_recipe_name"] is None
+
+def test_reference_uses__alias_params_equivalence(api_client, subrecipes):
+    """
+    Les alias host_has_pan / host_has_servings sont équivalents à has_pan / has_servings.
+    """
+    prep = subrecipes["pate_choux"]
+
+    # has_pan=1
+    r_a = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id), {"has_pan": 1})
+    r_b = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id), {"host_has_pan": 1})
+    ids_a = {it["host_recipe_id"] for it in _extract_uses(r_a) if it["usage_type"] == "as_preparation"}
+    ids_b = {it["host_recipe_id"] for it in _extract_uses(r_b) if it["usage_type"] == "as_preparation"}
+    assert ids_a == ids_b
+
+    # has_servings=1
+    r_c = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id), {"has_servings": 1})
+    r_d = _get(api_client, URL_RECIPES_REFERENCE_USES.format(id=prep.id), {"host_has_servings": 1})
+    ids_c = {it["host_recipe_id"] for it in _extract_uses(r_c) if it["usage_type"] == "as_preparation"}
+    ids_d = {it["host_recipe_id"] for it in _extract_uses(r_d) if it["usage_type"] == "as_preparation"}
+    assert ids_c == ids_d

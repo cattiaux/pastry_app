@@ -1133,3 +1133,23 @@ class RecipeReferenceSuggestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Recipe
         fields = ["id", "recipe_name", "total_recipe_quantity", "category", "parent_category"]
+
+class ReferenceUseSerializer(serializers.Serializer):
+    """
+    Item “usage” retourné par /recipes/{id}/reference-uses/.
+    Par défaut pas de prévisualisation de quantités.
+    Les champs de preview (qty, unit) ne sont présents que si include_preview=1.
+    """
+    usage_type = serializers.ChoiceField(choices=["standalone","as_preparation"])
+    host_recipe_id = serializers.IntegerField(required=False, allow_null=True)
+    host_recipe_name = serializers.CharField(required=False, allow_null=True)
+    pan_id = serializers.IntegerField(required=False, allow_null=True)
+    servings_min = serializers.IntegerField(required=False, allow_null=True)
+    servings_max = serializers.IntegerField(required=False, allow_null=True)
+    has_pan = serializers.BooleanField(required=False)
+    has_servings = serializers.BooleanField(required=False)
+    score = serializers.FloatField(required=False)
+
+    # Champs optionnels de preview (activés avec include_preview=1)
+    suggested_quantity_for_target = serializers.FloatField(required=False, allow_null=True)
+    unit = serializers.CharField(required=False, allow_null=True)

@@ -312,12 +312,15 @@ def test_adapt_recipe_appears_in_list(api_client, base_url, base_recipe_data, us
     all_names = [r["recipe_name"] for r in resp.data]
     assert fork["recipe_name"] in all_names
 
-def test_guest_can_delete_own_adaptation(api_client, base_url, base_recipe_data, guest_id):
+def test_guest_can_delete_own_adaptation(api_client, base_url, base_recipe_data, user, guest_id):
     """Un invité peut supprimer sa propre adaptation."""
     url= base_url(model_name)
+    api_client.force_authenticate(user=user)
     payload = copy.deepcopy(base_recipe_data)
     payload["visibility"] = "public"
     mother = api_client.post(url, payload, format="json").data
+
+    api_client.force_authenticate(user=None)
     payload["recipe_name"] = "fork"
     response = api_client.post(f"{url}{mother['id']}/adapt/", payload, format="json", HTTP_X_GUEST_ID=guest_id)
     fork = response.data
@@ -325,12 +328,15 @@ def test_guest_can_delete_own_adaptation(api_client, base_url, base_recipe_data,
     resp = api_client.delete(fork_url, HTTP_X_GUEST_ID=guest_id)
     assert resp.status_code in (204, 200)
 
-def test_guest_cannot_delete_others_adaptation(api_client, base_url, base_recipe_data, guest_id):
+def test_guest_cannot_delete_others_adaptation(api_client, base_url, base_recipe_data, user):
     """Un invité ne peut pas supprimer l’adaptation d’un autre invité."""
     url= base_url(model_name)
+    api_client.force_authenticate(user=user)
     payload = copy.deepcopy(base_recipe_data)
     payload["visibility"] = "public"
     mother = api_client.post(url, payload, format="json").data
+
+    api_client.force_authenticate(user=None)
     payload["recipe_name"] = "fork"
     fork = api_client.post(f"{url}{mother['id']}/adapt/", payload, format="json", HTTP_X_GUEST_ID="guestA").data
     fork_url = f"{url}{fork['id']}/"

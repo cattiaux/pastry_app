@@ -383,7 +383,7 @@ class Recipe(models.Model):
     @property
     def servings_avg(self):
         if self.servings_min and self.servings_max:
-            return (self.servings_min + self.servings_max) / 2
+            return int((self.servings_min + self.servings_max) / 2)
         if self.servings_min:
             return self.servings_min
         if self.servings_max:

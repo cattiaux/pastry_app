@@ -125,35 +125,6 @@ def test_update_to_duplicate_recipe_api(api_client, base_url, user):
 # Logique métier : parent, variation, cycles, contenu
 # ----------------------------------------
 
-# @pytest.mark.parametrize(
-#     "with_user, with_guest_id, should_error",
-#     [
-#         (True,  True,  True),    # user + guest_id → erreur attendu
-#         (True,  False, False),   # seulement user → OK
-#         (False, True,  False),   # seulement guest_id → OK
-#         (False, False, False),   # aucun des deux → OK
-#     ]
-# )
-# def test_api_recipe_user_and_guest_id(api_client, base_url, user, with_user, with_guest_id, should_error):
-#     url = base_url(model_name) 
-#     data = base_recipe_data() 
-
-#     if with_user:
-#         api_client.force_authenticate(user=user)
-#     else:
-#         api_client.force_authenticate(user=None)
-
-#     if with_guest_id:
-#         api_client.credentials(HTTP_X_GUEST_ID="guestid-xyz")
-
-#     response = api_client.post(url, data, format="json")
-#     print(response.json())
-#     if should_error:
-#         assert response.status_code == status.HTTP_400_BAD_REQUEST
-#         assert "Une recette ne peut pas avoir à la fois un user et un guest_id." in response.json()['non_field_errors']
-#     else:
-#         assert response.status_code in [status.HTTP_201_CREATED, status.HTTP_200_OK]
-
 def test_cannot_be_own_parent(api_client, base_url, user):
     api_client.force_authenticate(user=user)
     data = base_recipe_data()
@@ -343,10 +314,11 @@ def test_adaptation_permissions(api_client, base_url, user, other_user):
     resp2 = api_client.patch(fork_url, {"recipe_name": "forbidden"}, format="json")
     assert resp2.status_code in [403, 404]
 
-def test_adaptation_permissions_guest(api_client, base_url, guest_id):
+def test_adaptation_permissions_guest(api_client, base_url, user, guest_id):
     """Un invité ne peut modifier/supprimer QUE ses propres adaptations."""
     url= base_url(model_name)
     # Crée la recette mère
+    api_client.force_authenticate(user=user)
     mother = api_client.post(url, base_recipe_data(visibility="public"), format="json").data
     # Invité A adapte la recette
     api_client.force_authenticate(user=None)
@@ -435,3 +407,40 @@ def test_soft_hide_base_recipe_for_user(api_client, base_url, user, other_user):
     api_client.force_authenticate(user=other_user)
     list_resp2 = api_client.get(url)
     assert any(r["id"] == base_id for r in list_resp2.json())
+
+def test_guest_preview_and_private_save_but_not_public(api_client, base_url, user, guest_id):
+    """
+    Un invité :
+    - peut prévisualiser une adaptation d’une recette publique,
+    - peut créer une variante privée,
+    - ne peut pas publier (création ou update -> 403).
+    """
+    url = base_url("recipes")
+
+    # 1) Crée une recette mère publique en utilisateur authentifié
+    api_client.force_authenticate(user=user)
+    mother_payload = base_recipe_data(visibility="public")
+    mother = api_client.post(url, mother_payload, format="json").data
+    assert "id" in mother
+    mother_id = mother["id"]
+
+    # 2) Prévisualisation d’adaptation en invité
+    api_client.force_authenticate(user=None)
+    preview = api_client.post("/api/recipes-adapt/", {"recipe_id": mother_id, "target_servings": 8}, format="json", HTTP_X_GUEST_ID=guest_id)
+    assert preview.status_code == 200
+    assert "scaling_multiplier" in preview.data
+
+    # 3) Création d’une variante en invité -> doit être privée
+    fork_payload = base_recipe_data(recipe_name="guest-variant", steps=[{"step_number": 1, "instruction": "ok"}])
+    fork = api_client.post(f"{url}{mother_id}/adapt/", fork_payload, format="json", HTTP_X_GUEST_ID=guest_id)
+    assert fork.status_code == 201, fork.data
+    fork_id = fork.data["id"]
+    assert fork.data["visibility"] == "private"
+
+    # 4) Tentative de publication en création directe -> 403
+    create_public = api_client.post(url, base_recipe_data(recipe_name="pub-by-guest", visibility="public"), format="json", HTTP_X_GUEST_ID=guest_id)
+    assert create_public.status_code in (400, 403)
+
+    # 5) Tentative de passer la variante en public -> 403
+    patch_public = api_client.patch(f"{url}{fork_id}/", {"visibility": "public"}, format="json", HTTP_X_GUEST_ID=guest_id)
+    assert patch_public.status_code in (400, 403)
