@@ -540,12 +540,16 @@ def test_pan_estimation__validation_error_when_no_inputs(api_client):
     (400 ou 422) et que le message mentionne pan_id ou volume_raw.
     """
     resp = _post(api_client, URL_PAN_ESTIMATION, {})
-    print(resp.json())
     assert resp.status_code in (400, 422)
     # message du serializer
     if resp.status_code == 400:
         msgs = " ".join(resp.json().get("non_field_errors", []))
         assert "pan_id" in msgs or "volume_raw" in msgs
+
+def test_pan_estimation_missing_params_returns_400(api_client):
+    """Pan-estimation sans paramètres obligatoires → 400."""
+    resp = api_client.post(URL_PAN_ESTIMATION, {}, format="json")
+    assert resp.status_code == 400
 
 # ===================================================================
 # /pan-suggestion/ — POST
@@ -1329,3 +1333,6 @@ def test_reference_uses__alias_params_equivalence(api_client, subrecipes):
     ids_c = {it["host_recipe_id"] for it in _extract_uses(r_c) if it["usage_type"] == "as_preparation"}
     ids_d = {it["host_recipe_id"] for it in _extract_uses(r_d) if it["usage_type"] == "as_preparation"}
     assert ids_c == ids_d
+
+
+

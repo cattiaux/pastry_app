@@ -353,6 +353,8 @@ class Recipe(models.Model):
     # Tracking
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Compteur de version pour verrou optimiste
+    version = models.PositiveIntegerField(default=1)  # Incrémenté à chaque modification persistante pour détecter les conflits de concurrence côté API.
 
     # Utilisateur
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="recipes", blank=True, null=True)  # null=True pour migrer en douceur
@@ -390,7 +392,7 @@ class Recipe(models.Model):
             return self.servings_max
         return None
 
-    def compute_and_set_total_quantity(self, force=False, user=None, guest_id=None, save=True):
+    def compute_and_set_total_quantity(self, force=False, user=None, guest_id=None, save=True, cache=None):
         """
         Calcule la quantité totale produite par la recette en grammes,
         en convertissant chaque ingrédient selon son unité (avec fallback sur la table de correspondance).
@@ -400,6 +402,9 @@ class Recipe(models.Model):
         - Par défaut, maj le champ et save, sauf si save=False.
         """
         if self.total_recipe_quantity is None or force:
+            if cache is None:
+                cache = {}
+
             total = 0
             errors = []
             for rec_ing in self.recipe_ingredients.all():
@@ -413,10 +418,20 @@ class Recipe(models.Model):
                     total += qte * 1000
                 else:
                     # Cherche correspondance unité→g (priorité user/guest puis globale)
-                    ref = IngredientUnitReference.objects.filter(ingredient=rec_ing.ingredient, unit=unit, 
-                                                                is_hidden=False, user=user, guest_id=guest_id
-                    ).first() or IngredientUnitReference.objects.filter(ingredient=rec_ing.ingredient, unit=unit, 
-                                                                        is_hidden=False, user__isnull=True, guest_id__isnull=True).first()
+                    key_user = ("IUR", rec_ing.ingredient_id, unit, getattr(user, "id", None), guest_id)
+                    ref = cache.get(key_user)
+                    if ref is None:
+                        ref = (IngredientUnitReference.objects
+                               .filter(ingredient=rec_ing.ingredient, unit=unit, is_hidden=False, user=user, guest_id=guest_id).first())
+                        if ref is None:
+                            key_global = ("IUR", rec_ing.ingredient_id, unit, None, None)
+                            ref = cache.get(key_global)
+                            if ref is None:
+                                ref = (IngredientUnitReference.objects
+                                       .filter(ingredient=rec_ing.ingredient, unit=unit, is_hidden=False, user__isnull=True, guest_id__isnull=True).first())
+                                cache[key_global] = ref
+                        cache[key_user] = ref
+
                     if ref:
                         total += qte * ref.weight_in_grams
                     else:

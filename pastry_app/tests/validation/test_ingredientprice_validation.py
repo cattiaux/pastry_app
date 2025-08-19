@@ -191,6 +191,3 @@ def test_api_delete_no_archive(api_client, base_url, ingredient_price):
         date=ingredient_price.date,
     ).exists()
     assert not archived, "Aucune archive ne doit être créée à la suppression via l’API."
-
-
-

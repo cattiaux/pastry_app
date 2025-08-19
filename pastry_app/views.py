@@ -9,6 +9,8 @@ from .permissions import *
 from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.utils import IntegrityError 
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
 from django.db.models import ProtectedError, Q
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
@@ -20,6 +22,8 @@ from .models import *
 from .serializers import *
 from .mixins import *
 from .constants import *
+import logging
+logger = logging.getLogger(__name__)
 
 # Alias pour ?q= en plus de ?search=
 class QSearchFilter(SearchFilter):
@@ -203,9 +207,15 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     - Modification/suppression :
         - pour le propriétaire (user ou guest_id)
         - INTERDIT pour les recettes de base (is_default=True)
+
+    POST /api/recipes/ :
+    - Exige que categories/labels/ingredients référencés existent déjà (IDs valides).
+    - L'opération est atomique: création + M2M dans la même transaction.
+    - Ordre recommandé côté client: créer dépendances -> poster la recette -> lier steps / sub-recipes.
     """
     queryset = Recipe.objects.all()\
-        .prefetch_related("categories", "labels", "recipe_ingredients", "steps", "main_recipes")\
+        .prefetch_related("categories", "labels", "recipe_ingredients__ingredient", "steps", "main_recipes__sub_recipe", 
+                          "main_recipes__sub_recipe__recipe_ingredients__ingredient", "main_recipes__sub_recipe__main_recipes__sub_recipe")\
         .select_related("pan", "parent_recipe", "owned_by_recipe")\
         .order_by("recipe_name", "chef_name")
     serializer_class = RecipeSerializer
@@ -398,10 +408,24 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
             ri.save()
             changed += 1
 
+        # Verrou optimiste sur l'hôte
+        conflict = self._check_if_match(request, host)
+        if conflict:
+            return conflict
+
         # Recalcul d'aperçu
         m = float(request.data.get("multiplier", 1.0))
-        out = scale_recipe_globally(host, m, user=user, guest_id=guest_id)
-        return Response({"changed": changed, "recipe": out}, status=status.HTTP_200_OK)
+        cache = {}  # cache court, partagé pour cette requête
+        out = scale_recipe_globally(host, m, user=user, guest_id=guest_id, cache=cache)
+        # Surface explicite de la source du scaling (ici, fournie par le client)
+        scaling = {"multiplier": float(m), "mode": "client_multiplier"}
+        logger.info("bulk-edit recipe_id=%s mode=%s mult=%.6f", host.id, scaling["mode"], scaling["multiplier"])
+
+        # Incrémente la version de la recette hôte après modification de sa variante liée
+        host.version += 1
+        host.save(update_fields=["version"])
+
+        return Response({"changed": changed, "scaling": scaling, "recipe": out}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["get"], url_path="lego-candidates")
     def lego_candidates(self, request):
@@ -609,9 +633,6 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         if parent_recipe:
             qs = qs.filter(parent_recipe=parent_recipe)
 
-
-        print("[get_queryset] end visible_count=", qs.count())
-
         # --- Étape enrichissement conditionnel ---
         qs = qs.select_related("pan").order_by("recipe_name","chef_name")
 
@@ -636,6 +657,12 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         - Retourne une erreur métier explicite.
         """
         instance = self.get_object()
+
+        # Verrou optimiste sur destroy (optionnel mais utile)
+        conflict = self._check_if_match(request, instance)
+        if conflict:
+            return conflict
+
         # Cas 1 : Recette de base → soft-hide pour ce user ou guest_id
         if instance.is_default:
             user = request.user if request.user.is_authenticated else None
@@ -672,6 +699,49 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
 
         # Cas normal : suppression réussie
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # ---- Verrou optimiste: méthodes CRUD de Recipe ----
+    def _check_if_match(self, request, instance):
+        """
+        Vérifie le header HTTP 'If-Match' contre instance.version (verrou optimiste).
+        - Si présent et différent, on renvoie 409 pour signaler un conflit de concurrence.
+        - Sinon, on laisse la mutation se poursuivre.
+        """
+        client_ver = request.headers.get("If-Match")
+        if client_ver is not None and str(instance.version) != str(client_ver):
+            return Response({"detail": "Version conflict"}, status=status.HTTP_409_CONFLICT)
+        return None
+
+    def update(self, request, *args, **kwargs):
+        """
+        PATCH/PUT avec verrou optimiste.
+        1) Bloque si If-Match ne correspond pas à instance.version (409).
+        2) Exécute l'update.
+        3) Incrémente instance.version pour signaler un nouvel état.
+        """
+        instance = self.get_object()
+        conflict = self._check_if_match(request, instance)
+        if conflict:
+            return conflict
+        resp = super().update(request, *args, **kwargs)
+        instance.refresh_from_db()
+        instance.version += 1
+        instance.save(update_fields=["version"])
+        return resp
+
+    def partial_update(self, request, *args, **kwargs):
+        """
+        PATCH partiel avec verrou optimiste (même logique que update()).
+        """
+        instance = self.get_object()
+        conflict = self._check_if_match(request, instance)
+        if conflict:
+            return conflict
+        resp = super().partial_update(request, *args, **kwargs)
+        instance.refresh_from_db()
+        instance.version += 1
+        instance.save(update_fields=["version"])
+        return resp
 
 class IngredientViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     queryset = Ingredient.objects.all().order_by('ingredient_name')
@@ -1107,8 +1177,11 @@ class RecipeAdaptationAPIView(APIView):
             # 1. Calcul du multiplicateur global (la logique interne gère la priorité)
             multiplier, scaling_mode = get_scaling_multiplier(recipe, target_pan=target_pan, target_servings=target_servings, 
                                                               reference_recipe=reference_recipe, prefer_reference=prefer_reference)
+            # Log audit
+            logger.info("scaling recipe_id=%s mode=%s multiplier=%.6f", recipe.id, scaling_mode, float(multiplier))
             # 2. Application du scaling partout
-            data = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id)
+            cache = {}
+            data = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache)
             # 3. Infos utiles en plus
             data["scaling_mode"] = scaling_mode
             data["scaling_multiplier"] = float(multiplier)  
@@ -1117,6 +1190,7 @@ class RecipeAdaptationAPIView(APIView):
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+@method_decorator(cache_page(10), name="dispatch")
 class PanEstimationAPIView(APIView):
     """
     API permettant d’estimer le volume et le nombre de portions d’un moule (pan), 
@@ -1139,6 +1213,7 @@ class PanEstimationAPIView(APIView):
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
 
+@method_decorator(cache_page(10), name="dispatch")
 class PanSuggestionAPIView(APIView):
     """
     API permettant de suggérer des moules en fonction d’un nombre de portions cible,
@@ -1176,15 +1251,18 @@ class RecipeAdaptationByIngredientAPIView(APIView):
         ingredient_constraints = {int(k): v for k, v in serializer.validated_data["ingredient_constraints"].items()}
 
         try:
+            cache = {}
             # 1. Normalise vers l’unité attendue par la recette (via IngredientUnitReference)
-            normalized_constraints = normalize_constraints_for_recipe(recipe, ingredient_constraints, user=user, guest_id=guest_id)
+            normalized_constraints = normalize_constraints_for_recipe(recipe, ingredient_constraints, user=user, guest_id=guest_id, cache=cache)
             # 2. Calcul du multiplicateur limitant
             multiplier, limiting_ingredient_id = get_limiting_multiplier(recipe, ingredient_constraints)
             # 3. Adaptation globale
-            result = scale_recipe_globally(recipe, multiplier)
+            result = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache)
             # 4. Ajoute les infos utiles au retour
             result["limiting_ingredient_id"] = limiting_ingredient_id
-            result["multiplier"] = multiplier
+            result["multiplier"] = float(multiplier)
+            result["scaling_mode"] = "limiting_ingredient"
+            logger.info("limit-scale recipe_id=%s limiting_ingredient_id=%s multiplier=%.6f", recipe.id, limiting_ingredient_id, float(multiplier))
             return Response(result, status=status.HTTP_200_OK)
 
         except ValidationError as e:

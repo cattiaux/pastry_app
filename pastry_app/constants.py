@@ -45,6 +45,10 @@ ALLOWED_REFERENCE_USES_PARAMS = {
     "page","page_size",
 }
 
+SERVING_VOLUME_ML = 150  # volume standard pour 1 portion
+
+
+
 # Liste des catégories disponibles (pour recette et/ou ingrédient) et leur type associé.
 # Format : 
 #   - clé interne : Utilisée pour les bases de données ou les API. Normalement en minuscule sans espace pour éviter les erreurs.

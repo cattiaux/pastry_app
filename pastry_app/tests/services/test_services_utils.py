@@ -238,7 +238,7 @@ def test_scaling_with_target_servings_uses_servings_mode_and_ratio():
     """
     # Source avec servings min/max (moyenne = 10)
     r = Recipe.objects.create(recipe_name="tarte", chef_name="yyy", servings_min=8, servings_max=12, total_recipe_quantity=2000)
-    mult, mode = get_scaling_multiplier_old(recipe=r, target_servings=15)
+    mult, mode = get_scaling_multiplier(recipe=r, target_servings=15)
     assert mode == "servings"
     # Vtarget/Vsource = (15*150) / (10*150) = 2250 / 1500 = 1.5
     expected = servings_to_volume(15) / servings_to_volume((8 + 12) / 2)
@@ -258,7 +258,7 @@ def test_adapt_recipe_servings_to_servings(smin, smax, target, expected_ratio):
     - le calcul part de la moyenne quand min & max sont présents
     """
     r = Recipe.objects.create(recipe_name="genoise", chef_name="zzz", servings_min=smin, servings_max=smax, total_recipe_quantity=1200)
-    mult, mode = get_scaling_multiplier_old(recipe=r, target_servings=target)
+    mult, mode = get_scaling_multiplier(recipe=r, target_servings=target)
     assert mode == "servings"
     assert mult == pytest.approx(expected_ratio, rel=1e-9)
 
@@ -335,6 +335,17 @@ def test_multiplier_prefer_reference_pan_path_when_flag_true(recette_eclair_choc
     assert m == pytest.approx(expected)
     assert mode in ("reference_recipe_pan", "pan")  # on attend "reference_recipe_pan"
     assert mode == "reference_recipe_pan"
+
+def test_multiplier_stays_on_direct_when_prefer_reference_false(recette_eclair_choco, recette_religieuse_cafe, base_pans):
+    """Même si une référence existe, sans prefer_reference on reste en chemin direct pan→pan."""
+    source = recette_eclair_choco
+    reference = recette_religieuse_cafe
+    target_pan = base_pans["round_small"]
+    m, mode = get_scaling_multiplier(source, target_pan=target_pan, reference_recipe=reference, prefer_reference=False)
+    expected = target_pan.volume_cm3_cache / source.pan.volume_cm3_cache
+    assert mode in ("pan", "servings")
+    assert mode == "pan"
+    assert m == pytest.approx(expected)
 
 def test_multiplier_prefer_reference_servings_path_when_flag_true(recette_eclair_choco, recette_eclair_cafe):
     """
@@ -1112,3 +1123,5 @@ def test_variant_modifs_source_not_impact_variant(base_ingredients):
     ri_V.save()
     assert B.recipe_ingredients.get(ingredient_id=far.ingredient_id).quantity == 999.0
     assert v.recipe_ingredients.get(ingredient_id=far.ingredient_id).quantity == 111.0
+
+

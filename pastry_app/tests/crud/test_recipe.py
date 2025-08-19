@@ -1,7 +1,7 @@
 import pytest, copy
 from rest_framework import status
 from django.contrib.auth import get_user_model
-from pastry_app.models import Recipe, Ingredient, IngredientUnitReference
+from pastry_app.models import Recipe, Ingredient, IngredientUnitReference, SubRecipe
 from pastry_app.tests.base_api_test import api_client, base_url
 
 model_name = "recipes"
@@ -342,3 +342,40 @@ def test_guest_cannot_delete_others_adaptation(api_client, base_url, base_recipe
     fork_url = f"{url}{fork['id']}/"
     resp = api_client.delete(fork_url, HTTP_X_GUEST_ID="guestB")
     assert resp.status_code in [403, 404]
+
+# --- Tests API : Bulk edit via "subrecipes/{sub_id}/ingredients/bulk-edit" ---
+
+def test_bulk_edit_triggers_copy_on_write_and_returns_scaling(api_client, base_url, base_recipe_data, user, guest_id):
+    """Le bulk-edit recâble vers une variante owned_by_recipe et renvoie un bloc 'scaling'."""
+    api_client.force_authenticate(user=user)
+
+    # Sous-recette avec un ingrédient bien connu
+    ingr = Ingredient.objects.get_or_create(ingredient_name="Pommes")[0]
+    sub_payload = dict(base_recipe_data)
+    sub_payload["recipe_name"] = "SousR"
+    sub_payload["ingredients"] = [{"ingredient": ingr.pk, "quantity": 100, "unit": "g"}]
+    sub = api_client.post(base_url(model_name), data=sub_payload, format="json").data
+
+    # Hôte qui consomme la sous-recette
+    host_payload = dict(base_recipe_data)
+    host_payload["recipe_name"] = "Hote"
+    host_payload["sub_recipes"] = [{"sub_recipe": sub["id"], "quantity": 100, "unit": "g"}]
+    host = api_client.post(base_url(model_name), data=host_payload, format="json").data
+
+    # Récupère le lien SubRecipe pour obtenir son id
+    detail = api_client.get(f"{base_url(model_name)}{host['id']}/").data
+    link_id = detail["sub_recipes"][0]["id"]
+
+    # Bulk-edit
+    resp = api_client.post(
+        f"{base_url(model_name)}{host['id']}/subrecipes/{link_id}/ingredients/bulk-edit/",
+        {"updates": [{"ingredient_id": ingr.id, "quantity": 120, "unit": "g"}], "multiplier": 1.0},
+        format="json", HTTP_IF_MATCH=str(detail.get("version", "1")))
+    print(resp.json())
+    assert resp.status_code == 200, resp.data
+    assert "recipe" in resp.data
+    assert "scaling" in resp.data and resp.data["scaling"]["mode"] in {"client_multiplier"}
+
+    # Le lien pointe désormais vers une variante owned_by_recipe = host
+    link = SubRecipe.objects.get(pk=link_id)
+    assert link.sub_recipe.owned_by_recipe_id == host["id"]

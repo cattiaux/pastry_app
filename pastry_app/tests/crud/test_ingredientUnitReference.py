@@ -224,3 +224,13 @@ def test_cannot_create_duplicate_hidden_reference(api_client, ingredient, user, 
     data = {"ingredient": ingredient.ingredient_name, "unit": "unit", "weight_in_grams": 99, "is_hidden": True}
     response = api_client.post(url, data=json.dumps(data), content_type="application/json")
     assert response.status_code == 400
+
+def test_same_owner_cannot_duplicate_visible_state(api_client, base_url, ingredient, user):
+    """Un user ne peut pas dupliquer la même paire (ingredient, unit, is_hidden=False)."""
+    api_client.force_authenticate(user=user)
+    url = base_url(model_name)
+    data = {"ingredient": ingredient.ingredient_name, "unit": "unit", "weight_in_grams": 10, "is_hidden": False}
+    r1 = api_client.post(url, data, format="json")
+    r2 = api_client.post(url, data, format="json")
+    assert r1.status_code == status.HTTP_201_CREATED
+    assert r2.status_code == status.HTTP_400_BAD_REQUEST

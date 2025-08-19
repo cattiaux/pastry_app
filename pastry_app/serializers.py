@@ -694,9 +694,9 @@ class RecipeSerializer(serializers.ModelSerializer):
                   "servings_min", "servings_max", "total_recipe_quantity", 
                   "description", "trick", "image", 
                   "pan", "categories", "labels", "ingredients", "steps", "sub_recipes", 
-                  "created_at", "updated_at",
+                  "created_at", "updated_at", "version",
                   "user", "guest_id", "visibility", "is_default"]
-        read_only_fields = ["created_at", "updated_at"]    
+        read_only_fields = ["created_at", "updated_at", "version"]    
 
     def __init__(self, *args, **kwargs):
         """Supprime recipe en mode nested."""

@@ -260,6 +260,29 @@ def test_total_recipe_quantity_fails_without_mapping(pan):
         recipe.compute_and_set_total_quantity(user=recipe.user, guest_id=recipe.guest_id)
         recipe.save()
 
+def test_total_quantity_with_user_reference_override(recipe_with_conversions, user):
+    """La référence user pour une unité non massique est prioritaire et s’additionne correctement."""
+    # Ajoute une nouvelle ligne non massique avec override user
+    ingr = Ingredient.objects.create(ingredient_name="Lait")
+    IngredientUnitReference.objects.create(ingredient=ingr, unit="cas", weight_in_grams=20, user=user)
+    RecipeIngredient.objects.create(recipe=recipe_with_conversions, ingredient=ingr, quantity=3, unit="cas")
+    # Détail: 120 g + 0.5 kg(=500 g) + 500 mg(=0.5 g) + 2 cas sucre(=30 g) + 3 cas lait user(=60 g) = 710.5 g
+    assert recipe_with_conversions.compute_and_set_total_quantity(user=user) == pytest.approx(710.5)
+
+def test_total_quantity_missing_reference_raises_validation_error(recipe_with_conversions):
+    """Si une unité non massique n’a pas de mapping, on lève une ValidationError consolidée."""
+    ingr = Ingredient.objects.create(ingredient_name="SansMapping")
+    RecipeIngredient.objects.create(recipe=recipe_with_conversions, ingredient=ingr, quantity=2, unit="cas")
+    with pytest.raises(ValidationError):
+        recipe_with_conversions.compute_and_set_total_quantity()
+
+def test_total_quantity_force_recompute(recipe_with_conversions):
+    """force=True recalcule même si la valeur existe déjà."""
+    first = recipe_with_conversions.compute_and_set_total_quantity()
+    recipe_with_conversions.total_recipe_quantity = first + 1
+    recipe_with_conversions.save(update_fields=["total_recipe_quantity"])
+    assert recipe_with_conversions.compute_and_set_total_quantity(force=True) == pytest.approx(first)
+
 # --- test pour UserRecipeVisibility ---
 
 @pytest.mark.parametrize(

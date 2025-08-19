@@ -270,6 +270,29 @@ def test_api_patch_total_recipe_quantity(api_client, user):
     assert patch_resp.status_code == 200
     assert patch_resp.data["total_recipe_quantity"] == 999
 
+def test_recipe_update_optimistic_locking(api_client, base_url, user):
+    """
+    Vérifie que le verrou optimiste renvoie 409 lorsque If-Match ne correspond pas.
+    """
+    api_client.force_authenticate(user=user)
+    # Création
+    create = api_client.post(base_url("recipes"), base_recipe_data(), format="json")
+    assert create.status_code == 201
+    rid = create.data["id"]
+
+    # Lecture de la version courante
+    detail = api_client.get(f"{base_url('recipes')}{rid}/")
+    current_version = str(detail.data.get("version", "1"))
+
+    # 1er PATCH avec If-Match correct
+    ok = api_client.patch(f"{base_url('recipes')}{rid}/", {"context_name": "version1"}, format="json", HTTP_IF_MATCH=current_version)
+    print(ok.json())
+    assert ok.status_code in (200, 202)
+
+    # 2e PATCH avec ancien If-Match -> 409
+    conflict = api_client.patch(f"{base_url('recipes')}{rid}/", {"context_name": "version2"}, format="json", HTTP_IF_MATCH=current_version)
+    assert conflict.status_code == 409
+
 # --- Tests de validation métier : adaptation de recettes ---
 
 def test_adaptation_note_requires_parent(api_client, base_url, user):
@@ -444,3 +467,4 @@ def test_guest_preview_and_private_save_but_not_public(api_client, base_url, use
     # 5) Tentative de passer la variante en public -> 403
     patch_public = api_client.patch(f"{url}{fork_id}/", {"visibility": "public"}, format="json", HTTP_X_GUEST_ID=guest_id)
     assert patch_public.status_code in (400, 403)
+

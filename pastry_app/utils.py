@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models.functions import Abs
 from .models import Pan, Recipe, IngredientUnitReference, SubRecipe, RecipeIngredient, RecipeStep
 from .text_utils import normalize_case
+from .constants import SERVING_VOLUME_ML
 
 """
 =================================================
@@ -84,7 +85,7 @@ def convert_amount_for_ingredient(ingredient_id, amount, from_unit, to_unit, *, 
     grams_per_to = _get_coeff_to_grams(ingredient_id, to_unit, user=user, guest_id=guest_id, cache=cache)
     return amount_in_grams / grams_per_to
 
-def normalize_constraints_for_recipe(recipe, constraints, *, user=None, guest_id=None):
+def normalize_constraints_for_recipe(recipe, constraints, *, user=None, guest_id=None, cache=None):
     """
     constraints: dict[int, float | tuple[str, float]]
       - float/int = quantité déjà dans l’unité de la recette pour cet ingrédient
@@ -93,11 +94,13 @@ def normalize_constraints_for_recipe(recipe, constraints, *, user=None, guest_id
     Retourne: dict[int, float] dans l’unité du RecipeIngredient correspondant.
     Ignore les ingrédients absents de la recette.
     """
+    if cache is None:
+        cache = {}
+
     normalized = {}
     # Map des unités cibles (celles de la recette) par ingrédient
     target_units = {ri.ingredient_id: ri.unit for ri in recipe.recipe_ingredients.all()}
 
-    cache = {}
     for ing_id, provided in constraints.items():
         if ing_id not in target_units:
             continue  # on ignore les extras
@@ -129,7 +132,7 @@ def normalize_constraints_for_recipe(recipe, constraints, *, user=None, guest_id
 
 def servings_to_volume(servings):
     """Convertit un nombre de portions en volume (ml/cm³)."""
-    return servings * 150
+    return servings * SERVING_VOLUME_ML
 
 def get_pan_volume(pan) -> float:
     """
@@ -217,100 +220,6 @@ def calculate_quantity_multiplier(from_volume_cm3: float, to_volume_cm3: float) 
 # ============================================================
 # 2. CALCUL DU MULTIPLICATEUR EN FONCTION DU CONTEXTE
 # ============================================================
-
-def get_scaling_multiplier_old(recipe, target_servings: int = None, target_pan=None, reference_recipe=None) -> tuple[float, str]:
-    """
-    Calcule le multiplicateur à appliquer à la recette selon le contexte cible.
-    Priorités de calcul (deux modes de fonctionnement) :
-    - MODE par défaut (prefer_reference=False) :
-        1) Adaptation directe si possible (pan/servings connus sur la recette)
-        2) Sinon, adaptation via la recette de référence (si fournie)
-
-    Paramètres:
-        recipe               : recette à adapter
-        target_servings (int): portions cibles (optionnel)
-        target_pan           : moule cible (optionnel)
-
-    Retour:
-        (multiplier: float, mode: str)
-        mode ∈ {"pan", "servings", "reference_recipe_pan", "reference_recipe_servings"}
-    """
-    def servings_avg(rec):
-        if rec.servings_min and rec.servings_max:
-            return (rec.servings_min + rec.servings_max) / 2
-        if rec.servings_min:
-            return rec.servings_min
-        if rec.servings_max:
-            return rec.servings_max
-        return None
-
-    try:
-        source_volume, source_mode = get_source_volume(recipe)
-        if target_pan:
-            target_volume = getattr(target_pan, "volume_cm3_cache", None)
-            if not target_volume:
-                raise ValueError("Le pan cible n'a pas de volume défini.")
-        elif target_servings:
-            target_volume = servings_to_volume(target_servings)
-        else:
-            raise Exception
-        return float(target_volume) / float(source_volume), source_mode
-    except Exception:
-        pass  # On tente ensuite la référence
-
-    if reference_recipe:
-        if not getattr(reference_recipe, "total_recipe_quantity", None):
-            raise ValueError("La recette de référence n’a pas de quantité totale définie.")
-        if not getattr(recipe, "total_recipe_quantity", None):
-            raise ValueError("La recette à adapter n’a pas de quantité totale définie.")
-
-        # --- Si cible = PAN ---
-        if target_pan:
-            # 1. On priorise pan sur la référence
-            ref_pan = reference_recipe.pan
-            ref_pan_volume = getattr(ref_pan, "volume_cm3_cache", None) if ref_pan else None
-            if ref_pan_volume:
-                ref_volume = ref_pan_volume * (reference_recipe.pan_quantity or 1)
-                ref_density = reference_recipe.total_recipe_quantity / ref_volume  # g/cm3
-            else:
-                # 2. Sinon, fallback sur servings de la référence
-                ref_servings = servings_avg(reference_recipe)
-                if not ref_servings:
-                    raise ValueError("La recette de référence n’a ni pan ni servings pour adapter vers un pan.")
-                ref_volume = servings_to_volume(ref_servings)
-                ref_density = reference_recipe.total_recipe_quantity / ref_volume
-            # Calcul du scaling
-            target_volume = getattr(target_pan, "volume_cm3_cache", None)
-            if not target_volume:
-                raise ValueError("Le pan cible n'a pas de volume défini.")
-            target_total_quantity = target_volume * ref_density
-            multiplier = target_total_quantity / recipe.total_recipe_quantity
-            return float(multiplier), "reference_recipe_pan"
-
-        # --- Si cible = SERVINGS ---
-        elif target_servings:
-            # 1. On priorise servings sur la référence
-            ref_servings = servings_avg(reference_recipe)
-            if ref_servings:
-                ref_volume = servings_to_volume(ref_servings)
-                ref_density = reference_recipe.total_recipe_quantity / ref_volume
-            else:
-                # 2. Sinon, fallback sur pan de la référence
-                ref_pan = reference_recipe.pan
-                ref_pan_volume = getattr(ref_pan, "volume_cm3_cache", None) if ref_pan else None
-                if not ref_pan_volume:
-                    raise ValueError("La recette de référence n’a ni servings ni pan pour adapter vers un nombre de portions.")
-                ref_volume = ref_pan_volume * (reference_recipe.pan_quantity or 1)
-                ref_density = reference_recipe.total_recipe_quantity / ref_volume
-            target_volume = servings_to_volume(target_servings)
-            target_total_quantity = target_volume * ref_density
-            multiplier = target_total_quantity / recipe.total_recipe_quantity
-            return float(multiplier), "reference_recipe_servings"
-
-        else:
-            raise ValueError("Il faut préciser un pan ou un nombre de portions cible pour l’adaptation.")
-
-    raise ValueError("Impossible de calculer un scaling : ni pan, ni portions, ni recette de référence valide.")
 
 def _try_direct(recipe, target_servings=None, target_pan=None):
     """
@@ -465,7 +374,7 @@ def get_scaling_multiplier(recipe, target_servings: int = None, target_pan=None,
 # 3. SCALING / ADAPTATION DE RECETTE (MÉTIER)
 # ============================================================
 
-def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None):
+def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None, cache=None):
     """
     Adapte récursivement une recette entière (ingrédients ET sous-recettes)
     en appliquant un coefficient multiplicateur global.
@@ -530,7 +439,7 @@ def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None):
             total_preparation_g = getattr(sub_recipe, "total_recipe_quantity", None)
             if total_preparation_g is None:
                 try:
-                    total_preparation_g = sub_recipe.compute_and_set_total_quantity(force=False, user=user, guest_id=guest_id, save=False)
+                    total_preparation_g = sub_recipe.compute_and_set_total_quantity(force=False, user=user, guest_id=guest_id, save=False, cache=cache)
                 except Exception:
                     total_preparation_g = None
 
@@ -571,7 +480,7 @@ def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None):
         total_preparation_g = getattr(sub_recipe, "total_recipe_quantity", None)
         if total_preparation_g is None:
             try:
-                total_preparation_g = sub_recipe.compute_and_set_total_quantity(force=False, user=user, guest_id=guest_id, save=False)
+                total_preparation_g = sub_recipe.compute_and_set_total_quantity(force=False, user=user, guest_id=guest_id, save=False, cache=cache)
             except Exception:
                 total_preparation_g = None
 
@@ -582,7 +491,7 @@ def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None):
             local_multiplier = float(multiplier)  # fallback: ancien comportement
 
         # Récursivité : adapte la sous-recette avec le multiplicateur local calculé
-        adapted_sub = scale_recipe_globally(sub_recipe, local_multiplier, user=user, guest_id=guest_id)
+        adapted_sub = scale_recipe_globally(sub_recipe, local_multiplier, user=user, guest_id=guest_id, cache=cache)
 
         adapted_subrecipes.append({
             "sub_recipe_id": sub_recipe.id,
@@ -1013,12 +922,12 @@ def _get_servings_interval(volume_cm3: float) -> dict:
     """
     Calcule un intervalle réaliste de portions (min, standard, max) basé sur le volume.
     Utilisé dans la suggestion et l’estimation de moules/servings.
-    Hypothèse standard : 150ml = portion standard
+    Hypothèse standard : 150ml = portion standard (constante SERVING_VOLUME_ML)
     """
     if volume_cm3 <= 0:
         raise ValueError("Volume invalide pour estimer les portions.")
 
-    standard = round(volume_cm3 / 150)
+    standard = round(volume_cm3 / SERVING_VOLUME_ML)
 
     if standard <= 2:
         min_servings = max(1, standard)
@@ -1042,7 +951,7 @@ def suggest_pans_for_servings(target_servings: int) -> list:
         raise ValueError("Le nombre de portions doit être supérieur à 0.")
 
     # Calcul du volume cible
-    target_volume = target_servings * 150
+    target_volume = target_servings * SERVING_VOLUME_ML
 
     # Recherche des moules compatibles (+/- 5%)
     lower_bound = target_volume * 0.95
