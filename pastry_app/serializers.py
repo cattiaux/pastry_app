@@ -1155,6 +1155,7 @@ class ReferenceUseSerializer(serializers.Serializer):
     unit = serializers.CharField(required=False, allow_null=True)
 
 
+
 class RecipeOmniSerializer(serializers.ModelSerializer):
     """Résultat léger pour la recherche: id, titre, sous-titre, score optionnel."""
     title = serializers.CharField(source="recipe_name")
