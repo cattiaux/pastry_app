@@ -11,6 +11,13 @@ model_name = "labels"
 pytestmark = pytest.mark.django_db
 
 @pytest.fixture
+def user():
+    admin =User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin   
+
+@pytest.fixture
 def admin_client(api_client, db):
     """Crée un utilisateur admin et authentifie les requêtes API avec lui."""
     admin_user = User.objects.create_superuser(username="admin", email="admin@example.com", password="adminpass")
@@ -18,9 +25,9 @@ def admin_client(api_client, db):
     return api_client
 
 @pytest.fixture
-def setup_label(db):
+def setup_label(user, db):
     """Crée un label par défaut pour les tests."""
-    return Label.objects.create(label_name="Bio", label_type="recipe")
+    return Label.objects.create(label_name="Bio", label_type="recipe", created_by=user)
 
 def test_create_label(admin_client, base_url, setup_label):
     """Test de création d’un label."""

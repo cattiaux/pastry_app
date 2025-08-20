@@ -172,6 +172,7 @@ class Category(models.Model):
     category_name = models.CharField(max_length=200,  verbose_name="category_name", unique=True)
     category_type = models.CharField(max_length=10, choices=CATEGORY_CHOICES, blank=False, null=False)
     parent_category = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="subcategories")
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="created_categories") # créé pour forcer la création par un admin
 
     class Meta:
         verbose_name_plural = "categories"
@@ -216,15 +217,16 @@ class Category(models.Model):
         existing_category = Category.objects.exclude(id=self.id).filter(category_name__iexact=self.category_name).exists()
         if existing_category:
             raise ValidationError("Une catégorie avec ce nom existe déjà.")
+        
+        # Empêche la création d'une catégorie par un utilisateur non-admin
+        if not getattr(self, "created_by_id", None):
+            raise ValidationError("created_by requis")
+        if not self.created_by.is_staff:
+            raise ValidationError("Seuls les admins peuvent créer des catégories.")
 
     def save(self, *args, **kwargs):
         """ Validation avant sauvegarde : nettoyage, validation. """
         self.full_clean()
-
-        # Empêche la création d'une catégorie par un utilisateur non-admin
-        request = kwargs.pop("request", None)
-        if request and not request.user.is_staff:
-            raise ValidationError("Seuls les administrateurs peuvent créer ou modifier des catégories.")
 
         if not self.category_type:
             raise ValidationError("Le type de catégorie est obligatoire.")
@@ -247,6 +249,7 @@ class Label(models.Model):
     ]
     label_name = models.CharField(max_length=200,  verbose_name="label_name", unique=True) 
     label_type = models.CharField(max_length=10, choices=LABEL_CHOICES, default='both')
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="created_labels") # créé pour forcer la création par un admin
 
     def __str__(self):
         return f"{self.label_name} [{self.label_type}]"
@@ -273,14 +276,15 @@ class Label(models.Model):
         if existing_label:
             raise ValidationError("Un label avec ce nom existe déjà.")
 
+        # Empêche la création d'un label par un utilisateur non-admin
+        if not getattr(self, "created_by_id", None):
+            raise ValidationError("created_by requis")
+        if not self.created_by.is_staff:
+            raise ValidationError("Seuls les admins peuvent créer des labels.")
+
     def save(self, *args, **kwargs):
         """ Validation avant sauvegarde : nettoyage, validation. """
         self.full_clean()
-
-        # Empêche la création d'un label par un utilisateur non-admin
-        request = kwargs.pop("request", None)
-        if request and not request.user.is_staff:
-            raise ValidationError("Seuls les administrateurs peuvent créer ou modifier des labels.")
 
         if not self.label_type:
             raise ValidationError("Le type de label est obligatoire.")

@@ -1,4 +1,5 @@
 import pytest
+from django.contrib.auth import get_user_model
 from pastry_app.models import Category
 from pastry_app.tests.utils import *
 
@@ -7,11 +8,20 @@ model_name = "categories"
 
 pytestmark = pytest.mark.django_db
 
+User = get_user_model()
+
+@pytest.fixture
+def user():
+    admin =User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin   
+
 @pytest.fixture()
-def category():
+def category(user):
     """Créer plusieurs catégories de test pour assurer la cohérence des tests."""
-    Category.objects.create(category_name="Desserts", category_type="both")  # Ajout d'une autre catégorie
-    Category.objects.create(category_name="Fruit à coque", category_type="ingredient")
+    Category.objects.create(category_name="Desserts", category_type="both", created_by=user)  # Ajout d'une autre catégorie
+    Category.objects.create(category_name="Fruit à coque", category_type="ingredient", created_by=user)
     return Category.objects.get(category_name="fruit à coque")  # Retourne une catégorie pour le test
 
 def test_category_creation(category):
@@ -95,10 +105,10 @@ def test_parent_category_is_optional(category):
     category.refresh_from_db()
     assert category.parent_category is None  # Vérifie que la catégorie n’a plus de parent
 
-def test_delete_category_with_subcategories_model():
+def test_delete_category_with_subcategories_model(user):
     """Vérifie que la suppression d'une catégorie met bien à NULL ses sous-catégories en base de données."""
-    parent = Category.objects.create(category_name="Parent", category_type="recipe")
-    child = Category.objects.create(category_name="Child", category_type="recipe", parent_category=parent)
+    parent = Category.objects.create(category_name="Parent", category_type="recipe", created_by=user)
+    child = Category.objects.create(category_name="Child", category_type="recipe", parent_category=parent, created_by=user)
     
     assert child.parent_category == parent  # Vérifie que la relation parent -> enfant existe bien avant suppression
     parent.delete()  # Supprime la catégorie parente
@@ -122,11 +132,11 @@ def test_delete_category_with_subcategories_model():
         ("none", "both", True),
     ]
 )
-def test_category_parent_type_model(parent_type, child_type, should_pass):
+def test_category_parent_type_model(parent_type, child_type, should_pass, user):
     parent = None
     if parent_type != "none":
-        parent = Category.objects.create(category_name=f"Parent {parent_type}", category_type=parent_type)
-    child = Category(category_name=f"Child {child_type}", category_type=child_type, parent_category=parent)
+        parent = Category.objects.create(category_name=f"Parent {parent_type}", category_type=parent_type, created_by=user)
+    child = Category(category_name=f"Child {child_type}", category_type=child_type, parent_category=parent, created_by=user)
     if should_pass:
         child.full_clean()
     else:

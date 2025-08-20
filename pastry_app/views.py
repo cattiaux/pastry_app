@@ -980,6 +980,9 @@ class CategoryViewSet(viewsets.ModelViewSet):
             return [IsAdminUser()]  # Seuls les admins peuvent modifier/supprimer
         return [AllowAny()]  # Autoriser la lecture à tout le monde
 
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
     def destroy(self, request, *args, **kwargs):
         """Gère la suppression d'une Category avec une option pour supprimer ou non ses sous-catégories."""
         category = self.get_object()
@@ -1027,6 +1030,9 @@ class LabelViewSet(viewsets.ModelViewSet):
         if self.action in ["create", "update", "partial_update", "destroy"]:
             return [IsAdminUser()]  # Seuls les admins peuvent modifier/supprimer
         return [AllowAny()]  # Autoriser la lecture à tout le monde
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 
     def destroy(self, request, *args, **kwargs):
         """Gère la suppression d'un Label."""

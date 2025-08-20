@@ -10,6 +10,13 @@ model_name = "labels"
 pytestmark = pytest.mark.django_db
 
 @pytest.fixture
+def user():
+    admin =User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin   
+
+@pytest.fixture
 def admin_client(api_client, db):
     """Crée un utilisateur admin et authentifie les requêtes API avec lui."""
     admin_user = User.objects.create_superuser(username="admin", email="admin@example.com", password="adminpass")
@@ -17,9 +24,9 @@ def admin_client(api_client, db):
     return api_client
 
 @pytest.fixture
-def label(db):
+def label(user, db):
     """Crée une instance de Label pour les tests."""
-    return Label.objects.create(label_name="Bio", label_type="recipe")
+    return Label.objects.create(label_name="Bio", label_type="recipe", created_by=user)
 
 @pytest.mark.parametrize("field_name", ["label_name"])
 def test_unique_constraint_label_api(admin_client, base_url, field_name, label):

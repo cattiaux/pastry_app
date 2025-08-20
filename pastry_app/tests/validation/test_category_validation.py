@@ -10,6 +10,13 @@ model_name = "categories"
 pytestmark = pytest.mark.django_db
 
 @pytest.fixture
+def user():
+    admin =User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin 
+
+@pytest.fixture
 def admin_client(api_client, db):
     """Crée un utilisateur admin et authentifie les requêtes API avec lui."""
     admin_user = User.objects.create_superuser(username="admin", email="admin@example.com", password="adminpass")
@@ -17,9 +24,9 @@ def admin_client(api_client, db):
     return api_client
 
 @pytest.fixture
-def category(db):
+def category(user, db):
     """Crée une instance de Category pour les tests."""
-    return Category.objects.create(category_name="Desserts", category_type="recipe")
+    return Category.objects.create(category_name="Desserts", category_type="recipe", created_by=user)
 
 @pytest.mark.parametrize("field_name", ["category_name"])
 def test_unique_constraint_category_api(admin_client, base_url, field_name, category):
@@ -36,7 +43,7 @@ def test_required_fields_category_api(admin_client, base_url, field_name):
         validate_constraint_api(admin_client, base_url, model_name, field_name, expected_errors, **{field_name: invalid_value})
 
 @pytest.mark.parametrize("field_name", ["parent_category"])
-def test_optional_fields_api(admin_client, base_url, field_name):
+def test_optional_fields_api(admin_client, base_url, field_name, user):
     """ Vérifie que `parent_category` peut être `None`"""
     url = base_url(model_name)
     valid_data = {"category_name": "azerty", "category_type": "recipe"}  # Données valides
@@ -82,12 +89,6 @@ def test_create_category_invalid_type(admin_client, base_url, invalid_category_t
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "category_type" in response.json()  # Vérifie que l'API bloque bien
 
-# 🔴 Attention : Ce test d'unicité (test_update_category_to_duplicate_api) fonctionnent UNIQUEMENT si `unique=True` est retiré du modèle.
-# Si `unique=True`, Django bloque la validation AVANT que l'API ne réponde -> `IntegrityError`
-# Solution recommandée :
-# 1️. Tester l'unicité dans l'API avec `validate_category_name()` dans `serializers.py` (sans `unique=True`).
-# 2️. En production, remettre `unique=True` dans `models.py` pour sécuriser la base, mais NE PAS tester cela avec pytest.
-#    Si ces tests échouent avec `unique=True`, c'est normal et tu peux ignorer l'erreur !
 def test_update_category_to_duplicate_api(admin_client, base_url, category):
     """ Vérifie qu'on ne peut PAS modifier une Category pour lui donner un `category_name` déjà existant via l'API. """
     valid_data1 = {"category_name": category.category_name, "category_type": category.category_type}
@@ -108,10 +109,10 @@ def test_non_admin_cannot_create_category(api_client, base_url):
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 @pytest.mark.parametrize("delete_subcategories, expected_count", [("true", 0), ("false", 1)])
-def test_delete_category_with_subcategories(admin_client, base_url, delete_subcategories, expected_count):
+def test_delete_category_with_subcategories(admin_client, base_url, delete_subcategories, expected_count, user):
     """Vérifie que la suppression d'une catégorie détache ou supprime ses sous-catégories selon l'option."""
-    parent = Category.objects.create(category_name="Parent", category_type="recipe")
-    child = Category.objects.create(category_name="Child", category_type="recipe", parent_category=parent)
+    parent = Category.objects.create(category_name="Parent", category_type="recipe", created_by=user)
+    child = Category.objects.create(category_name="Child", category_type="recipe", parent_category=parent, created_by=user)
 
     url = base_url("categories") + f"{parent.id}/?delete_subcategories={delete_subcategories}"
     response = admin_client.delete(url)
@@ -134,9 +135,9 @@ def test_delete_category_with_subcategories(admin_client, base_url, delete_subca
         ("both", "both", True),
     ]
 )
-def test_category_parent_type_api(admin_client, base_url, parent_type, child_type, should_pass):
+def test_category_parent_type_api(admin_client, base_url, parent_type, child_type, should_pass, user):
     url = base_url(model_name)
-    parent = Category.objects.create(category_name=f"Parent {parent_type}", category_type=parent_type)
+    parent = Category.objects.create(category_name=f"Parent {parent_type}", category_type=parent_type, created_by=user)
     payload = {"category_name": f"Child {child_type}", "category_type": child_type, "parent_category": parent.category_name}
     resp = admin_client.post(url, payload, format="json")
     if should_pass:

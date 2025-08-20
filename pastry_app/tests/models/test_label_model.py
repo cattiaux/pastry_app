@@ -1,4 +1,5 @@
 import pytest
+from django.contrib.auth import get_user_model
 from pastry_app.models import Label
 from pastry_app.tests.utils import *
 
@@ -7,11 +8,20 @@ model_name = "labels"
 
 pytestmark = pytest.mark.django_db
 
+User = get_user_model()
+
+@pytest.fixture
+def user():
+    admin =User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin   
+
 @pytest.fixture()
-def label():
+def label(user):
     """Créer plusieurs labels de test pour assurer la cohérence des tests."""
-    Label.objects.create(label_name="Bio", label_type="recipe")  # Ajout d'un autre label
-    Label.objects.create(label_name="Label Rouge", label_type="ingredient")
+    Label.objects.create(label_name="Bio", label_type="recipe", created_by=user)  # Ajout d'un autre label
+    Label.objects.create(label_name="Label Rouge", label_type="ingredient", created_by=user)
     return Label.objects.get(label_name="bio")  # Retourne un label pour le test
 
 def test_label_creation(label):

@@ -11,6 +11,13 @@ model_name = "categories"
 pytestmark = pytest.mark.django_db
 
 @pytest.fixture
+def user():
+    admin =User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin   
+
+@pytest.fixture
 def admin_client(api_client, db):
     """Crée un utilisateur admin et authentifie les requêtes API avec lui."""
     admin_user = User.objects.create_superuser(username="admin", email="admin@example.com", password="adminpass")
@@ -18,9 +25,9 @@ def admin_client(api_client, db):
     return api_client
 
 @pytest.fixture
-def setup_category(db):
+def setup_category(user, db):
     """Crée une catégorie par défaut pour les tests."""
-    return Category.objects.create(category_name="Desserts", category_type="recipe")
+    return Category.objects.create(category_name="Desserts", category_type="recipe", created_by=user)
 
 def test_create_category(admin_client, base_url, setup_category):
     """Test de création d’une catégorie avec un `parent_category` valide"""
@@ -45,10 +52,10 @@ def test_list_categories(api_client, base_url, setup_category):
     assert response.status_code == status.HTTP_200_OK
     assert len(response.json()) > 0  # Vérifie que l'API retourne au moins une catégorie
 
-def test_update_category_parent(admin_client, base_url, setup_category):
+def test_update_category_parent(admin_client, base_url, setup_category, user):
     """Test de mise à jour d’une catégorie en changeant son `parent_category`"""
     # Création d'une nouvelle catégorie pour servir de parent
-    new_parent = Category.objects.create(category_name="Viennoiseries", category_type="recipe")
+    new_parent = Category.objects.create(category_name="Viennoiseries", category_type="recipe", created_by=user)
 
     url = base_url(model_name)
     category_id = setup_category.id
@@ -62,10 +69,10 @@ def test_update_category_parent(admin_client, base_url, setup_category):
     setup_category.refresh_from_db()
     assert setup_category.parent_category == new_parent  # Vérifie que le parent a bien changé
 
-def test_partial_update_category(admin_client, base_url, setup_category):
+def test_partial_update_category(admin_client, base_url, setup_category, user):
     """Test la mise à jour partielle d'une catégorie via PATCH."""
     url = base_url(model_name) + f"{setup_category.id}/"
-    new_category = Category.objects.create(category_name="Tartes", category_type="recipe")
+    new_category = Category.objects.create(category_name="Tartes", category_type="recipe", created_by=user)
     response = admin_client.patch(url, data=json.dumps({"parent_category": new_category.category_name}), content_type="application/json")
     assert response.status_code == status.HTTP_200_OK
     setup_category.refresh_from_db()

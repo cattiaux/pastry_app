@@ -228,7 +228,8 @@ class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
-        fields = ['id', 'category_name', 'category_type', 'parent_category']
+        fields = ['id', 'category_name', 'category_type', 'parent_category', 'created_by']
+        read_only_fields = ["created_by"]
 
     def to_internal_value(self, data):
         """ Normalise AVANT validation. """
@@ -310,7 +311,8 @@ class CategorySerializer(serializers.ModelSerializer):
 class LabelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Label
-        fields = ['id', 'label_name', 'label_type']
+        fields = ['id', 'label_name', 'label_type', 'created_by']
+        read_only_fields = ["created_by"]
 
     def to_internal_value(self, data):
         """ Normalise AVANT validation. """
