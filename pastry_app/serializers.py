@@ -1192,7 +1192,7 @@ class PanOmniSerializer(serializers.ModelSerializer):
         return getattr(obj, "pan_name", None) or str(obj)
 
 class CategoryOmniSerializer(serializers.ModelSerializer):
-    title = serializers.CharField(source="name")
+    title = serializers.CharField(source="category_name")
     score = serializers.FloatField(read_only=True)
 
     class Meta:
@@ -1200,7 +1200,7 @@ class CategoryOmniSerializer(serializers.ModelSerializer):
         fields = ("id", "title", "score")
 
 class LabelOmniSerializer(serializers.ModelSerializer):
-    title = serializers.CharField(source="name")
+    title = serializers.CharField(source="label_name")
     score = serializers.FloatField(read_only=True)
 
     class Meta:
@@ -1215,7 +1215,7 @@ class StoreOmniSerializer(serializers.ModelSerializer):
     class Meta:
         model = Store
         fields = ("id", "title", "subtitle", "score")
-        
+
     def get_subtitle(self, obj):
         parts = [getattr(obj, "city", None), getattr(obj, "zip_code", None)]
         return " ".join([p for p in parts if p])

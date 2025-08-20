@@ -108,6 +108,8 @@ def _score_qs(qs, q, fields):
     """
     if HAS_TRIGRAM:
         sims = [TrigramSimilarity(f, q) for f in fields]
+        if len(sims) == 1:
+            return qs.annotate(score=sims[0])
         return qs.annotate(score=Greatest(*sims))
     cond = Q()
     for f in fields:
@@ -174,7 +176,7 @@ class SearchAPIView(APIView):
 
         if "recipes" in entities:
             rqs = _score_qs(_visible_recipes(request), q, ["recipe_name","chef_name","context_name"])\
-                    .select_related("pan").only("id","recipe_name","chef_name","context_name")\
+                    .only("id","recipe_name","chef_name","context_name")\
                     .order_by("-score","recipe_name")[:limit]
             out["recipes"] = RecipeOmniSerializer(rqs, many=True).data
         if "ingredients" in entities:
