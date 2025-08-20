@@ -47,6 +47,7 @@ urlpatterns = [
     path('api/', include(recipes_router.urls)),
     path('api/', include(ingredients_router.urls)),
     path('api/', include(subrecipes_router.urls)),
+    path("api/search/", SearchAPIView.as_view(), name="omnibox-search"),
     path('categories/<int:pk>/delete-subcategories/', CategoryViewSet.as_view({"delete": "delete_subcategories"}), name="delete_subcategories"),
     path("api/recipes-adapt/", RecipeAdaptationAPIView.as_view(), name="adapt-recipe"),
     path("api/recipes-adapt/by-ingredient/", RecipeAdaptationByIngredientAPIView.as_view(), name="adapt-recipe-by-ingredient"),

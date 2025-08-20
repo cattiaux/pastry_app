@@ -1153,3 +1153,69 @@ class ReferenceUseSerializer(serializers.Serializer):
     # Champs optionnels de preview (activés avec include_preview=1)
     suggested_quantity_for_target = serializers.FloatField(required=False, allow_null=True)
     unit = serializers.CharField(required=False, allow_null=True)
+
+
+class RecipeOmniSerializer(serializers.ModelSerializer):
+    """Résultat léger pour la recherche: id, titre, sous-titre, score optionnel."""
+    title = serializers.CharField(source="recipe_name")
+    subtitle = serializers.SerializerMethodField()
+    score = serializers.FloatField(read_only=True)
+
+    class Meta:
+        model = Recipe
+        fields = ("id", "title", "subtitle", "score")
+
+    def get_subtitle(self, obj):
+        parts = [obj.chef_name or ""]
+        if obj.context_name:
+            parts.append(obj.context_name)
+        return " · ".join([p for p in parts if p])
+
+class IngredientOmniSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(source="ingredient_name")
+    score = serializers.FloatField(read_only=True)
+
+    class Meta:
+        model = Ingredient
+        fields = ("id", "title", "score")
+
+class PanOmniSerializer(serializers.ModelSerializer):
+    """Tente name/pan_name, sinon __str__."""
+    title = serializers.SerializerMethodField()
+    score = serializers.FloatField(read_only=True)
+
+    class Meta:
+        model = Pan
+        fields = ("id", "title", "score")
+
+    def get_title(self, obj):
+        return getattr(obj, "pan_name", None) or str(obj)
+
+class CategoryOmniSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(source="name")
+    score = serializers.FloatField(read_only=True)
+
+    class Meta:
+        model = Category
+        fields = ("id", "title", "score")
+
+class LabelOmniSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(source="name")
+    score = serializers.FloatField(read_only=True)
+
+    class Meta:
+        model = Label
+        fields = ("id", "title", "score")
+
+class StoreOmniSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(source="store_name")
+    subtitle = serializers.SerializerMethodField()
+    score = serializers.FloatField(read_only=True)
+
+    class Meta:
+        model = Store
+        fields = ("id", "title", "subtitle", "score")
+        
+    def get_subtitle(self, obj):
+        parts = [getattr(obj, "city", None), getattr(obj, "zip_code", None)]
+        return " ".join([p for p in parts if p])

@@ -5,25 +5,200 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
-from .permissions import *
 from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_headers
+from django.db import transaction
 from django.db.utils import IntegrityError 
 from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
-from django.db.models import ProtectedError, Q
-from django.db import transaction
+from django.db.models import ProtectedError, Q, Value, FloatField
+from django.db.models.functions import Greatest
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as filters
 from django.shortcuts import get_object_or_404
+try:
+    from django.contrib.postgres.search import TrigramSimilarity
+    HAS_TRIGRAM = True
+except Exception:
+    HAS_TRIGRAM = False
 from .utils import *
 from .text_utils import *
 from .models import *
 from .serializers import *
 from .mixins import *
+from .permissions import *
 from .constants import *
 import logging
 logger = logging.getLogger(__name__)
+
+# ---- Omnibox: constantes locales à la vue ----
+ALLOWED_ENTITIES = {"recipes","ingredients","pans","categories","labels","stores"}
+DEFAULT_ENTITIES = ("recipes","ingredients","stores")
+MAX_Q_LEN = 80
+MIN_Q_LEN = 1
+LIMIT_MIN, LIMIT_MAX, LIMIT_DEFAULT = 1, 10, 5
+
+# ---- Omnibox: helpers module-level ----
+def _extract_guest_id(request):
+    """
+    Récupère l'identifiant invité depuis les en-têtes.
+
+    Lecture de "X-Guest-Id" puis "X-GUEST-ID".
+    Aucune validation ni lookup supplémentaire.
+
+    Args:
+        request (HttpRequest): requête courante.
+
+    Returns:
+        str | None: guest_id si présent, sinon None.
+    """
+    return request.headers.get("X-Guest-Id") or request.headers.get("X-GUEST-ID") or None
+
+def _visible_recipes(request):
+    """
+    Construit le QuerySet des recettes visibles pour l'appelant.
+
+    Règles:
+      - Visibles: (visibility=public) ∪ (is_default=True) ∪ (owned par user) ∪ (owned par guest_id).
+      - Exclusions: recettes soft-hidden pour ce user/guest dans UserRecipeVisibility.
+      - Ne force pas de select_related/prefetch. Filtre uniquement la visibilité.
+
+    Args:
+        request (HttpRequest): utilisée pour déterminer user authentifié et/ou guest_id.
+
+    Returns:
+        QuerySet[Recipe]: recettes filtrées selon les droits de lecture.
+    """
+    user = request.user if getattr(request.user, "is_authenticated", False) else None
+    guest_id = _extract_guest_id(request)
+    qs = Recipe.objects.all()
+    vis_q = Q(visibility="public") | Q(is_default=True)
+    if user:
+        vis_q |= Q(user=user)
+    if guest_id:
+        vis_q |= Q(guest_id=guest_id)
+    qs = qs.filter(vis_q)
+    # soft-hide
+    if user:
+        hidden = UserRecipeVisibility.objects.filter(user=user, visible=False).values_list("recipe_id", flat=True)
+        qs = qs.exclude(id__in=hidden)
+    elif guest_id:
+        hidden = UserRecipeVisibility.objects.filter(guest_id=guest_id, visible=False).values_list("recipe_id", flat=True)
+        qs = qs.exclude(id__in=hidden)
+    return qs
+
+def _score_qs(qs, q, fields):
+    """
+    Annote et filtre un QuerySet avec un score de pertinence textuelle.
+
+    Méthode:
+      - Si TrigramSimilarity dispo: score = max(trigram(field_i, q)).
+      - Sinon: fallback icontains → score fixe 1.0 et filtrage OR sur fields.
+    Usage:
+      - Tri intra-entité par -score, pas de normalisation inter-entités.
+
+    Args:
+        qs (QuerySet): queryset de base.
+        q (str): terme de recherche.
+        fields (list[str]): noms de champs texte à scorer.
+
+    Returns:
+        QuerySet: queryset annoté d'une colonne 'score' et déjà filtré.
+    """
+    if HAS_TRIGRAM:
+        sims = [TrigramSimilarity(f, q) for f in fields]
+        return qs.annotate(score=Greatest(*sims))
+    cond = Q()
+    for f in fields:
+        cond |= Q(**{f"{f}__icontains": q})
+    return qs.annotate(score=Value(1.0, output_field=FloatField())).filter(cond)
+
+@method_decorator(cache_page(30), name="dispatch")
+@method_decorator(vary_on_headers("Authorization","X-Guest-Id","X-GUEST-ID"), name="dispatch")
+class SearchAPIView(APIView):
+    """
+    GET /api/search?q=...&entities=recipes,ingredients,...&limit=5
+    - Score trigram si dispo, sinon fallback icontains.
+    - Respecte la visibilité des recettes (public/is_default/owned - soft-hidden).
+    - Cache 30s variant sur Authorization et X-Guest-Id.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """
+        Omnibox multi-entités.
+
+        Endpoint:
+            GET /api/search?q=...&entities=recipes,ingredients,...&limit=5
+
+        Paramètres:
+            - q (str, requis): texte recherché, longueur bornée.
+            - entities (str, optionnel): liste CSV dans {recipes,ingredients,pans,categories,labels,stores}.
+              Défaut: recipes,ingredients,stores.
+            - limit (int, optionnel): 1..10, défaut 5. S'applique par entité.
+
+        Sécurité:
+            - Recettes: (public ∪ is_default ∪ owned par user/guest) \ soft-hidden.
+            - Autres entités: lecture libre (sauf si un champ visibility existe, même logique).
+
+        Classement:
+            - TrigramSimilarity si disponible, sinon icontains binaire.
+            - Tri intra-entité par -score puis nom.
+
+        Cache:
+            - Cache HTTP 30 s (cache_page) avec Vary sur Authorization, X-Guest-Id, X-GUEST-ID.
+
+        Réponse:
+            200: {"q", "limit", "entities", "<entité>": [items sérialisés]}
+            400: {"error": "..."} si q invalide ou entities invalides.
+
+        Returns:
+            Response: payload JSON agrégé par entité.
+        """
+        q = (request.query_params.get("q") or "").strip()
+        if not (MIN_Q_LEN <= len(q) <= MAX_Q_LEN):
+            return Response({"error": f"Paramètre q requis, longueur {MIN_Q_LEN}..{MAX_Q_LEN}."}, status=400)
+        raw_entities = request.query_params.get("entities") or ",".join(DEFAULT_ENTITIES)
+        entities = [e.strip() for e in raw_entities.split(",") if e.strip()]
+        invalid = [e for e in entities if e not in ALLOWED_ENTITIES]
+        if invalid:
+            return Response({"error": f"entities invalides: {invalid}"}, status=400)
+        try:
+            limit = int(request.query_params.get("limit", LIMIT_DEFAULT))
+        except ValueError:
+            limit = LIMIT_DEFAULT
+        limit = max(LIMIT_MIN, min(LIMIT_MAX, limit))
+
+        out = {"q": q, "limit": limit, "entities": entities}
+
+        if "recipes" in entities:
+            rqs = _score_qs(_visible_recipes(request), q, ["recipe_name","chef_name","context_name"])\
+                    .select_related("pan").only("id","recipe_name","chef_name","context_name")\
+                    .order_by("-score","recipe_name")[:limit]
+            out["recipes"] = RecipeOmniSerializer(rqs, many=True).data
+        if "ingredients" in entities:
+            iqs = _score_qs(Ingredient.objects.all(), q, ["ingredient_name"]).only("id","ingredient_name")\
+                    .order_by("-score","ingredient_name")[:limit]
+            out["ingredients"] = IngredientOmniSerializer(iqs, many=True).data
+        if "pans" in entities:
+            pqs = _score_qs(Pan.objects.all(), q, ["pan_name"]).only("id","pan_name")\
+                    .order_by("-score","pan_name")[:limit]
+            out["pans"] = PanOmniSerializer(pqs, many=True).data
+        if "categories" in entities:
+            cqs = _score_qs(Category.objects.all(), q, ["category_name"]).only("id","category_name","category_type","parent_category")\
+                    .order_by("-score","category_name")[:limit]
+            out["categories"] = CategoryOmniSerializer(cqs, many=True).data
+        if "labels" in entities:
+            lqs = _score_qs(Label.objects.all(), q, ["label_name"]).only("id","label_name","label_type")\
+                    .order_by("-score","label_name")[:limit]
+            out["labels"] = LabelOmniSerializer(lqs, many=True).data
+        if "stores" in entities:
+            sqs = _score_qs(Store.objects.all(), q, ["store_name","city","zip_code"]).only("id","store_name","city","zip_code")\
+                    .order_by("-score","store_name")[:limit]
+            out["stores"] = StoreOmniSerializer(sqs, many=True).data
+
+        return Response(out)
 
 # Alias pour ?q= en plus de ?search=
 class QSearchFilter(SearchFilter):
