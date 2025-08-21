@@ -65,6 +65,12 @@
 
 - { category_name: "Auxiliaires et additifs", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
 
+- { category_name: "Forme physique", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "liquide", category_type: "ingredient", parent_category: "Forme physique", created_by: "cattiaux" }
+- { category_name: "huile",   category_type: "ingredient", parent_category: "Forme physique", created_by: "cattiaux" }
+- { category_name: "sirop",   category_type: "ingredient", parent_category: "Forme physique", created_by: "cattiaux" }
+- { category_name: "poudre",  category_type: "ingredient", parent_category: "Forme physique", created_by: "cattiaux" }
+
 # --- RECETTES ---
 - { category_name: "Produits finis", category_type: "recipe", parent_category: null, created_by: "cattiaux" }
 - { category_name: "Tartes", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }

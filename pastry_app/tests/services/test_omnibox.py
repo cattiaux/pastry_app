@@ -13,7 +13,10 @@ User = get_user_model()
 
 @pytest.fixture
 def user():
-    return User.objects.create_user(username="user1", password="testpass123")
+    admin = User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin   
 
 def test_search_requires_q(api_client):
     r = api_client.get(SEARCH_URL)
@@ -65,13 +68,13 @@ def test_search_recipes_visibility_and_soft_hide(api_client, user):
     assert normalize_case("Tarte aux Pommes") not in titles  # soft-hidden
     assert normalize_case("Tarte secrète") not in titles     # privé d’un autre
 
-def test_search_serializers_shapes_per_entity(api_client):
+def test_search_serializers_shapes_per_entity(api_client, user):
     # seed
     rcp = Recipe.objects.create(recipe_name="Paris-Brest", chef_name="Pierre", context_name="Concours", visibility="public")
     Ingredient.objects.create(ingredient_name="Noisette")
     Pan.objects.create(pan_name="Moule rond 18", pan_type="ROUND", diameter=18, height=5)
-    Category.objects.create(category_name="Pâte à choux", category_type="recipe")
-    Label.objects.create(label_name="Sans lactose", label_type="both")
+    Category.objects.create(category_name="Pâte à choux", category_type="recipe", created_by=user)
+    Label.objects.create(label_name="Sans lactose", label_type="both", created_by=user)
     Store.objects.create(store_name="Carrefour", city="Lyon", zip_code="69000")
 
     r = api_client.get(SEARCH_URL, {"q": "o", "entities": "recipes,ingredients,pans,categories,labels,stores", "limit": 5})

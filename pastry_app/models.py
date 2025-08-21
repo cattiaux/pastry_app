@@ -1,4 +1,5 @@
 from math import pi
+from typing import Optional, Dict
 from django.db import models
 from django.core.validators import MinValueValidator
 from django.utils.timezone import now
@@ -396,57 +397,153 @@ class Recipe(models.Model):
             return self.servings_max
         return None
 
-    def compute_and_set_total_quantity(self, force=False, user=None, guest_id=None, save=True, cache=None):
+    def compute_and_set_total_quantity(self, force=False, user=None, guest_id=None, save=True, cache=None, 
+                                       qs_overrides: Optional[Dict[int, float]] = None, treat_qs_as_zero: bool = True,
+                                       strict: bool = False, collect_warnings: bool = False):
         """
-        Calcule la quantité totale produite par la recette en grammes,
-        en convertissant chaque ingrédient selon son unité (avec fallback sur la table de correspondance).
-        Si user/guest_id sont passés, privilégie leurs mappings.
-        - Ne remplit le champ que s'il est vide ou si force=True.
-        - Retourne la quantité calculée.
-        - Par défaut, maj le champ et save, sauf si save=False.
+        Calcule et renseigne `total_recipe_quantity` en grammes.
+
+        Paramètres
+        ----------
+        force : bool
+            Recalcule même si `total_recipe_quantity` est déjà renseigné.
+        user : User | None
+            Contexte prioritaire pour les correspondances unité→g (IngredientUnitReference).
+        guest_id : str | None
+            Contexte invité prioritaire pour les correspondances unité→g.
+        save : bool
+            Sauvegarde le modèle après calcul si True.
+        cache : dict | None
+            Cache optionnel des recherches d'IngredientUnitReference. Clés libres.
+        qs_overrides : dict[int, float] | None
+            Mapping {ingredient_id: poids_en_grammes_d’une_QS}. Prime sur les références stockées.
+        treat_qs_as_zero : bool
+            Si True, une QS sans mapping pèse 0 g (n’interrompt pas le calcul).
+            Si False, lève une ValidationError si QS est introuvable.
+        strict : bool
+            False (défaut) = ignorer les ingrédients non convertibles et émettre une note.
+            True = lever ValidationError au premier cas non convertible.
+        collect_warnings : bool
+            Si True, retourne (total_en_g, warnings:list[str]). Sinon retourne seulement le total.
+
+        Règles de conversion (ordre de priorité)
+        ----------------------------------------
+        1) Massiques directes : mg→/1000, g→×1, kg→×1000.
+        2) Références IUR (IngredientUnitReference) pour (ingredient, unit) : priorité user/guest > global.
+        3) Volumiques sans référence : 1 ml = 1 g ; 1 cl = 10 g ; 1 L = 1000 g.
+        4) QS: overrides > IUR(QS) > 0 g si `treat_qs_as_zero=True`, sinon note/erreur selon `strict`.
+
+
+        Effets
+        ------
+        - Met à jour `self.total_recipe_quantity` si vide ou `force=True`.
+        - Sauvegarde si `save=True`.
+
+        Retour
+        ------
+        float
+            Quantité totale en grammes.
+
+        Exceptions
+        ----------
+        ValidationError
+            Unité non convertible (hors règles ci-dessus) ou QS non résolue
+            quand `treat_qs_as_zero=False`.
         """
         if self.total_recipe_quantity is None or force:
             if cache is None:
                 cache = {}
+            total = 0.0
+            notes = []
 
-            total = 0
-            errors = []
+            def warn(msg: str):
+                if strict:
+                    from django.core.exceptions import ValidationError
+                    raise ValidationError(msg)
+                notes.append(msg)
+
             for rec_ing in self.recipe_ingredients.all():
-                qte = rec_ing.quantity
-                unit = rec_ing.unit
+                qte = float(rec_ing.quantity)
+                unit = (rec_ing.unit or "").lower()
+                name = rec_ing.ingredient.ingredient_name
+
+                # conversions directes massiques
                 if unit == "g":
-                    total += qte
-                elif unit == "mg":
-                    total += qte / 1000
-                elif unit == "kg":
-                    total += qte * 1000
-                else:
-                    # Cherche correspondance unité→g (priorité user/guest puis globale)
-                    key_user = ("IUR", rec_ing.ingredient_id, unit, getattr(user, "id", None), guest_id)
+                    total += qte; continue
+                if unit == "mg":
+                    total += qte / 1000.0; continue
+                if unit == "kg":
+                    total += qte * 1000.0; continue
+
+                # QS: overrides > IUR > 0g (optionnel)
+                if unit == "qs":
+                    ing_id = rec_ing.ingredient_id
+                    if qs_overrides and ing_id in qs_overrides:
+                        total += qte * float(qs_overrides[ing_id])
+                        continue
+                    # lookup IUR QS
+                    key_user = ("IUR", ing_id, "QS", getattr(user, "id", None), guest_id)
                     ref = cache.get(key_user)
                     if ref is None:
                         ref = (IngredientUnitReference.objects
-                               .filter(ingredient=rec_ing.ingredient, unit=unit, is_hidden=False, user=user, guest_id=guest_id).first())
+                               .filter(ingredient=rec_ing.ingredient, unit="QS", is_hidden=False,
+                                       user=user, guest_id=guest_id).first())
                         if ref is None:
-                            key_global = ("IUR", rec_ing.ingredient_id, unit, None, None)
+                            key_global = ("IUR", ing_id, "QS", None, None)
                             ref = cache.get(key_global)
                             if ref is None:
                                 ref = (IngredientUnitReference.objects
-                                       .filter(ingredient=rec_ing.ingredient, unit=unit, is_hidden=False, user__isnull=True, guest_id__isnull=True).first())
+                                       .filter(ingredient=rec_ing.ingredient, unit="QS",
+                                               is_hidden=False, user__isnull=True, guest_id__isnull=True).first())
                                 cache[key_global] = ref
                         cache[key_user] = ref
-
                     if ref:
                         total += qte * ref.weight_in_grams
+                    elif treat_qs_as_zero:
+                        # on ignore QS si non mappé
+                        total += 0.0
+                        notes.append(f"QS sans mapping pour '{name}' → 0 g ajouté.")
                     else:
-                        errors.append(f"Pas de correspondance unité→g pour '{rec_ing.ingredient.ingredient_name}' ({unit})")
-            if errors:
-                raise ValidationError("Impossible de calculer la quantité totale : " + "; ".join(errors))
+                        warn(f"QS sans mapping pour '{name}'.")
+                    continue
+
+                # IUR standard (user/guest > global)
+                key_user = ("IUR", rec_ing.ingredient_id, rec_ing.unit, getattr(user, "id", None), guest_id)
+                ref = cache.get(key_user)
+                if ref is None:
+                    ref = (IngredientUnitReference.objects
+                           .filter(ingredient=rec_ing.ingredient, unit=rec_ing.unit,
+                                   is_hidden=False, user=user, guest_id=guest_id).first())
+                    if ref is None:
+                        key_global = ("IUR", rec_ing.ingredient_id, rec_ing.unit, None, None)
+                        ref = cache.get(key_global)
+                        if ref is None:
+                            ref = (IngredientUnitReference.objects
+                                   .filter(ingredient=rec_ing.ingredient, unit=rec_ing.unit,
+                                           is_hidden=False, user__isnull=True, guest_id__isnull=True).first())
+                            cache[key_global] = ref
+                    cache[key_user] = ref
+
+                if ref:
+                    total += qte * ref.weight_in_grams
+                    continue
+
+                # Fallback volumique générique
+                if unit == "ml":
+                    total += qte; continue
+                if unit == "cl":
+                    total += qte * 10.0; continue
+                if unit in ("l", "lt", "litre", "litres"):
+                    total += qte * 1000.0; continue
+
+                warn(f"Aucune conversion pour '{name}' ({rec_ing.unit}). Ingrédient ignoré dans le total.")
+
             self.total_recipe_quantity = total
             if save:
                 self.save(update_fields=['total_recipe_quantity'])
-            return total
-        return self.total_recipe_quantity
+            return (total, notes) if collect_warnings else total
+        
+        return (self.total_recipe_quantity, []) if collect_warnings else self.total_recipe_quantity
     
     def _auto_fill_servings_from_pan(self):
         """Tente de deviner le nombre de portions si un pan CUSTOM est présent mais pas les servings renseignés."""

@@ -274,7 +274,7 @@ def test_total_quantity_missing_reference_raises_validation_error(recipe_with_co
     ingr = Ingredient.objects.create(ingredient_name="SansMapping")
     RecipeIngredient.objects.create(recipe=recipe_with_conversions, ingredient=ingr, quantity=2, unit="cas")
     with pytest.raises(ValidationError):
-        recipe_with_conversions.compute_and_set_total_quantity()
+        recipe_with_conversions.compute_and_set_total_quantity(strict=True)
 
 def test_total_quantity_force_recompute(recipe_with_conversions):
     """force=True recalcule même si la valeur existe déjà."""

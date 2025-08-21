@@ -36,7 +36,10 @@ User = get_user_model()
 
 @pytest.fixture
 def user():
-    return User.objects.create_user(username="user1", password="testpass123")
+    admin =  User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin   
 
 @pytest.fixture
 def setup_ingredient(db, user):
@@ -44,14 +47,14 @@ def setup_ingredient(db, user):
     return Ingredient.objects.create(ingredient_name="Chocolat", visibility="public", user=user)
 
 @pytest.fixture
-def category():
+def category(user):
     """Crée une catégorie valide pour les tests."""
-    return Category.objects.create(category_name="Fruits", category_type="ingredient")
+    return Category.objects.create(category_name="Fruits", category_type="ingredient", created_by=user)
 
 @pytest.fixture
-def label():
+def label(user):
     """Crée un label valide pour les tests."""
-    return Label.objects.create(label_name="Bio", label_type="both")
+    return Label.objects.create(label_name="Bio", label_type="both", created_by=user)
 
 @pytest.fixture
 def recipe():

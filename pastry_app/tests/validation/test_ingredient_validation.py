@@ -40,7 +40,10 @@ User = get_user_model()
 
 @pytest.fixture
 def user():
-    return User.objects.create_user(username="user1", password="testpass123")
+    admin = User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin 
 
 def test_create_ingredient_without_name(api_client, base_url):
     """ Vérifie qu'on ne peut PAS créer un ingrédient sans `ingredient_name`"""
@@ -84,12 +87,6 @@ def test_create_ingredient_with_nonexistent_label(api_client, base_url):
     assert "labels" in response.json()
     assert "object does not exist" in response.json()["labels"][0]  # Vérification du message
 
-# 🔴 Attention : Ce test d'unicité (test_update_ingredient_to_duplicate) fonctionnent UNIQUEMENT si `unique=True` est retiré du modèle.
-# Si `unique=True`, Django bloque la validation AVANT que l'API ne réponde -> `IntegrityError`
-# Solution recommandée :
-# 1️. Tester l'unicité dans l'API avec `validate_ingredient_name()` dans `serializers.py` (sans `unique=True`).
-# 2️. En production, remettre `unique=True` dans `models.py` pour sécuriser la base, mais NE PAS tester cela avec pytest.
-#    Si ces tests échouent avec `unique=True`, c'est normal et tu peux ignorer l'erreur !
 def test_update_ingredient_to_duplicate(api_client, base_url, user):
     """ Vérifie qu'on ne peut PAS modifier un ingrédient en lui donnant un `ingredient_name` déjà existant"""
     api_client.force_authenticate(user=user)
@@ -180,9 +177,9 @@ def test_ingredient_name_is_normalized():
 
 def test_category_type_for_ingredient_api(api_client, base_url, user):
     # Création des catégories
-    cat_ingredient = Category.objects.create(category_name="Cat Ingredient", category_type="ingredient")
-    cat_recipe = Category.objects.create(category_name="Cat Recipe", category_type="recipe")
-    cat_both = Category.objects.create(category_name="Cat Both", category_type="both")
+    cat_ingredient = Category.objects.create(category_name="Cat Ingredient", category_type="ingredient", created_by=user)
+    cat_recipe = Category.objects.create(category_name="Cat Recipe", category_type="recipe", created_by=user)
+    cat_both = Category.objects.create(category_name="Cat Both", category_type="both", created_by=user)
 
     api_client.force_authenticate(user=user)     # Création d'un user admin pour pouvoir POST
     url = base_url(model_name)

@@ -249,15 +249,23 @@ def test_api_total_recipe_quantity_manual(api_client, user):
     recipe = Recipe.objects.get(pk=recipe_id)
     assert recipe.total_recipe_quantity == 789
 
-def test_api_total_recipe_quantity_error_if_no_mapping(api_client, user):
+def test_api_total_recipe_quantity_error_if_no_mapping(api_client, user, monkeypatch):
     api_client.force_authenticate(user=user)
+
+    # strict=True partout pendant ce test
+    orig = Recipe.compute_and_set_total_quantity
+    def stricted(self, *args, **kwargs):
+        kwargs["strict"] = True
+        return orig(self, *args, **kwargs)
+    monkeypatch.setattr(Recipe, "compute_and_set_total_quantity", stricted)
+
     data = base_recipe_data()
     ingr = Ingredient.objects.create(ingredient_name="Mystère")
     data["ingredients"] = [{"ingredient": ingr.pk, "quantity": 1, "unit": "unit"}]
     data.pop("total_recipe_quantity", None)
     response = api_client.post("/api/recipes/", data, format="json")
     assert response.status_code == 400
-    assert "mapping" in str(response.data).lower() or "correspondance" in str(response.data).lower()
+    assert "aucune conversion" in str(response.data).lower() or "ignoré" in str(response.data).lower()
 
 def test_api_patch_total_recipe_quantity(api_client, user):
     api_client.force_authenticate(user=user)

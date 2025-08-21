@@ -543,7 +543,14 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
               ...
             ],
             "multiplier": 1.0   # optionnel, pour recalcul de l'aperçu
+            "include_warnings": false          # optionnel, défaut False
           }
+        Réponse :
+        {
+            "changed": <int>,
+            "scaling": {"mode": "client_multiplier", "multiplier": <float>},
+            "recipe": { ... adapté ... , "warnings": [...]? }  # warnings si include_warnings=True
+        }
         """
         host: Recipe = self.get_object()  # A (main recipe)
         try:
@@ -553,6 +560,10 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
 
         user = request.user if request.user.is_authenticated else None
         guest_id = request.headers.get("X-Guest-Id") if not user else None
+
+        # opt-in warnings
+        include_warnings = str(
+            request.data.get("include_warnings") or request.query_params.get("include_warnings") or "").lower() in {"1","true","yes"}
 
         # Assurer la variante (copy-on-write)
         target_variant = create_variant_for_host_and_rewire(link, host, user=user, guest_id=guest_id)
@@ -593,7 +604,7 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         # Recalcul d'aperçu
         m = float(request.data.get("multiplier", 1.0))
         cache = {}  # cache court, partagé pour cette requête
-        out = scale_recipe_globally(host, m, user=user, guest_id=guest_id, cache=cache)
+        out = scale_recipe_globally(host, m, user=user, guest_id=guest_id, cache=cache, return_warnings=include_warnings)
         # Surface explicite de la source du scaling (ici, fournie par le client)
         scaling = {"multiplier": float(m), "mode": "client_multiplier"}
         logger.info("bulk-edit recipe_id=%s mode=%s mult=%.6f", host.id, scaling["mode"], scaling["multiplier"])
@@ -1301,6 +1312,11 @@ class RecipeAdaptationAPIView(APIView):
             - target_servings (int, optionnel) : nombre de portions cibles
             - reference_recipe_id (int, optionnel) : recette servant de référence
             - prefer_reference (bool) [ptionnel, défaut False]  : force l’utilisation prioritaire de la référence si fournie
+            - include_warnings (bool, optionnel, défaut False) : Si True, la réponse inclut "warnings": [...]
+
+        Retour :
+            - dict adapté + "scaling_mode" + "scaling_multiplier"
+            - "warnings" si include_warnings=True
         """
         # Extraction des paramètres du corps de la requête
         recipe_id = request.data.get("recipe_id")
@@ -1344,6 +1360,10 @@ class RecipeAdaptationAPIView(APIView):
             return Response({"error": "Il faut fournir un moule cible, un nombre de portions cible ou une recette de référence."}, 
                             status=status.HTTP_400_BAD_REQUEST)
 
+        # opt-in warnings (body ou query)
+        include_warnings = str(request.data.get("include_warnings") or request.query_params.get("include_warnings") or ""
+                               ).lower() in {"1", "true", "yes"}
+
         # Contexte conversions (unit→g)
         user = request.user if request.user.is_authenticated else None
         guest_id = (
@@ -1364,7 +1384,7 @@ class RecipeAdaptationAPIView(APIView):
             logger.info("scaling recipe_id=%s mode=%s multiplier=%.6f", recipe.id, scaling_mode, float(multiplier))
             # 2. Application du scaling partout
             cache = {}
-            data = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache)
+            data = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache, return_warnings=include_warnings)
             # 3. Infos utiles en plus
             data["scaling_mode"] = scaling_mode
             data["scaling_multiplier"] = float(multiplier)  
@@ -1421,14 +1441,33 @@ class RecipeAdaptationByIngredientAPIView(APIView):
     """
 
     def post(self, request):
+        """
+        Adapte une recette en respectant des contraintes d’ingrédients.
+        Paramètres d'entrée :
+            - recipe_id (int) [obligatoire]
+            - ingredient_constraints (dict {ingredient_id:int -> {quantity:float, unit:str}}) [obligatoire]
+            - guest_id (str, optionnel) si utilisateur invité
+            - include_warnings (bool, optionnel, défaut False)  # <- NOUVEAU
+            Si True, la réponse inclut "warnings": [...]
+        Retour :
+            - dict adapté + "limiting_ingredient_id" + "multiplier" + "scaling_mode"
+            - "warnings" si include_warnings=True
+        """
         serializer = RecipeAdaptationByIngredientSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        # opt-in warnings (body ou query)
+        include_warnings = str(request.data.get("include_warnings") or request.query_params.get("include_warnings") or ""
+                               ).lower() in {"1", "true", "yes"}
+        
         recipe = get_object_or_404(Recipe, pk=serializer.validated_data["recipe_id"])
 
         # Récupère user/guest pour choisir la bonne référence d’unité (spécifique → globale)
         user = request.user if request.user.is_authenticated else None
-        guest_id = (request.headers.get("X-Guest-Id") or request.headers.get("X-GUEST-ID") or serializer.validated_data.get("guest_id") or request.query_params.get("guest_id"))
+        guest_id = (request.headers.get("X-Guest-Id") 
+                    or request.headers.get("X-GUEST-ID") 
+                    or serializer.validated_data.get("guest_id") 
+                    or request.query_params.get("guest_id"))
 
         # Conversion des clés en entier pour correspondre aux IDs en base
         ingredient_constraints = {int(k): v for k, v in serializer.validated_data["ingredient_constraints"].items()}
@@ -1440,7 +1479,7 @@ class RecipeAdaptationByIngredientAPIView(APIView):
             # 2. Calcul du multiplicateur limitant
             multiplier, limiting_ingredient_id = get_limiting_multiplier(recipe, ingredient_constraints)
             # 3. Adaptation globale
-            result = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache)
+            result = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache, return_warnings=include_warnings)
             # 4. Ajoute les infos utiles au retour
             result["limiting_ingredient_id"] = limiting_ingredient_id
             result["multiplier"] = float(multiplier)

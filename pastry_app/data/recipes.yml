@@ -13,7 +13,7 @@
   ingredients:
     - { ingredient: "beurre demi-sel", quantity: 125, unit: "g" }
     - { ingredient: "sucre glace", quantity: 90, unit: "g" }
-    - { ingredient: "œuf", quantity: 1, unit: null }
+    - { ingredient: "œuf", quantity: 1, unit: "unit" }
     - { ingredient: "poudre d’amandes", quantity: 30, unit: "g" }
     - { ingredient: "farine T55", quantity: 250, unit: "g" }
     - { ingredient: "œuf (dorure)", quantity: 1, unit: "unit" }
@@ -41,8 +41,8 @@
   ingredients:
     - { ingredient: "purée de pêches blanches", quantity: 200, unit: "g" }
     - { ingredient: "eau", quantity: 100, unit: "g" }
-    - { ingredient: "verveine fraîche", quantity: 10, unit: "feuilles" }
-    - { ingredient: "poivre du Timut", quantity: 4, unit: "grains" }
+    - { ingredient: "verveine fraîche (feuille)", quantity: 10, unit: "unit" }
+    - { ingredient: "poivre du Timut", quantity: 4, unit: "unit" }
     - { ingredient: "vinaigre balsamique blanc de Modène", quantity: 4, unit: "cas" }
   steps:
     - { step_number: 1, instruction: "Infuser 15 min l’eau chauffée avec verveine et poivre. Mélanger avec la purée de pêches et le vinaigre.", trick: null }
@@ -64,10 +64,10 @@
     - { ingredient: "cream cheese", quantity: 250, unit: "g" }
     - { ingredient: "sucre", quantity: 20, unit: "g" }
     - { ingredient: "eau", quantity: 45, unit: "g" }
-    - { ingredient: "citron vert (zeste)", quantity: 1, unit: null }
+    - { ingredient: "citron vert (zeste)", quantity: 1, unit: "qs" }
     - { ingredient: "œufs", quantity: 120, unit: "g" }
     - { ingredient: "chocolat blanc faiblement sucré", quantity: 225, unit: "g" }
-    - { ingredient: "gélatine (feuille)", quantity: 1, unit: null }
+    - { ingredient: "gélatine (feuille)", quantity: 1, unit: "unit" }
   steps:
     - { step_number: 1, instruction: "Fondre le chocolat blanc. Assouplir le cream cheese, ajouter les œufs en fouettant.", trick: null }
     - { step_number: 2, instruction: "Chauffer eau + sucre + zeste. Ajouter la gélatine hydratée.", trick: null }
@@ -113,7 +113,7 @@
   labels: []
   ingredients:
     - { ingredient: "pêches à pleine maturité", quantity: 1000, unit: "g" }
-    - { ingredient: "eau", quantity: 1, unit: "QS" }
+    - { ingredient: "eau", quantity: 1, unit: "qs" }
   steps:
     - { step_number: 1, instruction: "Cuire doucement les pêches en cubes avec un fond d’eau jusqu’à compotage. Refroidir.", trick: null }
 
@@ -130,14 +130,14 @@
   categories: []
   labels: []
   sub_recipes:
-    - { recipe_name: "Pâte sucrée", quantity: 1, unit: "portion" }
+    - { recipe_name: "Pâte sucrée", quantity: 595, unit: "g" }
     - { recipe_name: "Vinaigrette pêche–verveine", quantity: 1, unit: "portion" }
     - { recipe_name: "Appareil à cheesecake", quantity: 1, unit: "portion" }
     - { recipe_name: "Appareil à financier", quantity: 1, unit: "portion" }
     - { recipe_name: "Marmelade de pêches", quantity: 1, unit: "portion" }
   ingredients:
-    - { ingredient: "pêches (décor)", quantity: 2, unit: null }
-    - { ingredient: "pousses/fleurs", quantity: 1, unit: "QS" }
+    - { ingredient: "pêches (décor)", quantity: 2, unit: "unit" }
+    - { ingredient: "pousses/fleurs", quantity: 1, unit: "qs" }
   steps:
     - { step_number: 1, instruction: "Détailler disques Ø5 cm dans cheesecake congelé et dans le financier.", trick: null }
     - { step_number: 2, instruction: "Superposer un disque financier et un disque cheesecake. Ajouter une demi-sphère cheesecake (avec insert).", trick: "Placer l’insert bien au centre." }

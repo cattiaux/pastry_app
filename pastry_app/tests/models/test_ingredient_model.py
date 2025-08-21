@@ -31,7 +31,10 @@ User = get_user_model()
 
 @pytest.fixture
 def user():
-    return User.objects.create_user(username="user1", password="testpass123")
+    admin = User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin   
 
 @pytest.fixture
 def ingredient(db):
@@ -61,15 +64,15 @@ def test_ingredient_deletion(ingredient):
     ingredient.delete()
     assert not Ingredient.objects.filter(id=ingredient_id).exists()
 
-def test_ingredient_can_have_categories(ingredient):
+def test_ingredient_can_have_categories(ingredient, user):
     """ Vérifie qu'un ingrédient peut être associé à des catégories."""
-    category = Category.objects.create(category_name="TestCaté", category_type='recipe') 
+    category = Category.objects.create(category_name="TestCaté", category_type='recipe', created_by=user) 
     ingredient.categories.add(category)  # Assigner une catégorie
     assert category in ingredient.categories.all()  # Vérifier l’association
 
-def test_ingredient_can_have_labels(ingredient):
+def test_ingredient_can_have_labels(ingredient, user):
     """ Vérifie qu'un ingrédient peut être associé à des labels."""
-    label = Label.objects.create(label_name="Bio", label_type='recipe')
+    label = Label.objects.create(label_name="Bio", label_type='recipe', created_by=user)
     ingredient.labels.add(label)  # Assigner un label
     assert label in ingredient.labels.all()  # Vérifier l’association
 
@@ -80,11 +83,11 @@ def test_ingredient_name_cannot_be_null():
     assert 'ingredient_name' in str(excinfo.value)
     assert 'cannot be null' in str(excinfo.value)
 
-def test_ingredient_cannot_have_recipe_only_category():
+def test_ingredient_cannot_have_recipe_only_category(user):
     # Création des catégories
-    cat_ingredient = Category.objects.create(category_name="Cat Ingredient", category_type="ingredient")
-    cat_both = Category.objects.create(category_name="Cat Both", category_type="both")
-    cat_recipe = Category.objects.create(category_name="Cat Recipe", category_type="recipe")
+    cat_ingredient = Category.objects.create(category_name="Cat Ingredient", category_type="ingredient", created_by=user)
+    cat_both = Category.objects.create(category_name="Cat Both", category_type="both", created_by=user)
+    cat_recipe = Category.objects.create(category_name="Cat Recipe", category_type="recipe", created_by=user)
 
     # Création de l'ingrédient
     ing = Ingredient.objects.create(ingredient_name="My Ingredient")

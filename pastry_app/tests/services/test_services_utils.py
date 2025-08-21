@@ -1,10 +1,10 @@
-import pytest
+import pytest, importlib
 from typing import Optional
+from django.contrib.auth import get_user_model
 from pastry_app.utils import *
 from pastry_app.text_utils import *
 from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep, SubRecipe, Category
 from pastry_app.tests.base_api_test import api_client, base_url
-import importlib
 from pastry_app.views import *
 import pastry_app.views
 importlib.reload(pastry_app.views)
@@ -14,6 +14,15 @@ pytestmark = pytest.mark.django_db
 # =========================
 # FIXTURES & FACTORIES
 # =========================
+
+User = get_user_model()
+
+@pytest.fixture
+def user():
+    admin = User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin   
 
 # ---------- Helpers (mini factories) ----------
 
@@ -25,8 +34,8 @@ def make_pan_round(*, name=None, diameter=16.0, height=4.0, units_in_mold=1, use
 def make_ingredient(name: str):
     return Ingredient.objects.create(ingredient_name=name)
 
-def make_category(name: str, *, ctype="recipe", parent=None):
-    return Category.objects.create(category_name=name, category_type=ctype, parent_category=parent)
+def make_category(user, name: str, *, ctype="recipe", parent=None):
+    return Category.objects.create(category_name=name, category_type=ctype, parent_category=parent, created_by=user)
 
 def make_recipe(*, name: str, chef: str = "chef", recipe_type: str = "BASE",
                 pan: Optional[Pan] = None,
@@ -63,11 +72,11 @@ def add_subrecipe(parent: Recipe, *, sub: Recipe, qty: float, unit: str = "g"):
 # ---------- Fixtures de base partagées ----------
 
 @pytest.fixture
-def base_categories():
+def base_categories(user):
     """ Crée la catégorie parent 'choux' (type 'recipe') + sous-catégories 'éclair' et 'religieuse'. """
-    choux = make_category("choux", ctype="recipe")
-    eclair = make_category("éclair", ctype="recipe", parent=choux)
-    religieuse = make_category("religieuse", ctype="recipe", parent=choux)
+    choux = make_category(user, "choux", ctype="recipe")
+    eclair = make_category(user, "éclair", ctype="recipe", parent=choux)
+    religieuse = make_category(user, "religieuse", ctype="recipe", parent=choux)
     return {"choux": choux, "eclair": eclair, "religieuse": religieuse}
 
 @pytest.fixture
@@ -881,7 +890,7 @@ def test_suggest_reference_excludes_self(recettes_choux):
     candidates = suggest_recipe_reference(recipe, target_servings=8)
     assert recipe not in candidates
 
-def test_suggest_reference_excludes_non_scalable_candidates(base_ingredients):
+def test_suggest_reference_excludes_non_scalable_candidates(base_ingredients, user):
     """
     Le filtre d'éligibilité impose qu'un candidat ait pan(volume) OU servings.
     On crée 3 candidats dans la même catégorie parente :
@@ -891,8 +900,8 @@ def test_suggest_reference_excludes_non_scalable_candidates(base_ingredients):
     On vérifie que 'recipe_level' ne contient pas cand_none.
     """
     # Catégorie parente commune pour ne pas exclure pour une autre raison
-    parent = Category.objects.create(category_name="patisseries", category_type="recipe")
-    sub_cat = Category.objects.create(category_name="choux", category_type="recipe", parent_category=parent)
+    parent = Category.objects.create(category_name="patisseries", category_type="recipe", created_by=user)
+    sub_cat = Category.objects.create(category_name="choux", category_type="recipe", parent_category=parent, created_by=user)
 
     # Base
     base = make_recipe(name="base", pan=None)

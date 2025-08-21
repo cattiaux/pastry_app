@@ -20,7 +20,10 @@ User = get_user_model()
 
 @pytest.fixture
 def user():
-    return User.objects.create_user(username="user1", password="testpass123")
+    admin = User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True  # Assure que l'utilisateur est un admin
+    admin.save()
+    return admin 
 
 # ---------- Helpers (mini factories) ----------
 
@@ -32,8 +35,8 @@ def make_pan_round(*, name=None, diameter=16.0, height=4.0, units_in_mold=1, use
 def make_ingredient(name: str):
     return Ingredient.objects.create(ingredient_name=name)
 
-def make_category(name: str, *, ctype="recipe", parent=None):
-    return Category.objects.create(category_name=name, category_type=ctype, parent_category=parent)
+def make_category(user, name: str, *, ctype="recipe", parent=None):
+    return Category.objects.create(category_name=name, category_type=ctype, parent_category=parent, created_by=user)
 
 def make_recipe(*, name: str, chef: str = "chef", recipe_type: str = "BASE",
                 pan: Optional[Pan] = None,
@@ -70,11 +73,11 @@ def add_subrecipe(parent: Recipe, *, sub: Recipe, qty: float, unit: str = "g"):
 # ---------- Fixtures de base partagées ----------
 
 @pytest.fixture
-def base_categories():
+def base_categories(user):
     """ Crée la catégorie parent 'choux' (type 'recipe') + sous-catégories 'éclair' et 'religieuse'. """
-    choux = make_category("choux", ctype="recipe")
-    eclair = make_category("éclair", ctype="recipe", parent=choux)
-    religieuse = make_category("religieuse", ctype="recipe", parent=choux)
+    choux = make_category(user, "choux", ctype="recipe")
+    eclair = make_category(user, "éclair", ctype="recipe", parent=choux)
+    religieuse = make_category(user, "religieuse", ctype="recipe", parent=choux)
     return {"choux": choux, "eclair": eclair, "religieuse": religieuse}
 
 @pytest.fixture

@@ -374,53 +374,178 @@ def get_scaling_multiplier(recipe, target_servings: int = None, target_pan=None,
 # 3. SCALING / ADAPTATION DE RECETTE (MÉTIER)
 # ============================================================
 
-def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None, cache=None):
+def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None, cache=None, return_warnings: bool=False):
     """
-    Adapte récursivement une recette entière (ingrédients ET sous-recettes)
-    en appliquant un coefficient multiplicateur global.
+    Adapte récursivement une recette entière (ingrédients ET sous-recettes) avec un multiplicateur global.
+
+    Cas d’usage
+    -----------
+    - Changer le nombre de portions
+    - Changer de moule
+    - Contraindre un ingrédient limitant
+    - Appliquer un scaling homogène sur toute la recette
+
+    Algorithme
+    ----------
+    1) Ingrédients DIRECTS de `recipe` :
+       - Quantités × `multiplier` (unité inchangée).
+
+    2) Pour chaque sous-recette (lien SubRecipe : A→B) :
+       a) Quantité utilisée après scaling global :
+            used_qty = SubRecipe.quantity * multiplier
+       b) Conversion de `used_qty` en grammes via `_sub_used_grams(main_sub, sub_recipe)` :
+            - mg/g/kg → g (direct)
+            - ml/cl/l → g via densité de B :
+                densité (g/cm³) = total_preparation_g / volume_preparation_cm3
+                volume fourni par `get_source_volume(B)` ; 1 ml = 1 cm³
+            - autres unités (ex. "portion", "QS") → conversion non définie ici → None
+       c) Multiplicateur local appliqué aux ingrédients de B :
+            local_multiplier = used_qty_g / total_preparation_g
+          Si `used_qty_g` ou `total_preparation_g` manquent → fallback :
+            local_multiplier = multiplier  (ancien comportement conservé)
+
+    3) Calcul de `total_preparation_g` si nécessaire :
+       - Appel non persistant : `compute_and_set_total_quantity(force=False, save=False, user, guest_id, cache)`
+       - Règles internes de conversion vers g :
+           * mg/g/kg directs
+           * Références IngredientUnitReference (user/guest > global)
+           * Fallback volumique : 1 ml = 1 g ; 1 cl = 10 g ; 1 L = 1000 g
+           * QS :
+               - override par-ingredient si fourni
+               - sinon IUR(unit='QS')
+               - sinon 0 g (ignoré dans le total)
+         Avertissements collectables si l’option est activée.
+
+    Propriétés
+    ----------
+    - Aucune écriture en base.
+    - Utilise `cache` pour mémoïser les recherches d’unités (IUR).
+    - Les avertissements (ex. conversions manquantes, QS non mappé) peuvent être collectés via `return_warnings=True`.
+
+    Paramètres
+    ----------
+    recipe : Recipe
+        Recette racine à adapter.
+    multiplier : float
+        Coefficient global de scaling.
+    user, guest_id :
+        Contexte pour les correspondances d’unités (IUR spécifiques puis globales).
+    cache : dict | None
+        Cache optionnel partagé lors de l’adaptation.
+    return_warnings : bool
+        False (défaut) → sortie inchangée. True → ajoute une clé "warnings" détaillant les notes de conversion.
+
+    Retour
+    ------
+    dict
+        {
+          "recipe_id", "recipe_name", "scaling_multiplier",
+          "ingredients": [...],
+          "subrecipes": [...],
+          # présent si return_warnings=True
+          "warnings": [ {recipe_id, recipe_name, message}, ... ]
+        }
+    """
+    warnings = []
+
+    def _total_with_notes(rec):
+        """
+        Renvoie la masse totale (g) de la recette `rec` sans écriture en base.
+
+        Rôle
+        ----
+        - Si `return_warnings` (portée englobante) est True : appelle
+        `rec.compute_and_set_total_quantity(force=False, save=False, user=user, guest_id=guest_id, cache=cache, collect_warnings=True)`
+        puis agrège chaque note dans la liste `warnings` (portée englobante) avec le contexte recette.
+        - Sinon : appelle la même méthode avec `collect_warnings=False` et renvoie le float.
+
+        Entrées
+        -------
+        rec : Recipe
+            Préparation pour laquelle on souhaite `total_recipe_quantity`.
+
+        Contexte capturé (portée englobante)
+        ------------------------------------
+        user, guest_id : sélection des IUR spécifiques (user/guest) puis globales.
+        cache : dict partagé pour mémoïsation IUR.
+        return_warnings : bool
+        warnings : list[dict] accumulatrice (remplie seulement si `return_warnings=True`).
+
+        Conversion (déléguée à `compute_and_set_total_quantity`)
+        --------------------------------------------------------
+        - mg/g/kg massiques directs
+        - IUR (IngredientUnitReference) user/guest > global
+        - fallback volumique : ml = 1 g, cl = 10 g, L = 1000 g
+        - QS : override > IUR(QS) > 0 g par défaut
+
+        Effets / erreurs
+        ----------------
+        - Aucune écriture DB (`save=False`).
+        - Pas d’exception levée en mode non strict ; les unités non convertibles sont ignorées avec note.
+        - Réutilise `cache` pour limiter les requêtes.
+
+        Retour
+        ------
+        float
+            Total en grammes calculé (ou réutilisé si déjà présent et `force=False`).
+        """
+        if return_warnings:
+            total, notes = rec.compute_and_set_total_quantity(
+                force=False, user=user, guest_id=guest_id, save=False, cache=cache, collect_warnings=True
+            )
+            # contexte
+            for msg in notes:
+                warnings.append({"recipe_id": rec.id, "recipe_name": getattr(rec, "recipe_name", ""), "message": msg})
+            return total
+        # mode legacy
+        return rec.compute_and_set_total_quantity(
+            force=False, user=user, guest_id=guest_id, save=False, cache=cache
+        )
     
-    Ce mode correspond à une adaptation pour :
-        - un nouveau nombre de portions (servings)
-        - un nouveau moule (pan)
-        - une contrainte sur un ingrédient limitant
-        - ou tout autre cas où l'on souhaite scaler la recette à l'identique partout
-
-    Principe :
-        - Les ingrédients DIRECTS de `recipe` sont multipliés par `multiplier`.
-        - Pour chaque **préparation** (liaison SubRecipe) :
-            1) quantité utilisée après scaling global :
-                used_qty = SubRecipe.quantity * multiplier
-            2) conversion de used_qty → **grammes** :
-                mg/g/kg → g (direct)
-                ml/cl/l → g via la densité de la préparation :
-                    densité (g/cm³) = total_preparation_g / volume_preparation_cm3
-                    (volume obtenu par get_source_volume(preparation))
-            3) multiplicateur **local** appliqué aux ingrédients de la préparation :
-                local_multiplier = used_qty_g / total_preparation_g
-        Fallback si info insuffisante (densité/total) : local_multiplier = multiplier.
-
-    IMPORTANT :
-        - NE MODIFIE RIEN EN BASE : Retourne une structure imbriquée complète avec les quantités adaptées.
-        - Tente de calculer `total_recipe_quantity` à la volée (save=False) si absent.
-        - Suppose que 1 ml = 1 cm³.
-
-    :param recipe: instance de Recipe
-    :param multiplier: float (coefficient global pour la recette racine)
-    :param user / guest_id: utilisés pour les conversions éventuelles à la volée
-    :return: dict structuré { recipe_id, recipe_name, scaling_multiplier, ingredients, subrecipes }
-    """
-
     # --- Helper interne : convertit la quantité utilisée d'une sous-recette en grammes ---
     def _sub_used_grams(main_sub, sub_recipe):
         """
-        Convertit la quantité utilisée de `sub_recipe` (après scaling global) pour une préparation donnée en grammes.
+        Convertit la quantité utilisée de `sub_recipe` (après scaling global) en grammes.
 
-        - main_sub.quantity est dans l'unité `main_sub.unit` (limitée par le modèle/serializer).
-        - Si unité massique → conversion directe.
-        - Si unité volumique → conversion via la densité de la sous-recette :
-              density_g_per_cm3 = total_preparation_g / volume_sub_cm3
-          où volume_sub_cm3 provient de get_source_volume(sub_recipe)
-        Retourne un float (grammes) ou None si la conversion est impossible.
+        Entrées
+        -------
+        main_sub : SubRecipe
+            Lien A→B. `main_sub.quantity` exprimée dans `main_sub.unit`.
+        sub_recipe : Recipe
+            Recette B (préparation) utilisée par la recette hôte.
+
+        Règles de conversion
+        --------------------
+        1) Unités massiques : conversion directe
+        - mg → /1000
+        - g  → ×1
+        - kg → ×1000
+
+        2) Unités volumiques : conversion via densité de la sous-recette
+        - Nécessite :
+            * masse totale de B en g : `total_preparation_g`
+            (si absente, tentative via `sub_recipe.compute_and_set_total_quantity(force=False, save=False)`)
+            * volume de B en cm³ : `get_source_volume(sub_recipe)`  (1 ml = 1 cm³)
+        - Densité : `density_g_per_cm3 = total_preparation_g / volume_sub_cm3`
+        - Quantité utilisée convertie en cm³ :
+            ml → ml
+            cl → ×10
+            l  → ×1000
+        - Grammes = cm³ × densité
+
+        3) Autres unités (ex. "portion", "QS") : non converties ici → retour `None`
+        (le code appelant applique alors le fallback: `local_multiplier = multiplier`).
+
+        Sortie
+        ------
+        float | None
+            Grammes calculés ou `None` si la conversion est impossible
+            (densité indisponible ou unité non massique/volumique).
+
+        Effets de bord
+        --------------
+        - Aucun write DB. Pas d’exception levée.
+        - Les avertissements éventuels sont gérés au niveau appelant si activés.
         """
         used_qty = float(main_sub.quantity) * float(multiplier)
         used_unit = main_sub.unit
@@ -438,14 +563,16 @@ def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None, cache
             # Masse totale (g) de la préparation
             total_preparation_g = getattr(sub_recipe, "total_recipe_quantity", None)
             if total_preparation_g is None:
-                try:
-                    total_preparation_g = sub_recipe.compute_and_set_total_quantity(force=False, user=user, guest_id=guest_id, save=False, cache=cache)
-                except Exception:
-                    total_preparation_g = None
+                total_preparation_g = _total_with_notes(sub_recipe)
 
             # volume de B en cm³ (1 ml = 1 cm³)
             volume_cm3, _ = get_source_volume(sub_recipe)
             if not (total_preparation_g and volume_cm3):
+                if return_warnings:
+                    warnings.append({
+                        "recipe_id": sub_recipe.id, "recipe_name": getattr(sub_recipe, "recipe_name", ""),
+                        "message": "Densité indisponible (total/volume manquant). Fallback multiplicateur global."
+                    })
                 return None
 
             density_g_per_cm3 = float(total_preparation_g) / float(volume_cm3)  # g / cm³
@@ -479,10 +606,7 @@ def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None, cache
         used_qty_g = _sub_used_grams(main_sub, sub_recipe)
         total_preparation_g = getattr(sub_recipe, "total_recipe_quantity", None)
         if total_preparation_g is None:
-            try:
-                total_preparation_g = sub_recipe.compute_and_set_total_quantity(force=False, user=user, guest_id=guest_id, save=False, cache=cache)
-            except Exception:
-                total_preparation_g = None
+            total_preparation_g = _total_with_notes(sub_recipe)
 
         # multiplicateur local
         if used_qty_g is not None and total_preparation_g:
@@ -491,7 +615,9 @@ def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None, cache
             local_multiplier = float(multiplier)  # fallback: ancien comportement
 
         # Récursivité : adapte la sous-recette avec le multiplicateur local calculé
-        adapted_sub = scale_recipe_globally(sub_recipe, local_multiplier, user=user, guest_id=guest_id, cache=cache)
+        adapted_sub = scale_recipe_globally(sub_recipe, local_multiplier, user=user, guest_id=guest_id, cache=cache, return_warnings=return_warnings)
+        if return_warnings and "warnings" in adapted_sub:
+            warnings.extend(adapted_sub["warnings"])
 
         adapted_subrecipes.append({
             "sub_recipe_id": sub_recipe.id,
@@ -505,13 +631,16 @@ def scale_recipe_globally(recipe, multiplier, *, user=None, guest_id=None, cache
         })
 
     # 3. Structure de retour
-    return {
+    out = {
         "recipe_id": recipe.id,
         "recipe_name": getattr(recipe, "recipe_name", ""),
         "scaling_multiplier": multiplier,
         "ingredients": adapted_ingredients,
         "subrecipes": adapted_subrecipes,
     }
+    if return_warnings:
+        out["warnings"] = warnings
+    return out
 
 # ============================================================
 # 4. CAS PARTICULIERS (ADAPTATION PAR CONTRAINTE)

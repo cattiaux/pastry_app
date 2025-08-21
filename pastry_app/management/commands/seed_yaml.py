@@ -9,6 +9,7 @@ from pathlib import Path
 import yaml
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from pastry_app.models import Category, Label, Ingredient, Pan, Recipe, RecipeStep, RecipeIngredient, SubRecipe, RecipeCategory, RecipeLabel
 from pastry_app.constants import UNIT_CHOICES, SUBRECIPE_UNIT_CHOICES
@@ -309,10 +310,24 @@ class Command(BaseCommand):
             rec = self._upsert_recipe_header(r)
             by_rec[rec.recipe_name.lower()] = rec
 
-        # Recettes, passe 2: relations
+        # Recettes, passe 2: relations + Calcul du total
+        cache = {}
         for r in recs:
             rec = by_rec[r["recipe_name"].lower()]
             self._replace_relations(rec, r, by_ing, by_rec)
+
+            # --- calcule et enregistre total_recipe_quantity ---
+            try:
+                res = rec.compute_and_set_total_quantity(
+                    force=True, save=True, cache=cache, collect_warnings=True
+                )
+                total, notes = res if isinstance(res, tuple) else (res, [])
+                self.stdout.write(f"[total] {rec.recipe_name}: {total:.2f} g")
+                if notes:
+                    self.stdout.write(f"[warn] {rec.recipe_name}: {len(notes)} conversions ignorées")
+            except ValidationError as e:
+                # Si tu préfères bloquer l'import sur erreur, remplace le WARNING par un raise
+                self.stdout.write(self.style.WARNING(f"[total] {rec.recipe_name}: calcul ignoré ({e})"))
 
         if opts.get("dry_run"):
             transaction.set_rollback(True)
