@@ -1,0 +1,32 @@
+# Type par défaut: "both" si applicable à ingrédient et recette.
+- { label_name: "bio", label_type: "both", created_by: "cattiaux" }
+- { label_name: "sans gluten", label_type: "both", created_by: "cattiaux" }
+- { label_name: "avec gluten", label_type: "both", created_by: "cattiaux" }
+- { label_name: "sans lactose", label_type: "both", created_by: "cattiaux" }
+- { label_name: "sans œufs", label_type: "both", created_by: "cattiaux" }
+- { label_name: "végétarien", label_type: "both", created_by: "cattiaux" }
+- { label_name: "vegan", label_type: "both", created_by: "cattiaux" }
+- { label_name: "contient fruits à coque", label_type: "both", created_by: "cattiaux" }
+- { label_name: "contient arachide", label_type: "both", created_by: "cattiaux" }
+- { label_name: "contient sésame", label_type: "both", created_by: "cattiaux" }
+- { label_name: "contient soja", label_type: "both", created_by: "cattiaux" }
+- { label_name: "contient lait", label_type: "both", created_by: "cattiaux" }
+- { label_name: "contient œufs", label_type: "both", created_by: "cattiaux" }
+- { label_name: "faible IG", label_type: "both", created_by: "cattiaux" }
+- { label_name: "sans sucre ajouté", label_type: "both", created_by: "cattiaux" }
+- { label_name: "saisonnier été", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "saisonnier automne", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "saisonnier hiver", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "saisonnier printemps", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "facile", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "intermédiaire", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "avancé", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "sans cuisson", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "nécessite congélation", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "à partager", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "individuel", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "Noël", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "Pâques", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "Anniversaire", label_type: "recipe", created_by: "cattiaux" }
+- { label_name: "AOP/IGP", label_type: "ingredient", created_by: "cattiaux" }
+- { label_name: "commerce équitable", label_type: "ingredient", created_by: "cattiaux" }

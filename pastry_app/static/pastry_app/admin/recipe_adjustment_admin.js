@@ -6,6 +6,13 @@
  * - Tous les champs deviennent gris/inactifs sauf pan, servings_min, servings_max et la case à cocher elle-même.
  * - Désactive aussi visuellement les labels pour améliorer la lisibilité.
  * - Prend en compte le champ tags (géré par Tagify).
+ * 
+ *   - Attente de django.jQuery (wrapper)
+ *   - CSRF pour AJAX
+ *   - Endpoint dynamique
+ *   - Collecte des entrées (servings, pan, contraintes)
+ *   - POST d’adaptation
+ *   - Rendu récursif de la synthèse
  */
 
 

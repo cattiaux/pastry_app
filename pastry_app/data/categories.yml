@@ -1,0 +1,114 @@
+# --- INGRÉDIENTS ---
+- { category_name: "Farines et céréales", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Farines de blé", category_type: "ingredient", parent_category: "Farines et céréales", created_by: "cattiaux" }
+- { category_name: "Farine T45", category_type: "ingredient", parent_category: "Farines de blé", created_by: "cattiaux" }
+- { category_name: "Farine T55", category_type: "ingredient", parent_category: "Farines de blé", created_by: "cattiaux" }
+- { category_name: "Farine T65", category_type: "ingredient", parent_category: "Farines de blé", created_by: "cattiaux" }
+- { category_name: "Farines spéciales", category_type: "ingredient", parent_category: "Farines et céréales", created_by: "cattiaux" }
+- { category_name: "Épeautre", category_type: "ingredient", parent_category: "Farines spéciales", created_by: "cattiaux" }
+- { category_name: "Seigle", category_type: "ingredient", parent_category: "Farines spéciales", created_by: "cattiaux" }
+- { category_name: "Sarrasin", category_type: "ingredient", parent_category: "Farines spéciales", created_by: "cattiaux" }
+- { category_name: "Riz", category_type: "ingredient", parent_category: "Farines spéciales", created_by: "cattiaux" }
+- { category_name: "Maïs", category_type: "ingredient", parent_category: "Farines spéciales", created_by: "cattiaux" }
+- { category_name: "Amidons et fécules", category_type: "ingredient", parent_category: "Farines et céréales", created_by: "cattiaux" }
+
+- { category_name: "Sucres et édulcorants", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Sucres cristallins", category_type: "ingredient", parent_category: "Sucres et édulcorants", created_by: "cattiaux" }
+- { category_name: "Sucres spéciaux", category_type: "ingredient", parent_category: "Sucres et édulcorants", created_by: "cattiaux" }
+- { category_name: "Miels et sirops", category_type: "ingredient", parent_category: "Sucres et édulcorants", created_by: "cattiaux" }
+
+- { category_name: "Produits laitiers", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Beurres", category_type: "ingredient", parent_category: "Produits laitiers", created_by: "cattiaux" }
+- { category_name: "Crèmes et laits", category_type: "ingredient", parent_category: "Produits laitiers", created_by: "cattiaux" }
+- { category_name: "Fromages frais", category_type: "ingredient", parent_category: "Produits laitiers", created_by: "cattiaux" }
+
+- { category_name: "Œufs et dérivés", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Blancs", category_type: "ingredient", parent_category: "Œufs et dérivés", created_by: "cattiaux" }
+- { category_name: "Jaunes", category_type: "ingredient", parent_category: "Œufs et dérivés", created_by: "cattiaux" }
+
+- { category_name: "Chocolats et cacao", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Chocolat noir", category_type: "ingredient", parent_category: "Chocolats et cacao", created_by: "cattiaux" }
+- { category_name: "Chocolat lait", category_type: "ingredient", parent_category: "Chocolats et cacao", created_by: "cattiaux" }
+- { category_name: "Chocolat blanc", category_type: "ingredient", parent_category: "Chocolats et cacao", created_by: "cattiaux" }
+- { category_name: "Cacao en poudre", category_type: "ingredient", parent_category: "Chocolats et cacao", created_by: "cattiaux" }
+
+- { category_name: "Fruits", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Agrumes", category_type: "ingredient", parent_category: "Fruits", created_by: "cattiaux" }
+- { category_name: "Fruits rouges", category_type: "ingredient", parent_category: "Fruits", created_by: "cattiaux" }
+- { category_name: "Fruits à noyau", category_type: "ingredient", parent_category: "Fruits", created_by: "cattiaux" }
+- { category_name: "Fruits exotiques", category_type: "ingredient", parent_category: "Fruits", created_by: "cattiaux" }
+- { category_name: "Fruits à coque", category_type: "ingredient", parent_category: "Fruits", created_by: "cattiaux" }
+- { category_name: "Purées de fruits", category_type: "ingredient", parent_category: "Fruits", created_by: "cattiaux" }
+
+- { category_name: "Gélifiants et texturants", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Gélatine", category_type: "ingredient", parent_category: "Gélifiants et texturants", created_by: "cattiaux" }
+- { category_name: "Pectines", category_type: "ingredient", parent_category: "Gélifiants et texturants", created_by: "cattiaux" }
+- { category_name: "Agar-agar", category_type: "ingredient", parent_category: "Gélifiants et texturants", created_by: "cattiaux" }
+
+- { category_name: "Levures et poudres levantes", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Levure chimique", category_type: "ingredient", parent_category: "Levures et poudres levantes", created_by: "cattiaux" }
+- { category_name: "Levure boulangère", category_type: "ingredient", parent_category: "Levures et poudres levantes", created_by: "cattiaux" }
+- { category_name: "Bicarbonate", category_type: "ingredient", parent_category: "Levures et poudres levantes", created_by: "cattiaux" }
+
+- { category_name: "Matières grasses et huiles", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Huiles", category_type: "ingredient", parent_category: "Matières grasses et huiles", created_by: "cattiaux" }
+
+- { category_name: "Épices et aromates", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Herbes fraîches", category_type: "ingredient", parent_category: "Épices et aromates", created_by: "cattiaux" }
+- { category_name: "Poivres", category_type: "ingredient", parent_category: "Épices et aromates", created_by: "cattiaux" }
+- { category_name: "Vanille et dérivés", category_type: "ingredient", parent_category: "Épices et aromates", created_by: "cattiaux" }
+
+- { category_name: "Condiments et acides", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Vinaigres", category_type: "ingredient", parent_category: "Condiments et acides", created_by: "cattiaux" }
+- { category_name: "Jus d’agrumes", category_type: "ingredient", parent_category: "Condiments et acides", created_by: "cattiaux" }
+- { category_name: "Spiritueux", category_type: "ingredient", parent_category: "Condiments et acides", created_by: "cattiaux" }
+
+- { category_name: "Auxiliaires et additifs", category_type: "ingredient", parent_category: null, created_by: "cattiaux" }
+
+# --- RECETTES ---
+- { category_name: "Produits finis", category_type: "recipe", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Tartes", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Tartelettes", category_type: "recipe", parent_category: "Tartes", created_by: "cattiaux" }
+- { category_name: "Entremets", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Gâteaux de voyage", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Cakes", category_type: "recipe", parent_category: "Gâteaux de voyage", created_by: "cattiaux" }
+- { category_name: "Biscuits", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Choux et éclairs", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Macarons", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Meringués et pavlovas", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Brioches et viennoiseries", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Pains", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Bûches", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Glaces et sorbets", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Confiserie", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+- { category_name: "Chocolaterie", category_type: "recipe", parent_category: "Produits finis", created_by: "cattiaux" }
+
+- { category_name: "Préparations de base", category_type: "recipe", parent_category: null, created_by: "cattiaux" }
+- { category_name: "Pâtes", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }
+- { category_name: "Pâte sablée", category_type: "recipe", parent_category: "Pâtes", created_by: "cattiaux" }
+- { category_name: "Pâte sucrée", category_type: "recipe", parent_category: "Pâtes", created_by: "cattiaux" }
+- { category_name: "Pâte brisée", category_type: "recipe", parent_category: "Pâtes", created_by: "cattiaux" }
+- { category_name: "Feuilletées", category_type: "recipe", parent_category: "Pâtes", created_by: "cattiaux" }
+- { category_name: "Pâte à choux", category_type: "recipe", parent_category: "Pâtes", created_by: "cattiaux" }
+
+- { category_name: "Crèmes", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }
+- { category_name: "Crème pâtissière", category_type: "recipe", parent_category: "Crèmes", created_by: "cattiaux" }
+- { category_name: "Crème mousseline", category_type: "recipe", parent_category: "Crèmes", created_by: "cattiaux" }
+- { category_name: "Crème diplomate", category_type: "recipe", parent_category: "Crèmes", created_by: "cattiaux" }
+- { category_name: "Crème anglaise", category_type: "recipe", parent_category: "Crèmes", created_by: "cattiaux" }
+- { category_name: "Chantilly", category_type: "recipe", parent_category: "Crèmes", created_by: "cattiaux" }
+
+- { category_name: "Crémeux", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }
+- { category_name: "Mousses", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }
+- { category_name: "Ganaches", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }
+- { category_name: "Ganaches montées", category_type: "recipe", parent_category: "Ganaches", created_by: "cattiaux" }
+
+- { category_name: "Confitures et marmelades", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }
+- { category_name: "Confit/compotées/inserts", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }
+- { category_name: "Croustillants et streusels", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }
+- { category_name: "Pralinés et pâtes d’oléagineux", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }
+- { category_name: "Caramels et sauces", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }
+- { category_name: "Glaçages et nappages", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }
+- { category_name: "Glaçages miroir", category_type: "recipe", parent_category: "Glaçages et nappages", created_by: "cattiaux" }
+- { category_name: "Glaçages rocher/velours", category_type: "recipe", parent_category: "Glaçages et nappages", created_by: "cattiaux" }
+- { category_name: "Sirops d’imbibage", category_type: "recipe", parent_category: "Préparations de base", created_by: "cattiaux" }

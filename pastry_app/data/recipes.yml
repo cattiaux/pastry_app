@@ -1,0 +1,147 @@
+- recipe_name: "Pâte sucrée"
+  chef_name: "Quentin Lechat"
+  context_name: ""
+  source: "Fou de Pâtisserie n°36 juillet-août 2019"
+  recipe_type: "BASE"
+  servings_min: null
+  servings_max: null
+  pan_quantity: 1
+  total_recipe_quantity: null
+  pan: null
+  categories: []
+  labels: []
+  ingredients:
+    - { ingredient: "beurre demi-sel", quantity: 125, unit: "g" }
+    - { ingredient: "sucre glace", quantity: 90, unit: "g" }
+    - { ingredient: "œuf", quantity: 1, unit: null }
+    - { ingredient: "poudre d’amandes", quantity: 30, unit: "g" }
+    - { ingredient: "farine T55", quantity: 250, unit: "g" }
+    - { ingredient: "œuf (dorure)", quantity: 1, unit: "unit" }
+  steps:
+    - { step_number: 1, instruction: "Sabler au batteur le beurre froid en cubes avec le sucre glace.", trick: null }
+    - { step_number: 2, instruction: "Ajouter l’œuf puis la poudre d’amandes et la farine en 2 fois. Arrêter dès que la pâte se forme.", trick: null }
+    - { step_number: 3, instruction: "Fraiser 2 fois pour homogénéiser.", trick: null }
+    - { step_number: 4, instruction: "Réserver au réfrigérateur 4 à 5 h.", trick: null }
+    - { step_number: 5, instruction: "Étaler finement entre 2 feuilles de papier sulfurisé (≈1 mm).", trick: null }
+    - { step_number: 6, instruction: "Détailler disques Ø7,5 cm et bandes 26×4 cm.", trick: null }
+    - { step_number: 7, instruction: "Foncer des cercles graissés. Cuire 9 min à 170 °C chaleur tournante. Dorer à l’œuf puis flasher.", trick: null }
+
+- recipe_name: "Vinaigrette pêche–verveine"
+  chef_name: "Quentin Lechat"
+  context_name: ""
+  source: "Fou de Pâtisserie n°36 juillet-août 2019"
+  recipe_type: "BASE"
+  servings_min: null
+  servings_max: null
+  pan_quantity: 1
+  total_recipe_quantity: null
+  pan: null
+  categories: []
+  labels: []
+  ingredients:
+    - { ingredient: "purée de pêches blanches", quantity: 200, unit: "g" }
+    - { ingredient: "eau", quantity: 100, unit: "g" }
+    - { ingredient: "verveine fraîche", quantity: 10, unit: "feuilles" }
+    - { ingredient: "poivre du Timut", quantity: 4, unit: "grains" }
+    - { ingredient: "vinaigre balsamique blanc de Modène", quantity: 4, unit: "cas" }
+  steps:
+    - { step_number: 1, instruction: "Infuser 15 min l’eau chauffée avec verveine et poivre. Mélanger avec la purée de pêches et le vinaigre.", trick: null }
+    - { step_number: 2, instruction: "Couler en moules demi-sphères et congeler 7 h.", trick: null }
+
+- recipe_name: "Appareil à cheesecake"
+  chef_name: "Quentin Lechat"
+  context_name: ""
+  source: "Fou de Pâtisserie n°36 juillet-août 2019"
+  recipe_type: "BASE"
+  servings_min: null
+  servings_max: null
+  pan_quantity: 1
+  total_recipe_quantity: null
+  pan: null
+  categories: []
+  labels: []
+  ingredients:
+    - { ingredient: "cream cheese", quantity: 250, unit: "g" }
+    - { ingredient: "sucre", quantity: 20, unit: "g" }
+    - { ingredient: "eau", quantity: 45, unit: "g" }
+    - { ingredient: "citron vert (zeste)", quantity: 1, unit: null }
+    - { ingredient: "œufs", quantity: 120, unit: "g" }
+    - { ingredient: "chocolat blanc faiblement sucré", quantity: 225, unit: "g" }
+    - { ingredient: "gélatine (feuille)", quantity: 1, unit: null }
+  steps:
+    - { step_number: 1, instruction: "Fondre le chocolat blanc. Assouplir le cream cheese, ajouter les œufs en fouettant.", trick: null }
+    - { step_number: 2, instruction: "Chauffer eau + sucre + zeste. Ajouter la gélatine hydratée.", trick: null }
+    - { step_number: 3, instruction: "Verser le sirop chaud filtré sur cream cheese + œufs. Mélanger.", trick: null }
+    - { step_number: 4, instruction: "Ajouter le chocolat blanc fondu.", trick: null }
+    - { step_number: 5, instruction: "Couler une partie sur tapis silicone à rebords. Couler l’autre en demi-sphères avec l’insert. Congeler 5 h.", trick: null }
+
+- recipe_name: "Appareil à financier"
+  chef_name: "Quentin Lechat"
+  context_name: ""
+  source: "Fou de Pâtisserie n°36 juillet-août 2019"
+  recipe_type: "BASE"
+  servings_min: null
+  servings_max: null
+  pan_quantity: 1
+  total_recipe_quantity: null
+  pan: null
+  categories: []
+  labels: []
+  ingredients:
+    - { ingredient: "poudre d’amandes", quantity: 150, unit: "g" }
+    - { ingredient: "sucre glace", quantity: 250, unit: "g" }
+    - { ingredient: "beurre demi-sel", quantity: 250, unit: "g" }
+    - { ingredient: "blancs d’œufs", quantity: 250, unit: "g" }
+    - { ingredient: "farine", quantity: 100, unit: "g" }
+  steps:
+    - { step_number: 1, instruction: "Mélanger tous les éléments secs au batteur. Ajouter les blancs d’œufs.", trick: null }
+    - { step_number: 2, instruction: "Cuire le beurre en beurre noisette.", trick: null }
+    - { step_number: 3, instruction: "Verser le beurre noisette chaud, filtré, sur le mélange.", trick: null }
+    - { step_number: 4, instruction: "Mouler en plaque à rebords et cuire 9 min à 170 °C.", trick: null }
+
+- recipe_name: "Marmelade de pêches"
+  chef_name: "Quentin Lechat"
+  context_name: ""
+  source: "Fou de Pâtisserie n°36 juillet-août 2019"
+  recipe_type: "BASE"
+  servings_min: null
+  servings_max: null
+  pan_quantity: 1
+  total_recipe_quantity: null
+  pan: null
+  categories: []
+  labels: []
+  ingredients:
+    - { ingredient: "pêches à pleine maturité", quantity: 1000, unit: "g" }
+    - { ingredient: "eau", quantity: 1, unit: "QS" }
+  steps:
+    - { step_number: 1, instruction: "Cuire doucement les pêches en cubes avec un fond d’eau jusqu’à compotage. Refroidir.", trick: null }
+
+- recipe_name: "Tartelette pêche, verveine et balsamique blanc"
+  chef_name: "Quentin Lechat"
+  context_name: ""
+  source: "Fou de Pâtisserie n°36 juillet-août 2019"
+  recipe_type: "BASE"
+  servings_min: 6
+  servings_max: 6
+  pan_quantity: 1
+  total_recipe_quantity: null
+  pan: null
+  categories: []
+  labels: []
+  sub_recipes:
+    - { recipe_name: "Pâte sucrée", quantity: 1, unit: "portion" }
+    - { recipe_name: "Vinaigrette pêche–verveine", quantity: 1, unit: "portion" }
+    - { recipe_name: "Appareil à cheesecake", quantity: 1, unit: "portion" }
+    - { recipe_name: "Appareil à financier", quantity: 1, unit: "portion" }
+    - { recipe_name: "Marmelade de pêches", quantity: 1, unit: "portion" }
+  ingredients:
+    - { ingredient: "pêches (décor)", quantity: 2, unit: null }
+    - { ingredient: "pousses/fleurs", quantity: 1, unit: "QS" }
+  steps:
+    - { step_number: 1, instruction: "Détailler disques Ø5 cm dans cheesecake congelé et dans le financier.", trick: null }
+    - { step_number: 2, instruction: "Superposer un disque financier et un disque cheesecake. Ajouter une demi-sphère cheesecake (avec insert).", trick: "Placer l’insert bien au centre." }
+    - { step_number: 3, instruction: "Déposer l’entremets dans le fond de tarte cuit.", trick: null }
+    - { step_number: 4, instruction: "Pocher la marmelade de pêches tout autour.", trick: null }
+    - { step_number: 5, instruction: "Tailler de fines tranches de pêche. Les disposer pour recouvrir la tartelette et l’appareil.", trick: "Couteau à dents conseillé." }
+    - { step_number: 6, instruction: "Décorer de pousses/fleurs. Déguster quand le cheesecake est revenu à température.", trick: null }

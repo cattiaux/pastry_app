@@ -11,12 +11,14 @@ UNIT_CHOICES = [
     ('cac', 'Cuillère à café'),
     ('cup', 'Cups'),
     ('unit', 'Unit'),
+    ('qs', 'Suficient Quantity')
     # Add more units as needed
 ]
 
 SUBRECIPE_UNIT_CHOICES = [
     ("mg", "mg"), ("g", "g"), ("kg", "kg"),
     ("ml", "ml"), ("cl", "cl"), ("l", "l"),
+    ("qs", "qs"),
 ]
 
 ALLOWED_CLASSIC_SEARCH_PARAMS = {

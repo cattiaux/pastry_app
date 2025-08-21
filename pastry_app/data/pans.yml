@@ -1,0 +1,116 @@
+- pan_name: "Moule Oblong Aurélien Cohen"
+  pan_type: CUSTOM
+  pan_brand: "Pastry'evo"
+  units_in_mold: 1
+  volume_raw: 537
+  is_total_volume: true
+  unit: cm3
+  visibility: public
+
+- pan_name: "ACANTO"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 1
+  volume_raw: 1250
+  is_total_volume: true
+  unit: cm3
+  visibility: public
+
+- pan_name: "AF006S CITRON"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 8
+  volume_raw: 85
+  is_total_volume: false
+  unit: cm3
+  visibility: public
+
+- pan_name: "AF008S NOISETTE"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 8
+  volume_raw: 82
+  is_total_volume: false
+  unit: cm3
+  visibility: public
+
+- pan_name: "Almonds TOP26 - almond shape"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 1
+  volume_raw: 295
+  is_total_volume: true
+  unit: cm3
+  visibility: public
+
+- pan_name: "Babà"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 15
+  volume_raw: 96
+  is_total_volume: false
+  unit: cm3
+  visibility: public
+
+- pan_name: "BAMBOO PX4318"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 5
+  volume_raw: 400
+  is_total_volume: true
+  unit: cm3
+  visibility: public
+
+- pan_name: "CANDY PX4309"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 5
+  volume_raw: 360
+  is_total_volume: true
+  unit: cm3
+  visibility: public
+
+- pan_name: "Charm"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 8
+  volume_raw: 46
+  is_total_volume: false
+  unit: cm3
+  visibility: public
+
+- pan_name: "Comet"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 1
+  volume_raw: 1230
+  is_total_volume: true
+  unit: cm3
+  visibility: public
+
+- pan_name: "COROLLA"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 1
+  volume_raw: 848
+  is_total_volume: true
+  unit: cm3
+  visibility: public
+
+- pan_name: "DADA PX4319"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 5
+  volume_raw: 420
+  is_total_volume: true
+  unit: cm3
+  visibility: public
+
+- pan_name: "Façon Saint-Honoré KE074S"
+  pan_type: CUSTOM
+  pan_brand: "Pavoni"
+  units_in_mold: 1
+  volume_raw: 1000
+  is_total_volume: true
+  unit: cm3
+  visibility: public
