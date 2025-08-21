@@ -130,11 +130,11 @@
   categories: []
   labels: []
   sub_recipes:
-    - { recipe_name: "Pâte sucrée", quantity: 595, unit: "g" }
-    - { recipe_name: "Vinaigrette pêche–verveine", quantity: 1, unit: "portion" }
-    - { recipe_name: "Appareil à cheesecake", quantity: 1, unit: "portion" }
-    - { recipe_name: "Appareil à financier", quantity: 1, unit: "portion" }
-    - { recipe_name: "Marmelade de pêches", quantity: 1, unit: "portion" }
+    - { recipe_name: "Pâte sucrée", quantity: null, unit: null }
+    - { recipe_name: "Vinaigrette pêche–verveine", quantity: null, unit: null }
+    - { recipe_name: "Appareil à cheesecake", quantity: null, unit: null }
+    - { recipe_name: "Appareil à financier", quantity: null, unit: null }
+    - { recipe_name: "Marmelade de pêches", quantity: null, unit: null }
   ingredients:
     - { ingredient: "pêches (décor)", quantity: 2, unit: "unit" }
     - { ingredient: "pousses/fleurs", quantity: 1, unit: "qs" }

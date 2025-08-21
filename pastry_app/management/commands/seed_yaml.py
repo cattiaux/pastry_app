@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 from pathlib import Path
+from typing import Any, Dict, List, Tuple
 import yaml
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -24,9 +25,11 @@ except Exception:
     VALID_SUB_UNITS = {k for k, _ in SubRecipe._meta.get_field("unit").choices}
 
 class Command(BaseCommand):
+    """Import YAML → DB. Modes: upsert (défaut) ou reset (vide d’abord)."""
     help = "Peuple la base depuis YAML. Modes: upsert (défaut) ou reset."
 
     def add_arguments(self, parser):
+        """Déclare --dir, --mode, --dry-run."""
         parser.add_argument("--dir", required=True, help="Dossier contenant les YAML")
         parser.add_argument("--mode", choices=["upsert", "reset"], default="upsert")
         parser.add_argument("--dry-run", action="store_true")
@@ -53,17 +56,18 @@ class Command(BaseCommand):
                     for v in data.values():
                         if isinstance(v, list):
                             return v
-                    return []
         return []
 
     # -------------------- Helpers ORM --------------------
     @staticmethod
     def _ci(qs, field: str, value: str | None):
+        """Filtre insensible à la casse sur un champ."""
         if not value:
             return None
         return qs.filter(**{f"{field}__iexact": value}).first()
 
     def _require_admin(self):
+        """Retourne un admin is_staff=True, sinon erreur."""
         admin = get_user_model().objects.filter(is_staff=True).first()
         if not admin:
             raise CommandError("Aucun utilisateur admin (is_staff=True) trouvé.")
@@ -71,6 +75,7 @@ class Command(BaseCommand):
 
     # -------------------- RESET --------------------
     def _reset_db(self):
+        """Vide les tables dans un ordre sûr."""
         self.stdout.write("[reset] suppression des relations…")
         RecipeIngredient.objects.all().delete()
         RecipeStep.objects.all().delete()
@@ -88,6 +93,7 @@ class Command(BaseCommand):
 
     # -------------------- UPSERTS atomiques --------------------
     def _upsert_category(self, admin, c: dict):
+        """Crée/MAJ Category par nom; parent via nom."""
         parent = self._ci(Category.objects, "category_name", c.get("parent_category"))
         obj = self._ci(Category.objects, "category_name", c["category_name"])
         if obj:
@@ -109,6 +115,7 @@ class Command(BaseCommand):
             self.stdout.write(f"[new] Category: {c['category_name']}")
 
     def _upsert_label(self, admin, l: dict):
+        """Crée/MAJ Label par nom."""
         obj = self._ci(Label.objects, "label_name", l["label_name"])
         if obj:
             lt = l.get("label_type", obj.label_type)
@@ -125,6 +132,7 @@ class Command(BaseCommand):
             self.stdout.write(f"[new] Label: {l['label_name']}")
 
     def _upsert_ingredient(self, i: dict) -> Ingredient:
+        """Crée/MAJ Ingredient par nom, options visibilité/is_default."""
         obj = self._ci(Ingredient.objects, "ingredient_name", i["ingredient_name"])
         if obj:
             fields = []
@@ -144,6 +152,7 @@ class Command(BaseCommand):
         return obj
 
     def _upsert_pan(self, p: dict):
+        """Crée/MAJ Pan par pan_name."""
         obj = self._ci(Pan.objects, "pan_name", p.get("pan_name"))
         payload = dict(
             pan_type=p["pan_type"],
@@ -163,15 +172,14 @@ class Command(BaseCommand):
             Pan.objects.create(pan_name=p.get("pan_name"), **payload)
             self.stdout.write(f"[new] Pan: {p.get('pan_name') or '(sans nom)'}")
 
-    def _match_recipe(self, r: dict) -> Recipe | None:
-        return Recipe.objects.filter(
+    def _upsert_recipe_header(self, r: dict) -> Recipe:
+        """Crée/MAJ l’entête Recipe par triplet (name, chef, context)."""
+        obj = Recipe.objects.filter(
             recipe_name__iexact=r["recipe_name"],
             chef_name__iexact=(r.get("chef_name") or ""),
             context_name__iexact=(r.get("context_name") or ""),
         ).first()
 
-    def _upsert_recipe_header(self, r: dict) -> Recipe:
-        obj = self._match_recipe(r)
         payload = dict(
             source=r.get("source"),
             recipe_type=r.get("recipe_type", "BASE"),
@@ -197,6 +205,7 @@ class Command(BaseCommand):
 
     # -------------------- Validation YAML logique --------------------
     def _validate_steps(self, rec_name: str, steps: list[dict]):
+        """Vérifie 1..N sans trou si steps fournis."""
         if not steps:
             return
         nums = [int(s["step_number"]) for s in steps]
@@ -204,6 +213,7 @@ class Command(BaseCommand):
             raise CommandError(f"{rec_name}: step_number doit être 1..N sans trou (reçu {nums}).")
 
     def _validate_ing_line(self, rec_name: str, it: dict):
+        """Valide quantity/unit d’un ingrédient et retourne (q, u)."""
         q = it.get("quantity")
         u = it.get("unit")
         if q is None or u is None:
@@ -219,9 +229,10 @@ class Command(BaseCommand):
         return qf, u
 
     def _validate_sub_line(self, rec_name: str, sr: dict):
+        """Valide sub_recipe si qty/unit fournis; sinon autorise None."""
         q = sr.get("quantity"); u = sr.get("unit")
         if q is None or u is None:
-            raise CommandError(f"{rec_name}: sub_recipe '{sr}' requiert quantity ET unit.")
+            return None, None
         try:
             qf = float(q)
         except Exception:
@@ -233,7 +244,9 @@ class Command(BaseCommand):
         return qf, u
 
     # -------------------- Relations (replace) --------------------
-    def _replace_relations(self, rec: Recipe, r: dict, by_ing: dict[str, Ingredient], by_rec: dict[str, Recipe]):
+
+    def _apply_steps_and_ingredients(self, rec: Recipe, r: dict, by_ing: Dict[str, Ingredient]):
+        """Applique steps + ingredients, sans sub_recipes.  # NEW"""
         # Steps
         RecipeStep.objects.filter(recipe=rec).delete()
         steps = r.get("steps", [])
@@ -245,30 +258,38 @@ class Command(BaseCommand):
                 instruction=s["instruction"],
                 trick=s.get("trick"),
             )
-
         # Ingredients
         RecipeIngredient.objects.filter(recipe=rec).delete()
         for it in r.get("ingredients", []):
             qf, u = self._validate_ing_line(rec.recipe_name, it)
-            iname = it["ingredient"]
-            ing = by_ing.get(iname.lower()) or self._ci(Ingredient.objects, "ingredient_name", iname)
-            if not ing:
-                ing = Ingredient.objects.create(ingredient_name=iname)
+            name = it["ingredient"]
+            ing = by_ing.get(name.lower()) or self._ci(Ingredient.objects, "ingredient_name", name) \
+                  or Ingredient.objects.create(ingredient_name=name)
             RecipeIngredient.objects.create(recipe=rec, ingredient=ing, quantity=qf, unit=u)
 
-        # Sub-recipes
+    def _link_subrecipes(self, rec: Recipe, r: dict, by_rec: Dict[str, Recipe]):
+        """Crée les liens sub_recipes. Auto-remplit qty/unit si manquants.  # NEW"""
         SubRecipe.objects.filter(recipe=rec).delete()
         for sr in r.get("sub_recipes", []):
             child_name = sr.get("recipe_name") or sr.get("sub_recipe")
             child = by_rec.get(child_name.lower()) or self._ci(Recipe.objects, "recipe_name", child_name)
             if not child:
                 raise CommandError(f"{rec.recipe_name}: sous-recette introuvable '{child_name}'.")
-            qf, u = self._validate_sub_line(rec.recipe_name, sr)
-            SubRecipe.objects.create(recipe=rec, sub_recipe=child, quantity=qf, unit=u)
+
+            qty, unit = self._validate_sub_line(rec.recipe_name, sr)
+            if qty is None or unit is None:
+                # Auto: quantité = total de la sous-recette en g, unit = "g"
+                total = getattr(child, "total_recipe_quantity", None)
+                if total is None:
+                    total = child.compute_and_set_total_quantity(force=True, save=True)
+                qty = float(total)
+                unit = "g"
+            SubRecipe.objects.create(recipe=rec, sub_recipe=child, quantity=qty, unit=unit)
 
     # -------------------- MAIN --------------------
     @transaction.atomic
     def handle(self, *args, **opts):
+        """Lit YAML, optionnellement reset, upsert entêtes, applique steps+ingredients, calcule totals, crée sub_recipes."""
         base = Path(opts["dir"]).resolve()
         self.stdout.write(f"[seed] data dir: {base}")
         self.stdout.write(f"[seed] exists={base.exists()}")
@@ -310,24 +331,31 @@ class Command(BaseCommand):
             rec = self._upsert_recipe_header(r)
             by_rec[rec.recipe_name.lower()] = rec
 
-        # Recettes, passe 2: relations + Calcul du total
+        # Recettes, passe 2: steps + ingredients (sans sub_recipes)  # NEW
+        for r in recs:
+            rec = by_rec[r["recipe_name"].lower()]
+            self._apply_steps_and_ingredients(rec, r, by_ing)
+
+        # Recettes, passe 3: total en g pour TOUTES les recettes (force=True)  # NEW
         cache = {}
         for r in recs:
             rec = by_rec[r["recipe_name"].lower()]
-            self._replace_relations(rec, r, by_ing, by_rec)
+            res = rec.compute_and_set_total_quantity(force=True, save=True, cache=cache)
+            if isinstance(res, tuple):
+                total = res[0]
+            else:
+                total = res
+            self.stdout.write(f"[total] {rec.recipe_name}: {float(total):.2f} g")
 
-            # --- calcule et enregistre total_recipe_quantity ---
-            try:
-                res = rec.compute_and_set_total_quantity(
-                    force=True, save=True, cache=cache, collect_warnings=True
-                )
-                total, notes = res if isinstance(res, tuple) else (res, [])
-                self.stdout.write(f"[total] {rec.recipe_name}: {total:.2f} g")
-                if notes:
-                    self.stdout.write(f"[warn] {rec.recipe_name}: {len(notes)} conversions ignorées")
-            except ValidationError as e:
-                # Si tu préfères bloquer l'import sur erreur, remplace le WARNING par un raise
-                self.stdout.write(self.style.WARNING(f"[total] {rec.recipe_name}: calcul ignoré ({e})"))
+        # Recettes, passe 4: liens sub_recipes, auto-qty/unit si manquants  # NEW
+        for r in recs:
+            rec = by_rec[r["recipe_name"].lower()]
+            self._link_subrecipes(rec, r, by_rec)
+
+        # Recettes, passe 5 : total des recettes HÔTES en incluant les sous-recettes
+        for r in recs:
+            rec = by_rec[r["recipe_name"].lower()]
+            rec.compute_and_set_total_quantity(force=True, save=True, cache=cache, include_subrecipes=True)
 
         if opts.get("dry_run"):
             transaction.set_rollback(True)

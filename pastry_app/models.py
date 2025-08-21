@@ -399,7 +399,7 @@ class Recipe(models.Model):
 
     def compute_and_set_total_quantity(self, force=False, user=None, guest_id=None, save=True, cache=None, 
                                        qs_overrides: Optional[Dict[int, float]] = None, treat_qs_as_zero: bool = True,
-                                       strict: bool = False, collect_warnings: bool = False):
+                                       strict: bool = False, collect_warnings: bool = False, include_subrecipes: bool = True):
         """
         Calcule et renseigne `total_recipe_quantity` en grammes.
 
@@ -425,6 +425,8 @@ class Recipe(models.Model):
             True = lever ValidationError au premier cas non convertible.
         collect_warnings : bool
             Si True, retourne (total_en_g, warnings:list[str]). Sinon retourne seulement le total.
+        include_subrecipes : bool
+            Si True, inclut les ingrédients des sous-recettes dans le total.
 
         Règles de conversion (ordre de priorité)
         ----------------------------------------
@@ -462,6 +464,7 @@ class Recipe(models.Model):
                     raise ValidationError(msg)
                 notes.append(msg)
 
+            # ---------------- INGREDIENTS DIRECTS ----------------
             for rec_ing in self.recipe_ingredients.all():
                 qte = float(rec_ing.quantity)
                 unit = (rec_ing.unit or "").lower()
@@ -538,6 +541,53 @@ class Recipe(models.Model):
 
                 warn(f"Aucune conversion pour '{name}' ({rec_ing.unit}). Ingrédient ignoré dans le total.")
 
+            # ---------------- SOUS-RECETTES (include_subrecipes) ----------------
+            if include_subrecipes:
+                # conversion d'un lien SubRecipe vers grammes
+                def _link_used_grams(link) :
+                    q = float(link.quantity)
+                    u = (link.unit or "").lower()
+                    if u == "g":
+                        return q
+                    if u == "mg":
+                        return q / 1000.0
+                    if u == "kg":
+                        return q * 1000.0
+                    if u in {"ml", "cl", "l"}:
+                        child = link.sub_recipe
+                        # masse totale de la sous-recette
+                        child_total = getattr(child, "total_recipe_quantity", None)
+                        if child_total is None:
+                            res = child.compute_and_set_total_quantity(
+                                force=False, user=user, guest_id=guest_id, save=False,
+                                cache=cache, collect_warnings=collect_warnings, include_subrecipes=False
+                            )
+                            child_total = res[0] if isinstance(res, tuple) else res
+                        # volume pour densité
+                        try:
+                            from pastry_app.utils import get_source_volume  # adapte si chemin différent
+                        except Exception:
+                            get_source_volume = None
+                        vol_cm3 = None
+                        if get_source_volume is not None and child_total:
+                            vol_cm3, _ = get_source_volume(child)  # 1 ml = 1 cm³
+                        if child_total and vol_cm3:
+                            dens = float(child_total) / float(vol_cm3)  # g/cm³
+                            cm3 = q if u == "ml" else q * 10.0 if u == "cl" else q * 1000.0
+                            return cm3 * dens
+                        return None
+                    # autres unités non gérées pour les liens (ex: QS, cas, cac, unit/portion)
+                    return None
+
+                for link in self.main_recipes.select_related("sub_recipe"):
+                    used_g = _link_used_grams(link)
+                    if used_g is not None:
+                        total += used_g
+                    else:
+                        if collect_warnings:
+                            notes.append(f"Sous-recette '{link.sub_recipe.recipe_name}' non convertie (unité {link.unit}).")
+
+            # ---------------- FIN / PERSISTANCE ----------------
             self.total_recipe_quantity = total
             if save:
                 self.save(update_fields=['total_recipe_quantity'])
