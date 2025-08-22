@@ -2,6 +2,7 @@ import json, subprocess, sys, os
 from pathlib import Path
 from django.contrib import admin, messages
 from django.contrib.admin.utils import quote
+from django.contrib.admin import RelatedOnlyFieldListFilter
 from django import forms
 from django.forms.models import BaseInlineFormSet
 from django.db.models import Exists, OuterRef
@@ -612,9 +613,25 @@ class IngredientAdmin(admin.ModelAdmin):
     form = IngredientAdminForm
     inlines = [IngredientPriceInline]
     list_display = ('ingredient_name', 'id', categories_display, labels_display, 'visibility', 'is_default', prices_count)
-    search_fields = ('ingredient_name',)
-    list_filter = ('categories','labels', 'visibility')
+    search_fields = ('ingredient_name', 'categories__category_name', 'labels__label_name')
 
+    # 2) Filtres list panel:
+    #    - Catégories/labels reliés AU QUERYSET (évite les listes infinies)
+    #    - Restreints à type pertinent (ingredient|both)
+    class _CategoryForIngredientFilter(RelatedOnlyFieldListFilter):
+        """Filtre 'categories' restreint à category_type in (ingredient, both)."""
+        def field_choices(self, field, request, model_admin):
+            qs = Category.objects.filter(category_type__in=["ingredient", "both"])
+            return [(c.pk, str(c)) for c in qs]
+
+    class _LabelForIngredientFilter(RelatedOnlyFieldListFilter):
+        """Filtre 'labels' restreint à label_type in (ingredient, both)."""
+        def field_choices(self, field, request, model_admin):
+            qs = Label.objects.filter(label_type__in=["ingredient", "both"])
+            return [(l.pk, str(l)) for l in qs]
+
+    list_filter = (('categories',  _CategoryForIngredientFilter), ('labels', _LabelForIngredientFilter), 'visibility')
+    
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',)}
         js = ('pastry_app/admin/search_suggest.js',)
@@ -631,6 +648,7 @@ class IngredientAdmin(admin.ModelAdmin):
 
     # Pour afficher les catégories/labels sous forme de widget horizontal
     filter_horizontal = ('categories', 'labels')
+    # autocomplete_fields = ['categories', 'labels']  # si préférence pour l’auto-complétion en formulaire plutôt que filter_horizontal
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         """
