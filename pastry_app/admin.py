@@ -75,11 +75,13 @@ class IngredientAdminForm(forms.ModelForm):
         return value
 
     def __init__(self, *args, **kwargs):
+        """Initialise le formulaire et restreint les M2M aux catégories/labels de type 'ingredient' ou 'both'."""
         super().__init__(*args, **kwargs)
         self.fields["categories"].queryset = Category.objects.filter(category_type__in=["ingredient", "both"])
         self.fields["labels"].queryset     = Label.objects.filter(label_type__in=["ingredient", "both"])
 
     def clean(self):
+        """Vérifie les sélections M2M et refuse toute catégorie/label de type 'recipe'; retourne les données validées."""
         data = super().clean()
         cats = data.get("categories")
         if cats is not None:
