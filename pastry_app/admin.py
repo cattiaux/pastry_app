@@ -59,8 +59,9 @@ class IngredientAdminForm(forms.ModelForm):
     """
     Formulaire admin personnalisé pour Ingredient.
 
-    Affiche une erreur claire sur le champ 'ingredient_name' si le nom existe déjà,
+    - Affiche une erreur claire sur le champ 'ingredient_name' si le nom existe déjà,
     au lieu d'une page d'erreur générale. Améliore l'UX admin pour la contrainte unique.
+    - Form admin Ingredient: restreint catégories/labels et valide.
     """
     class Meta:
         model = Ingredient
@@ -72,6 +73,25 @@ class IngredientAdminForm(forms.ModelForm):
         if Ingredient.objects.exclude(pk=self.instance.pk).filter(ingredient_name__iexact=value).exists():
             raise ValidationError("Un ingrédient avec ce nom existe déjà.")
         return value
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["categories"].queryset = Category.objects.filter(category_type__in=["ingredient", "both"])
+        self.fields["labels"].queryset     = Label.objects.filter(label_type__in=["ingredient", "both"])
+
+    def clean(self):
+        data = super().clean()
+        cats = data.get("categories")
+        if cats is not None:
+            bad = cats.exclude(category_type__in=["ingredient", "both"])
+            if bad.exists():
+                raise ValidationError(f"Catégories interdites pour un ingrédient: {', '.join(b.category_name for b in bad)}")
+        labs = data.get("labels")
+        if labs is not None:
+            bad = labs.exclude(label_type__in=["ingredient", "both"])
+            if bad.exists():
+                raise ValidationError(f"Labels interdits pour un ingrédient: {', '.join(b.label_name for b in bad)}")
+        return data
 
 @admin.register(IngredientPrice)
 class IngredientPriceAdmin(admin.ModelAdmin):
@@ -649,15 +669,6 @@ class IngredientAdmin(admin.ModelAdmin):
     # Pour afficher les catégories/labels sous forme de widget horizontal
     filter_horizontal = ('categories', 'labels')
     # autocomplete_fields = ['categories', 'labels']  # si préférence pour l’auto-complétion en formulaire plutôt que filter_horizontal
-
-    def formfield_for_manytomany(self, db_field, request, **kwargs):
-        """
-        Permet de filtrer dynamiquement les catégories affichées dans le widget admin.
-        Ici, on restreint la sélection aux catégories de type 'ingredient' ou 'both'.
-        """
-        if db_field.name == "categories":
-            kwargs["queryset"] = Category.objects.filter(category_type__in=["ingredient", "both"])
-        return super().formfield_for_manytomany(db_field, request, **kwargs)
 
     # Endpoint JSON pour suggestions
     def get_urls(self):
