@@ -6,6 +6,7 @@ from django.contrib.admin import RelatedOnlyFieldListFilter
 from django import forms
 from django.forms.models import BaseInlineFormSet
 from django.db.models import Exists, OuterRef, Q
+from django.db.models.functions import Lower
 from django.urls import reverse, path
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
@@ -634,6 +635,43 @@ class CategoryDrilldownFilter(admin.SimpleListFilter):
     """Filtre hiérarchique: parents -> enfants -> petits-enfants, etc."""
     title = "Catégorie"
     parameter_name = "cat"
+    allowed_types = ("ingredient", "recipe", "both")  # Défaut neutre (évite l’AttributeError si __init__ n’est pas pris)
+
+    def __init__(self, request, params, model, model_admin):
+        """Lit category_allowed_types; log le modèle et les types autorisés."""
+        super().__init__(request, params, model, model_admin)
+        Model = getattr(model_admin, "model", None)
+        # 1) Si l’admin définit explicitement les types, on les utilise
+        if hasattr(model_admin, "category_allowed_types"):
+            self.allowed_types = tuple(model_admin.category_allowed_types)
+        # 2) Sinon, déduis automatiquement par modèle (évite le défaut 'toutes')
+        else:
+            if Model is Ingredient:
+                self.allowed_types = ("ingredient", "both")
+            elif Model is Recipe:
+                self.allowed_types = ("recipe", "both")
+            else:
+                self.allowed_types = ("ingredient", "recipe", "both")
+
+    def lookups(self, request, model_admin):
+        """
+        Construit les options visibles. Lit category_allowed_types à chaque appel
+        pour éviter les instances avec le défaut neutre.
+        """
+        # Calcule les types autorisés depuis l'admin courant
+        allowed = tuple(getattr(model_admin, "category_allowed_types",
+                                self.allowed_types))
+        self.allowed_types = allowed  # persiste pour queryset()
+
+        sel = self.value()
+        qs = (Category.objects.filter(parent_category__isnull=True,
+                                    category_type__in=allowed)
+            if not sel else
+            Category.objects.filter(parent_category_id=sel,
+                                    category_type__in=allowed))
+
+        return [(c.pk, ("↳ " + c.category_name) if sel else c.category_name)
+                for c in qs.order_by("category_name")]
 
     def _descendants_ids(self, root_id):
         ids = {int(root_id)}
@@ -647,20 +685,6 @@ class CategoryDrilldownFilter(admin.SimpleListFilter):
             frontier = list(new)
         return ids
 
-    def lookups(self, request, model_admin):
-        sel = self.value()
-        # premier niveau: parents pertinents
-        if not sel:
-            qs = Category.objects.filter(parent_category__isnull=True,
-                                         category_type__in=["ingredient","both"])\
-                                 .order_by("category_name")
-            return [(c.pk, c.category_name) for c in qs]
-        # niveaux suivants: enfants du noeud sélectionné
-        qs = Category.objects.filter(parent_category_id=sel,
-                                     category_type__in=["ingredient","both"])\
-                             .order_by("category_name")
-        return [(c.pk, "↳ " + c.category_name) for c in qs]
-
     def queryset(self, request, qs):
         sel = self.value()
         if not sel:
@@ -670,6 +694,7 @@ class CategoryDrilldownFilter(admin.SimpleListFilter):
 
 @admin.register(Ingredient)
 class IngredientAdmin(admin.ModelAdmin):
+    category_allowed_types = ("ingredient", "both")
     form = IngredientAdminForm
     inlines = [IngredientPriceInline]
     list_display = ('ingredient_name', 'id', categories_display, labels_display, 'visibility', 'is_default', prices_count)
@@ -898,10 +923,18 @@ class RecipeAdmin(admin.ModelAdmin):
             if v == "main":
                 return Recipe.objects.exclude(id__in=used_ids)
             return queryset  # laisse get_queryset décider
-        
+
+    # ---- Filtre Labels restreint (type recipe|both) ----
+    class _LabelForRecipeFilter(RelatedOnlyFieldListFilter):
+        """Filtre 'labels' restreint à label_type in (recipe, both)."""
+        def field_choices(self, field, request, model_admin):
+            qs = Label.objects.filter(label_type__in=["recipe", "both"])
+            return [(l.pk, str(l)) for l in qs]
+
+    category_allowed_types = ("recipe", "both")
     inlines = [RecipeCategoryInline, RecipeLabelInline, RecipeIngredientInline, RecipeStepInline, SubRecipeInline]
     list_display = ('recipe_name', 'id', 'chef_name', 'context_name', 'parent_recipe', 'display_tags', 'visibility', 'is_default')
-    list_filter = (ShowFilter, 'recipe_type', 'categories', 'labels', 'visibility')    
+    list_filter = (ShowFilter, 'recipe_type', CategoryDrilldownFilter, ("labels", _LabelForRecipeFilter), 'visibility')    
     readonly_fields = ['recipe_subrecipes_synthesis']
     form = RecipeAdminForm
 
