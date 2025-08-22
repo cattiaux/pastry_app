@@ -1,12 +1,18 @@
 import json, subprocess, sys, os
 from pathlib import Path
 from django.contrib import admin, messages
+from django.contrib.admin.utils import quote
 from django import forms
 from django.forms.models import BaseInlineFormSet
+from django.db.models import Exists, OuterRef
+from django.urls import reverse
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 from django.conf import settings
+from django.http import QueryDict
 from .models import *
+
 
 class StoreCityListFilter(admin.SimpleListFilter):
     """
@@ -95,16 +101,85 @@ class IngredientPriceHistoryAdmin(admin.ModelAdmin):
         """ Empêche la suppression d'entrées historiques sauf pour les super-utilisateurs. """
         return request.user.is_superuser
 
+class ChildCategoryInline(admin.TabularInline):
+    """
+    Affiche les sous-catégories sur la page d'une catégorie parente.
+    """
+    model = Category
+    fk_name = "parent_category"
+    extra = 0
+    show_change_link = True  # crayon vers la sous-catégorie
+
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
+    """
+    Changelist par défaut : seules les catégories PARENTS (parent_category IS NULL).
+    Comportements:
+      - ?show=all     → toutes les catégories
+      - ?show=leaves  → uniquement les FEUILLES (sans enfants)
+      - ?parent=<id>  → uniquement les enfants de cette catégorie
+      - Recherche (q) → cherche sur TOUTES les catégories
+      - L’URL ?parent_category__id__exact=<id> affiche les enfants (lookup admin natif).
+      - Page objet    → jamais filtrée (évite 404)
+    """
     form = CategoryAdminForm
-    list_display = ("category_name", "category_type", "parent_category")
+    list_display = ("category_name", "category_type", "parent_category", "children_link", "id")
     search_fields = ('category_name',)
-    list_filter = ('category_type',)
+    inlines = [ChildCategoryInline]
 
     class Media:
         js = ('pastry_app/admin/category_admin.js',)
         css = {'all': ('pastry_app/admin/required_fields.css',)}
+
+    # Annoter seulement (pas de filtre ici)
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.annotate(has_children=Exists(self.model.objects.filter(parent_category=OuterRef("pk"))))
+    
+    def get_search_results(self, request, queryset, search_term):
+        # La recherche doit balayer TOUTES les catégories, même si la vue par défaut est restreinte
+        if search_term:
+            has_children_subq = Category.objects.filter(parent_category=OuterRef("pk"))
+            base = Category.objects.all().annotate(has_children=Exists(has_children_subq))
+            return super().get_search_results(request, base, search_term)
+        return super().get_search_results(request, queryset, search_term)
+
+    # 2) Filtre latéral interne, gère le défaut 'Parents'
+    class ShowFilter(admin.SimpleListFilter):
+        title = "Affichage"
+        parameter_name = "show"
+
+        def lookups(self, request, model_admin):
+            return (("main", "Parents"), ("all", "Toutes"), ("leaves", "Feuilles"))
+
+        def queryset(self, request, qs):
+            # Si on a un lookup parent natif ou une recherche, ne pas restreindre
+            if request.GET.get("parent_category__id__exact") or request.GET.get("q"):
+                return qs
+            
+            v = self.value()
+            if v == "all":
+                return qs
+            if v == "leaves":
+                Model = qs.model
+                # ré-annoter au cas où
+                has_children = Exists(Model.objects.filter(parent_category=OuterRef("pk")))
+                return qs.annotate(has_children=has_children).filter(has_children=False)
+            # défaut: Parents
+            return qs.filter(parent_category__isnull=True)
+
+    list_filter = (ShowFilter, "category_type")
+    
+    # Lien enfants → changelist filtré par lookup admin valide
+    def children_link(self, obj):
+        if not getattr(obj, "has_children", False):
+            return ""
+        url = reverse(
+            f"admin:{self.model._meta.app_label}_{self.model._meta.model_name}_changelist",
+            current_app=self.admin_site.name,
+        )
+        return format_html('<a href="{}?parent_category__id__exact={}">Voir sous-catégories</a>', url, obj.pk)
+    children_link.short_description = "Sous-catégories"
 
     # Surcharge de la vue de suppression pour contrôler les messages et empêcher le double message succès/erreur
     def delete_view(self, request, object_id, extra_context=None):
@@ -139,7 +214,6 @@ class CategoryAdmin(admin.ModelAdmin):
             subcategories.delete()
             obj.delete()
             messages.success(request, f"Catégorie '{obj.category_name}' et ses {count} sous-catégories supprimées.")
-
     delete_with_children.short_description = "Supprimer catégorie + sous-catégories"
     actions = [delete_with_children]
 
@@ -623,7 +697,7 @@ class RecipeStepAdmin(admin.ModelAdmin):
 
 @admin.register(SubRecipe)
 class SubRecipeAdmin(admin.ModelAdmin):
-    list_display = ('recipe_name', 'subrecipe_name', 'id')
+    list_display = ('subrecipe_name', 'recipe_name', 'id')
 
     def recipe_name(self, obj):
         return obj.recipe.recipe_name
