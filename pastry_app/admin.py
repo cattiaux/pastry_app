@@ -5,12 +5,12 @@ from django.contrib.admin.utils import quote
 from django import forms
 from django.forms.models import BaseInlineFormSet
 from django.db.models import Exists, OuterRef
-from django.urls import reverse
+from django.urls import reverse, path
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
 from django.utils.html import format_html
 from django.conf import settings
-from django.http import QueryDict
+from django.http import JsonResponse
 from .models import *
 
 
@@ -81,6 +81,68 @@ class IngredientPriceAdmin(admin.ModelAdmin):
 
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',)}
+        js = ('pastry_app/admin/search_suggest.js',)
+
+    # Endpoint JSON pour suggestions
+    def get_urls(self):
+        """
+        Ajoute l’endpoint JSON `/suggest/` (protégé par l’admin) pour l’autocomplétion
+        de la barre de recherche du changelist courant.
+        """
+        urls = super().get_urls()
+        extra = [path("suggest/", self.admin_site.admin_view(self.suggest_view), name=f'{self.model._meta.app_label}_{self.model._meta.model_name}_suggest')]
+        return extra + urls
+
+    def suggest_view(self, request):
+        """
+        Retourne jusqu’à `suggest_limit` suggestions dédupliquées à partir de TOUS
+        les `search_fields` du ModelAdmin.
+
+        Entrée:
+        - GET q: texte de recherche.
+        Règles:
+        - Préfixes Django supportés: '^'→istartswith, '='→iexact, '@' ou sans→icontains.
+        - Agrège, déduplique, tronque à `suggest_limit` (défaut 10).
+        Sortie:
+        - JSON: {"results": ["suggestion1", ...]}.
+        """
+        q = (request.GET.get("q") or "").strip()
+        limit = getattr(self, "suggest_limit", 10)
+        fields = list(getattr(self, "search_fields", ()))
+        if not q or not fields:
+            return JsonResponse({"results": []})
+
+        Model = self.model
+        base_qs = Model.objects.all()
+        out = []
+
+        for f in fields:
+            # support des préfixes Django: '^' (startswith), '=' (exact), '@' (fallback icontains)
+            raw = f.lstrip("^=@")
+            if f.startswith("^"):
+                flt = {f"{raw}__istartswith": q}
+            elif f.startswith("="):
+                flt = {f"{raw}__iexact": q}
+            else:  # normal ou '@'
+                flt = {f"{raw}__icontains": q}
+
+            vals = (base_qs.filter(**flt)
+                            .values_list(raw, flat=True)
+                            .distinct()
+                            .order_by(raw)[:limit])
+            out.extend(v for v in vals if v)
+
+        # déduplication en gardant l’ordre
+        seen, results = set(), []
+        for v in out:
+            s = str(v)
+            if s not in seen:
+                seen.add(s)
+                results.append(s)
+            if len(results) >= limit:
+                break
+
+        return JsonResponse({"results": results})
 
 @admin.register(IngredientPriceHistory)
 class IngredientPriceHistoryAdmin(admin.ModelAdmin):
@@ -128,7 +190,7 @@ class CategoryAdmin(admin.ModelAdmin):
     inlines = [ChildCategoryInline]
 
     class Media:
-        js = ('pastry_app/admin/category_admin.js',)
+        js = ('pastry_app/admin/category_admin.js', 'pastry_app/admin/search_suggest.js',)
         css = {'all': ('pastry_app/admin/required_fields.css',)}
 
     # Annoter seulement (pas de filtre ici)
@@ -217,13 +279,81 @@ class CategoryAdmin(admin.ModelAdmin):
     delete_with_children.short_description = "Supprimer catégorie + sous-catégories"
     actions = [delete_with_children]
 
+    # Endpoint JSON pour suggestions
+    def get_urls(self):
+        """
+        Ajoute l’endpoint JSON `/suggest/` (protégé par l’admin) pour l’autocomplétion
+        de la barre de recherche du changelist courant.
+        """
+        urls = super().get_urls()
+        extra = [path("suggest/", self.admin_site.admin_view(self.suggest_view), name=f'{self.model._meta.app_label}_{self.model._meta.model_name}_suggest')]
+        return extra + urls
+
+    def suggest_view(self, request):
+        """
+        Retourne jusqu’à `suggest_limit` suggestions dédupliquées à partir de TOUS
+        les `search_fields` du ModelAdmin.
+
+        Entrée:
+        - GET q: texte de recherche.
+        Règles:
+        - Préfixes Django supportés: '^'→istartswith, '='→iexact, '@' ou sans→icontains.
+        - Agrège, déduplique, tronque à `suggest_limit` (défaut 10).
+        Sortie:
+        - JSON: {"results": ["suggestion1", ...]}.
+        """
+        q = (request.GET.get("q") or "").strip()
+        limit = getattr(self, "suggest_limit", 10)
+        fields = list(getattr(self, "search_fields", ()))
+        if not q or not fields:
+            return JsonResponse({"results": []})
+
+        Model = self.model
+        base_qs = Model.objects.all()
+        out = []
+
+        for f in fields:
+            # support des préfixes Django: '^' (startswith), '=' (exact), '@' (fallback icontains)
+            raw = f.lstrip("^=@")
+            if f.startswith("^"):
+                flt = {f"{raw}__istartswith": q}
+            elif f.startswith("="):
+                flt = {f"{raw}__iexact": q}
+            else:  # normal ou '@'
+                flt = {f"{raw}__icontains": q}
+
+            vals = (base_qs.filter(**flt)
+                            .values_list(raw, flat=True)
+                            .distinct()
+                            .order_by(raw)[:limit])
+            out.extend(v for v in vals if v)
+
+        # déduplication en gardant l’ordre
+        seen, results = set(), []
+        for v in out:
+            s = str(v)
+            if s not in seen:
+                seen.add(s)
+                results.append(s)
+            if len(results) >= limit:
+                break
+
+        return JsonResponse({"results": results})
+    
 @admin.register(Label)
 class LabelAdmin(admin.ModelAdmin):
+    """
+    - list_filter par type (choices de label_type)
+    - search sur label_name et label_type (valeurs brutes des choices)
+    """
     list_display = ('label_name', 'label_type')
     search_fields = ('label_name',)
+    list_filter = ('label_type',)  
+    search_fields = ('label_name', 'label_type') 
 
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',)}
+        js = ('pastry_app/admin/search_suggest.js',)
 
     def delete_model(self, request, obj):
         # Refuse la suppression si le label est utilisé
@@ -232,6 +362,67 @@ class LabelAdmin(admin.ModelAdmin):
             return
         super().delete_model(request, obj)
 
+    # Endpoint JSON pour suggestions
+    def get_urls(self):
+        """
+        Ajoute l’endpoint JSON `/suggest/` (protégé par l’admin) pour l’autocomplétion
+        de la barre de recherche du changelist courant.
+        """
+        urls = super().get_urls()
+        extra = [path("suggest/", self.admin_site.admin_view(self.suggest_view), name=f'{self.model._meta.app_label}_{self.model._meta.model_name}_suggest')]
+        return extra + urls
+
+    def suggest_view(self, request):
+        """
+        Retourne jusqu’à `suggest_limit` suggestions dédupliquées à partir de TOUS
+        les `search_fields` du ModelAdmin.
+
+        Entrée:
+        - GET q: texte de recherche.
+        Règles:
+        - Préfixes Django supportés: '^'→istartswith, '='→iexact, '@' ou sans→icontains.
+        - Agrège, déduplique, tronque à `suggest_limit` (défaut 10).
+        Sortie:
+        - JSON: {"results": ["suggestion1", ...]}.
+        """
+        q = (request.GET.get("q") or "").strip()
+        limit = getattr(self, "suggest_limit", 10)
+        fields = list(getattr(self, "search_fields", ()))
+        if not q or not fields:
+            return JsonResponse({"results": []})
+
+        Model = self.model
+        base_qs = Model.objects.all()
+        out = []
+
+        for f in fields:
+            # support des préfixes Django: '^' (startswith), '=' (exact), '@' (fallback icontains)
+            raw = f.lstrip("^=@")
+            if f.startswith("^"):
+                flt = {f"{raw}__istartswith": q}
+            elif f.startswith("="):
+                flt = {f"{raw}__iexact": q}
+            else:  # normal ou '@'
+                flt = {f"{raw}__icontains": q}
+
+            vals = (base_qs.filter(**flt)
+                            .values_list(raw, flat=True)
+                            .distinct()
+                            .order_by(raw)[:limit])
+            out.extend(v for v in vals if v)
+
+        # déduplication en gardant l’ordre
+        seen, results = set(), []
+        for v in out:
+            s = str(v)
+            if s not in seen:
+                seen.add(s)
+                results.append(s)
+            if len(results) >= limit:
+                break
+
+        return JsonResponse({"results": results})
+    
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
     list_display = ('store_name', 'id', 'city', 'zip_code', 'address', 'visibility', 'is_default')
@@ -250,6 +441,68 @@ class StoreAdmin(admin.ModelAdmin):
 
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',)}
+        js = ('pastry_app/admin/search_suggest.js',)
+
+    # Endpoint JSON pour suggestions
+    def get_urls(self):
+        """
+        Ajoute l’endpoint JSON `/suggest/` (protégé par l’admin) pour l’autocomplétion
+        de la barre de recherche du changelist courant.
+        """
+        urls = super().get_urls()
+        extra = [path("suggest/", self.admin_site.admin_view(self.suggest_view), name=f'{self.model._meta.app_label}_{self.model._meta.model_name}_suggest')]
+        return extra + urls
+
+    def suggest_view(self, request):
+        """
+        Retourne jusqu’à `suggest_limit` suggestions dédupliquées à partir de TOUS
+        les `search_fields` du ModelAdmin.
+
+        Entrée:
+        - GET q: texte de recherche.
+        Règles:
+        - Préfixes Django supportés: '^'→istartswith, '='→iexact, '@' ou sans→icontains.
+        - Agrège, déduplique, tronque à `suggest_limit` (défaut 10).
+        Sortie:
+        - JSON: {"results": ["suggestion1", ...]}.
+        """
+        q = (request.GET.get("q") or "").strip()
+        limit = getattr(self, "suggest_limit", 10)
+        fields = list(getattr(self, "search_fields", ()))
+        if not q or not fields:
+            return JsonResponse({"results": []})
+
+        Model = self.model
+        base_qs = Model.objects.all()
+        out = []
+
+        for f in fields:
+            # support des préfixes Django: '^' (startswith), '=' (exact), '@' (fallback icontains)
+            raw = f.lstrip("^=@")
+            if f.startswith("^"):
+                flt = {f"{raw}__istartswith": q}
+            elif f.startswith("="):
+                flt = {f"{raw}__iexact": q}
+            else:  # normal ou '@'
+                flt = {f"{raw}__icontains": q}
+
+            vals = (base_qs.filter(**flt)
+                            .values_list(raw, flat=True)
+                            .distinct()
+                            .order_by(raw)[:limit])
+            out.extend(v for v in vals if v)
+
+        # déduplication en gardant l’ordre
+        seen, results = set(), []
+        for v in out:
+            s = str(v)
+            if s not in seen:
+                seen.add(s)
+                results.append(s)
+            if len(results) >= limit:
+                break
+
+        return JsonResponse({"results": results})
 
 @admin.register(Pan)
 class PanAdmin(admin.ModelAdmin):
@@ -271,8 +524,69 @@ class PanAdmin(admin.ModelAdmin):
     )
 
     class Media:
-        js = ('pastry_app/admin/pan_admin.js',)
+        js = ('pastry_app/admin/pan_admin.js', 'pastry_app/admin/search_suggest.js',)
         css = {'all': ('pastry_app/admin/required_fields.css',)}
+
+    # Endpoint JSON pour suggestions
+    def get_urls(self):
+        """
+        Ajoute l’endpoint JSON `/suggest/` (protégé par l’admin) pour l’autocomplétion
+        de la barre de recherche du changelist courant.
+        """
+        urls = super().get_urls()
+        extra = [path("suggest/", self.admin_site.admin_view(self.suggest_view), name=f'{self.model._meta.app_label}_{self.model._meta.model_name}_suggest')]
+        return extra + urls
+
+    def suggest_view(self, request):
+        """
+        Retourne jusqu’à `suggest_limit` suggestions dédupliquées à partir de TOUS
+        les `search_fields` du ModelAdmin.
+
+        Entrée:
+        - GET q: texte de recherche.
+        Règles:
+        - Préfixes Django supportés: '^'→istartswith, '='→iexact, '@' ou sans→icontains.
+        - Agrège, déduplique, tronque à `suggest_limit` (défaut 10).
+        Sortie:
+        - JSON: {"results": ["suggestion1", ...]}.
+        """
+        q = (request.GET.get("q") or "").strip()
+        limit = getattr(self, "suggest_limit", 10)
+        fields = list(getattr(self, "search_fields", ()))
+        if not q or not fields:
+            return JsonResponse({"results": []})
+
+        Model = self.model
+        base_qs = Model.objects.all()
+        out = []
+
+        for f in fields:
+            # support des préfixes Django: '^' (startswith), '=' (exact), '@' (fallback icontains)
+            raw = f.lstrip("^=@")
+            if f.startswith("^"):
+                flt = {f"{raw}__istartswith": q}
+            elif f.startswith("="):
+                flt = {f"{raw}__iexact": q}
+            else:  # normal ou '@'
+                flt = {f"{raw}__icontains": q}
+
+            vals = (base_qs.filter(**flt)
+                            .values_list(raw, flat=True)
+                            .distinct()
+                            .order_by(raw)[:limit])
+            out.extend(v for v in vals if v)
+
+        # déduplication en gardant l’ordre
+        seen, results = set(), []
+        for v in out:
+            s = str(v)
+            if s not in seen:
+                seen.add(s)
+                results.append(s)
+            if len(results) >= limit:
+                break
+
+        return JsonResponse({"results": results})
 
 # Pour l’affichage des catégories et labels sous forme de string
 def categories_display(obj):
@@ -303,6 +617,7 @@ class IngredientAdmin(admin.ModelAdmin):
 
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',)}
+        js = ('pastry_app/admin/search_suggest.js',)
 
     # Pour mieux ordonner les champs et regrouper les sections
     fieldsets = (
@@ -325,6 +640,67 @@ class IngredientAdmin(admin.ModelAdmin):
         if db_field.name == "categories":
             kwargs["queryset"] = Category.objects.filter(category_type__in=["ingredient", "both"])
         return super().formfield_for_manytomany(db_field, request, **kwargs)
+
+    # Endpoint JSON pour suggestions
+    def get_urls(self):
+        """
+        Ajoute l’endpoint JSON `/suggest/` (protégé par l’admin) pour l’autocomplétion
+        de la barre de recherche du changelist courant.
+        """
+        urls = super().get_urls()
+        extra = [path("suggest/", self.admin_site.admin_view(self.suggest_view), name=f'{self.model._meta.app_label}_{self.model._meta.model_name}_suggest')]
+        return extra + urls
+
+    def suggest_view(self, request):
+        """
+        Retourne jusqu’à `suggest_limit` suggestions dédupliquées à partir de TOUS
+        les `search_fields` du ModelAdmin.
+
+        Entrée:
+        - GET q: texte de recherche.
+        Règles:
+        - Préfixes Django supportés: '^'→istartswith, '='→iexact, '@' ou sans→icontains.
+        - Agrège, déduplique, tronque à `suggest_limit` (défaut 10).
+        Sortie:
+        - JSON: {"results": ["suggestion1", ...]}.
+        """
+        q = (request.GET.get("q") or "").strip()
+        limit = getattr(self, "suggest_limit", 10)
+        fields = list(getattr(self, "search_fields", ()))
+        if not q or not fields:
+            return JsonResponse({"results": []})
+
+        Model = self.model
+        base_qs = Model.objects.all()
+        out = []
+
+        for f in fields:
+            # support des préfixes Django: '^' (startswith), '=' (exact), '@' (fallback icontains)
+            raw = f.lstrip("^=@")
+            if f.startswith("^"):
+                flt = {f"{raw}__istartswith": q}
+            elif f.startswith("="):
+                flt = {f"{raw}__iexact": q}
+            else:  # normal ou '@'
+                flt = {f"{raw}__icontains": q}
+
+            vals = (base_qs.filter(**flt)
+                            .values_list(raw, flat=True)
+                            .distinct()
+                            .order_by(raw)[:limit])
+            out.extend(v for v in vals if v)
+
+        # déduplication en gardant l’ordre
+        seen, results = set(), []
+        for v in out:
+            s = str(v)
+            if s not in seen:
+                seen.add(s)
+                results.append(s)
+            if len(results) >= limit:
+                break
+
+        return JsonResponse({"results": results})
 
 class RecipeIngredientInline(admin.TabularInline):
     model = RecipeIngredient
@@ -474,7 +850,8 @@ class RecipeAdmin(admin.ModelAdmin):
                        'pastry_app/admin/tagify.css')}
         js = ('pastry_app/admin/recipe_admin.js', 
               'pastry_app/admin/recipe_adjustment_admin.js',
-              'pastry_app/admin/tagify.min.js')
+              'pastry_app/admin/tagify.min.js',
+              'pastry_app/admin/search_suggest.js',)
     
     fieldsets = (
         (None, {'fields': ('mode_ajustement',)}),
@@ -639,6 +1016,67 @@ class RecipeAdmin(admin.ModelAdmin):
                 # Cas édition, on ne supprime pas !
                 raise
 
+    # Endpoint JSON pour suggestions
+    def get_urls(self):
+        """
+        Ajoute l’endpoint JSON `/suggest/` (protégé par l’admin) pour l’autocomplétion
+        de la barre de recherche du changelist courant.
+        """
+        urls = super().get_urls()
+        extra = [path("suggest/", self.admin_site.admin_view(self.suggest_view), name=f'{self.model._meta.app_label}_{self.model._meta.model_name}_suggest')]
+        return extra + urls
+
+    def suggest_view(self, request):
+        """
+        Retourne jusqu’à `suggest_limit` suggestions dédupliquées à partir de TOUS
+        les `search_fields` du ModelAdmin.
+
+        Entrée:
+        - GET q: texte de recherche.
+        Règles:
+        - Préfixes Django supportés: '^'→istartswith, '='→iexact, '@' ou sans→icontains.
+        - Agrège, déduplique, tronque à `suggest_limit` (défaut 10).
+        Sortie:
+        - JSON: {"results": ["suggestion1", ...]}.
+        """
+        q = (request.GET.get("q") or "").strip()
+        limit = getattr(self, "suggest_limit", 10)
+        fields = list(getattr(self, "search_fields", ()))
+        if not q or not fields:
+            return JsonResponse({"results": []})
+
+        Model = self.model
+        base_qs = Model.objects.all()
+        out = []
+
+        for f in fields:
+            # support des préfixes Django: '^' (startswith), '=' (exact), '@' (fallback icontains)
+            raw = f.lstrip("^=@")
+            if f.startswith("^"):
+                flt = {f"{raw}__istartswith": q}
+            elif f.startswith("="):
+                flt = {f"{raw}__iexact": q}
+            else:  # normal ou '@'
+                flt = {f"{raw}__icontains": q}
+
+            vals = (base_qs.filter(**flt)
+                            .values_list(raw, flat=True)
+                            .distinct()
+                            .order_by(raw)[:limit])
+            out.extend(v for v in vals if v)
+
+        # déduplication en gardant l’ordre
+        seen, results = set(), []
+        for v in out:
+            s = str(v)
+            if s not in seen:
+                seen.add(s)
+                results.append(s)
+            if len(results) >= limit:
+                break
+
+        return JsonResponse({"results": results})
+
 class RecipeIngredientAdmin(admin.ModelAdmin):
     list_display = ('recipe_name', 'ingredient_name', 'id')
     readonly_fields = ['display_name'] 
@@ -657,6 +1095,7 @@ class RecipeStepAdmin(admin.ModelAdmin):
 
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',)}
+        js = ('pastry_app/admin/search_suggest.js',)
 
     def recipe_name(self, obj):
         return obj.recipe.recipe_name
@@ -695,9 +1134,73 @@ class RecipeStepAdmin(admin.ModelAdmin):
             del actions["delete_selected"]
         return actions
 
+    # Endpoint JSON pour suggestions
+    def get_urls(self):
+        """
+        Ajoute l’endpoint JSON `/suggest/` (protégé par l’admin) pour l’autocomplétion
+        de la barre de recherche du changelist courant.
+        """
+        urls = super().get_urls()
+        extra = [path("suggest/", self.admin_site.admin_view(self.suggest_view), name=f'{self.model._meta.app_label}_{self.model._meta.model_name}_suggest')]
+        return extra + urls
+
+    def suggest_view(self, request):
+        """
+        Retourne jusqu’à `suggest_limit` suggestions dédupliquées à partir de TOUS
+        les `search_fields` du ModelAdmin.
+
+        Entrée:
+        - GET q: texte de recherche.
+        Règles:
+        - Préfixes Django supportés: '^'→istartswith, '='→iexact, '@' ou sans→icontains.
+        - Agrège, déduplique, tronque à `suggest_limit` (défaut 10).
+        Sortie:
+        - JSON: {"results": ["suggestion1", ...]}.
+        """
+        q = (request.GET.get("q") or "").strip()
+        limit = getattr(self, "suggest_limit", 10)
+        fields = list(getattr(self, "search_fields", ()))
+        if not q or not fields:
+            return JsonResponse({"results": []})
+
+        Model = self.model
+        base_qs = Model.objects.all()
+        out = []
+
+        for f in fields:
+            # support des préfixes Django: '^' (startswith), '=' (exact), '@' (fallback icontains)
+            raw = f.lstrip("^=@")
+            if f.startswith("^"):
+                flt = {f"{raw}__istartswith": q}
+            elif f.startswith("="):
+                flt = {f"{raw}__iexact": q}
+            else:  # normal ou '@'
+                flt = {f"{raw}__icontains": q}
+
+            vals = (base_qs.filter(**flt)
+                            .values_list(raw, flat=True)
+                            .distinct()
+                            .order_by(raw)[:limit])
+            out.extend(v for v in vals if v)
+
+        # déduplication en gardant l’ordre
+        seen, results = set(), []
+        for v in out:
+            s = str(v)
+            if s not in seen:
+                seen.add(s)
+                results.append(s)
+            if len(results) >= limit:
+                break
+
+        return JsonResponse({"results": results})
+
 @admin.register(SubRecipe)
 class SubRecipeAdmin(admin.ModelAdmin):
     list_display = ('subrecipe_name', 'recipe_name', 'id')
+
+    class Media:
+        js = ('pastry_app/admin/search_suggest.js',)
 
     def recipe_name(self, obj):
         return obj.recipe.recipe_name
@@ -707,6 +1210,67 @@ class SubRecipeAdmin(admin.ModelAdmin):
         return obj.sub_recipe.recipe_name
     subrecipe_name.short_description = 'Subrecipe Name'
 
+    # Endpoint JSON pour suggestions
+    def get_urls(self):
+        """
+        Ajoute l’endpoint JSON `/suggest/` (protégé par l’admin) pour l’autocomplétion
+        de la barre de recherche du changelist courant.
+        """
+        urls = super().get_urls()
+        extra = [path("suggest/", self.admin_site.admin_view(self.suggest_view), name=f'{self.model._meta.app_label}_{self.model._meta.model_name}_suggest')]
+        return extra + urls
+
+    def suggest_view(self, request):
+        """
+        Retourne jusqu’à `suggest_limit` suggestions dédupliquées à partir de TOUS
+        les `search_fields` du ModelAdmin.
+
+        Entrée:
+        - GET q: texte de recherche.
+        Règles:
+        - Préfixes Django supportés: '^'→istartswith, '='→iexact, '@' ou sans→icontains.
+        - Agrège, déduplique, tronque à `suggest_limit` (défaut 10).
+        Sortie:
+        - JSON: {"results": ["suggestion1", ...]}.
+        """
+        q = (request.GET.get("q") or "").strip()
+        limit = getattr(self, "suggest_limit", 10)
+        fields = list(getattr(self, "search_fields", ()))
+        if not q or not fields:
+            return JsonResponse({"results": []})
+
+        Model = self.model
+        base_qs = Model.objects.all()
+        out = []
+
+        for f in fields:
+            # support des préfixes Django: '^' (startswith), '=' (exact), '@' (fallback icontains)
+            raw = f.lstrip("^=@")
+            if f.startswith("^"):
+                flt = {f"{raw}__istartswith": q}
+            elif f.startswith("="):
+                flt = {f"{raw}__iexact": q}
+            else:  # normal ou '@'
+                flt = {f"{raw}__icontains": q}
+
+            vals = (base_qs.filter(**flt)
+                            .values_list(raw, flat=True)
+                            .distinct()
+                            .order_by(raw)[:limit])
+            out.extend(v for v in vals if v)
+
+        # déduplication en gardant l’ordre
+        seen, results = set(), []
+        for v in out:
+            s = str(v)
+            if s not in seen:
+                seen.add(s)
+                results.append(s)
+            if len(results) >= limit:
+                break
+
+        return JsonResponse({"results": results})
+
 @admin.register(IngredientUnitReference)
 class IngredientUnitReferenceAdmin(admin.ModelAdmin):
     list_display = ('ingredient', 'unit', 'weight_in_grams', 'notes', 'is_hidden', "provenance")
@@ -715,6 +1279,9 @@ class IngredientUnitReferenceAdmin(admin.ModelAdmin):
     autocomplete_fields = ['ingredient']
     ordering = ('ingredient', 'unit')
     actions = ["run_iur_loader"]
+
+    class Media:
+        js = ('pastry_app/admin/search_suggest.js',)
 
     # La colonne Provenance s’appuie sur notes. Adapte si besoin
     def provenance(self, obj):
@@ -749,3 +1316,65 @@ class IngredientUnitReferenceAdmin(admin.ModelAdmin):
             msg += f" Log: {proc.stdout.splitlines()[-1][:200]}"
         self.message_user(request, msg)    
     run_iur_loader.short_description = "Charger/mettre à jour via load_base_ingredientUnitReference.py"
+
+    # Endpoint JSON pour suggestions
+    def get_urls(self):
+        """
+        Ajoute l’endpoint JSON `/suggest/` (protégé par l’admin) pour l’autocomplétion
+        de la barre de recherche du changelist courant.
+        """
+        urls = super().get_urls()
+        extra = [path("suggest/", self.admin_site.admin_view(self.suggest_view), name=f'{self.model._meta.app_label}_{self.model._meta.model_name}_suggest')]
+        return extra + urls
+
+    def suggest_view(self, request):
+        """
+        Retourne jusqu’à `suggest_limit` suggestions dédupliquées à partir de TOUS
+        les `search_fields` du ModelAdmin.
+
+        Entrée:
+        - GET q: texte de recherche.
+        Règles:
+        - Préfixes Django supportés: '^'→istartswith, '='→iexact, '@' ou sans→icontains.
+        - Agrège, déduplique, tronque à `suggest_limit` (défaut 10).
+        Sortie:
+        - JSON: {"results": ["suggestion1", ...]}.
+        """
+        q = (request.GET.get("q") or "").strip()
+        limit = getattr(self, "suggest_limit", 10)
+        fields = list(getattr(self, "search_fields", ()))
+        if not q or not fields:
+            return JsonResponse({"results": []})
+
+        Model = self.model
+        base_qs = Model.objects.all()
+        out = []
+
+        for f in fields:
+            # support des préfixes Django: '^' (startswith), '=' (exact), '@' (fallback icontains)
+            raw = f.lstrip("^=@")
+            if f.startswith("^"):
+                flt = {f"{raw}__istartswith": q}
+            elif f.startswith("="):
+                flt = {f"{raw}__iexact": q}
+            else:  # normal ou '@'
+                flt = {f"{raw}__icontains": q}
+
+            vals = (base_qs.filter(**flt)
+                            .values_list(raw, flat=True)
+                            .distinct()
+                            .order_by(raw)[:limit])
+            out.extend(v for v in vals if v)
+
+        # déduplication en gardant l’ordre
+        seen, results = set(), []
+        for v in out:
+            s = str(v)
+            if s not in seen:
+                seen.add(s)
+                results.append(s)
+            if len(results) >= limit:
+                break
+
+        return JsonResponse({"results": results})
+    
