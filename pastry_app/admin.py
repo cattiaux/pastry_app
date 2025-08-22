@@ -5,7 +5,7 @@ from django.contrib.admin.utils import quote
 from django.contrib.admin import RelatedOnlyFieldListFilter
 from django import forms
 from django.forms.models import BaseInlineFormSet
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Q
 from django.urls import reverse, path
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
@@ -630,6 +630,44 @@ class IngredientPriceInline(admin.TabularInline):
     min_num = 0
     show_change_link = True  # pour avoir un lien direct vers la fiche prix si besoin
 
+class CategoryDrilldownFilter(admin.SimpleListFilter):
+    """Filtre hiérarchique: parents -> enfants -> petits-enfants, etc."""
+    title = "Catégorie"
+    parameter_name = "cat"
+
+    def _descendants_ids(self, root_id):
+        ids = {int(root_id)}
+        frontier = [int(root_id)]
+        while frontier:
+            children = Category.objects.filter(parent_category_id__in=frontier)\
+                                       .values_list("id", flat=True)
+            new = set(children) - ids
+            if not new: break
+            ids |= new
+            frontier = list(new)
+        return ids
+
+    def lookups(self, request, model_admin):
+        sel = self.value()
+        # premier niveau: parents pertinents
+        if not sel:
+            qs = Category.objects.filter(parent_category__isnull=True,
+                                         category_type__in=["ingredient","both"])\
+                                 .order_by("category_name")
+            return [(c.pk, c.category_name) for c in qs]
+        # niveaux suivants: enfants du noeud sélectionné
+        qs = Category.objects.filter(parent_category_id=sel,
+                                     category_type__in=["ingredient","both"])\
+                             .order_by("category_name")
+        return [(c.pk, "↳ " + c.category_name) for c in qs]
+
+    def queryset(self, request, qs):
+        sel = self.value()
+        if not sel:
+            return qs
+        ids = self._descendants_ids(sel)
+        return qs.filter(categories__id__in=ids).distinct()
+
 @admin.register(Ingredient)
 class IngredientAdmin(admin.ModelAdmin):
     form = IngredientAdminForm
@@ -637,23 +675,15 @@ class IngredientAdmin(admin.ModelAdmin):
     list_display = ('ingredient_name', 'id', categories_display, labels_display, 'visibility', 'is_default', prices_count)
     search_fields = ('ingredient_name', 'categories__category_name', 'labels__label_name')
 
-    # 2) Filtres list panel:
-    #    - Catégories/labels reliés AU QUERYSET (évite les listes infinies)
-    #    - Restreints à type pertinent (ingredient|both)
-    class _CategoryForIngredientFilter(RelatedOnlyFieldListFilter):
-        """Filtre 'categories' restreint à category_type in (ingredient, both)."""
-        def field_choices(self, field, request, model_admin):
-            qs = Category.objects.filter(category_type__in=["ingredient", "both"])
-            return [(c.pk, str(c)) for c in qs]
-
+    # ---- Filtre Labels restreint (type ingredient|both) ----
     class _LabelForIngredientFilter(RelatedOnlyFieldListFilter):
         """Filtre 'labels' restreint à label_type in (ingredient, both)."""
         def field_choices(self, field, request, model_admin):
             qs = Label.objects.filter(label_type__in=["ingredient", "both"])
             return [(l.pk, str(l)) for l in qs]
 
-    list_filter = (('categories',  _CategoryForIngredientFilter), ('labels', _LabelForIngredientFilter), 'visibility')
-    
+    list_filter = (CategoryDrilldownFilter, ("labels", _LabelForIngredientFilter), "visibility")
+
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',)}
         js = ('pastry_app/admin/search_suggest.js',)
