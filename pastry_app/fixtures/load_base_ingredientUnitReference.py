@@ -1,3 +1,4 @@
+# Chargement du fichier, run la commande : python pastry_app/fixtures/load_base_ingredientUnitReference.py 
 import os
 import django
 

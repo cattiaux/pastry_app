@@ -1,10 +1,12 @@
+import json, subprocess, sys, os
+from pathlib import Path
 from django.contrib import admin, messages
 from django import forms
 from django.forms.models import BaseInlineFormSet
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
+from django.conf import settings
 from .models import *
-import json
 
 class StoreCityListFilter(admin.SimpleListFilter):
     """
@@ -333,6 +335,20 @@ class SubRecipeInline(admin.TabularInline):
     model = SubRecipe
     fk_name = 'recipe'
     extra = 0
+    show_change_link = True  # permet d’ouvrir/éditer la sous-recette depuis l’inline
+
+    # Optionnel: lien direct vers la recette liée (fichier Recipe) pour éviter toute ambiguïté
+    # readonly_fields = ("open_sub_recipe",)
+    # fields = ("sub_recipe", "open_sub_recipe", "quantity", "unit")
+
+    # def open_sub_recipe(self, obj):
+    #     from django.utils.html import format_html
+    #     from django.urls import reverse
+    #     if not obj or not obj.pk:
+    #         return ""
+    #     url = reverse("admin:pastry_app_recipe_change", args=(obj.sub_recipe_id,))
+    #     return format_html('<a href="{}">Ouvrir la sous-recette</a>', url)
+    # open_sub_recipe.short_description = "Recette liée"
 
 class RecipeCategoryInline(admin.TabularInline):
     model = RecipeCategory
@@ -351,12 +367,30 @@ class RecipeAdminForm(forms.ModelForm):
     class Meta:
         model = Recipe
         fields = "__all__"
-
+  
 @admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
+
+    class ShowFilter(admin.SimpleListFilter):
+        """Affichage: principales / toutes / sous-recettes."""
+        title = "Affichage"
+        parameter_name = "show"
+        def lookups(self, request, model_admin):
+            return (("main", "Recettes principales"), ("all", "Toutes"), ("sub", "Sous-recettes"))
+        def queryset(self, request, queryset):
+            used_ids = SubRecipe.objects.values_list("sub_recipe_id", flat=True)
+            v = self.value()
+            if v == "all":
+                return Recipe.objects.all()
+            if v == "sub":
+                return Recipe.objects.filter(id__in=used_ids)
+            if v == "main":
+                return Recipe.objects.exclude(id__in=used_ids)
+            return queryset  # laisse get_queryset décider
+        
     inlines = [RecipeCategoryInline, RecipeLabelInline, RecipeIngredientInline, RecipeStepInline, SubRecipeInline]
     list_display = ('recipe_name', 'id', 'chef_name', 'context_name', 'parent_recipe', 'display_tags', 'visibility', 'is_default')
-    list_filter = ('recipe_type', 'categories', 'labels', 'visibility')    
+    list_filter = (ShowFilter, 'recipe_type', 'categories', 'labels', 'visibility')    
     readonly_fields = ['recipe_subrecipes_synthesis']
     form = RecipeAdminForm
 
@@ -470,6 +504,39 @@ class RecipeAdmin(admin.ModelAdmin):
             return ro_fields + ('is_default',)
         return ro_fields
 
+    # Pour afficher toute la liste sans chercher: ajoute ?show=all à l’URL.
+    def get_queryset(self, request):
+        """
+        Changelist: masque les recettes utilisées comme sous-recettes.
+        Change view (objet précis): ne filtre pas, sinon 404.
+        ?show=all => affiche tout.
+        La recherche est gérée dans get_search_results.
+        """
+        qs = super().get_queryset(request)
+
+        # 1) Change view / History / Delete confirm → ne pas filtrer
+        rm = getattr(request, "resolver_match", None)
+        if rm and rm.kwargs.get("object_id"):
+            return qs  # important: pas d’exclude ici
+
+        # 2) Forcer l’affichage complet via ?show=all
+        if request.GET.get("show") == "all":
+            return qs
+
+        # 3) Changelist par défaut: masquer les sous-recettes
+        used_ids = SubRecipe.objects.values_list("sub_recipe_id", flat=True)
+        return qs.exclude(id__in=used_ids)
+
+    def get_search_results(self, request, queryset, search_term):
+        """
+        Recherche sur TOUTES les recettes, même celles filtrées par get_queryset.
+        Ainsi « pâte sucrée » apparaît en résultats même si masquée par défaut.
+        """
+        if search_term:
+            base = Recipe.objects.all()
+            return super().get_search_results(request, base, search_term)
+        return super().get_search_results(request, queryset, search_term)
+
     def save_related(self, request, form, formsets, change):
         """
         Valide les contraintes “au moins un ingrédient/sous-recette” après sauvegarde.
@@ -568,8 +635,43 @@ class SubRecipeAdmin(admin.ModelAdmin):
 
 @admin.register(IngredientUnitReference)
 class IngredientUnitReferenceAdmin(admin.ModelAdmin):
-    list_display = ('ingredient', 'unit', 'weight_in_grams', 'notes', 'is_hidden')
+    list_display = ('ingredient', 'unit', 'weight_in_grams', 'notes', 'is_hidden', "provenance")
     list_filter = ('unit', 'ingredient', 'is_hidden')
-    search_fields = ('ingredient__ingredient_name', 'notes')
+    search_fields = ('ingredient__ingredient_name', 'unit', 'notes')
     autocomplete_fields = ['ingredient']
     ordering = ('ingredient', 'unit')
+    actions = ["run_iur_loader"]
+
+    # La colonne Provenance s’appuie sur notes. Adapte si besoin
+    def provenance(self, obj):
+        """Indique si la ligne vient du loader (heuristique via notes)."""
+        n = (obj.notes or "").lower()
+        return "loader" if ("default" in n or "rui" in n or "forme" in n) else ""
+    provenance.short_description = "Provenance"
+
+    def run_iur_loader(self, request, queryset):
+        """
+        Lance load_base_ingredientUnitReference.py dans un sous-processus.
+        Affiche le delta de lignes après exécution.
+        """
+        script = Path(settings.BASE_DIR) / "pastry_app" / "fixtures" / "load_base_ingredientUnitReference.py"
+        if not script.exists():
+            self.message_user(request, f"Script introuvable: {script}", level="error")
+            return
+
+        env = os.environ.copy()
+        # propage le settings module actif à l’enfant
+        env["DJANGO_SETTINGS_MODULE"] = env.get("DJANGO_SETTINGS_MODULE", "settings")
+
+        before = IngredientUnitReference.objects.count()
+        proc = subprocess.run([sys.executable, str(script)], env=env, capture_output=True, text=True)
+        if proc.returncode != 0:
+            self.message_user(request, f"Erreur loader: {proc.stderr.strip()}", level="error")
+            return
+
+        after = IngredientUnitReference.objects.count()
+        msg = f"Références chargées (+{after - before})."
+        if proc.stdout:
+            msg += f" Log: {proc.stdout.splitlines()[-1][:200]}"
+        self.message_user(request, msg)    
+    run_iur_loader.short_description = "Charger/mettre à jour via load_base_ingredientUnitReference.py"
