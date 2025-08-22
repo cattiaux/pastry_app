@@ -751,6 +751,18 @@ class RecipeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("La source doit contenir au moins 3 caractères.")
         return value
 
+    def validate_categories(self, value):
+        for cat in value:
+            if cat.category_type not in ("recipe", "both"):
+                raise serializers.ValidationError(f"La catégorie '{cat.category_name}' (type '{cat.category_type}') n'est pas valide pour une recette.")
+        return value
+
+    def validate_labels(self, value):
+        for lab in value:
+            if lab.label_type not in ("recipe", "both"):
+                raise serializers.ValidationError(f"Le label '{lab.label_name}' (type '{lab.label_type}') n'est pas valide pour une recette.")
+        return value
+
     def validate(self, data):
         """
         Validation centrale de Recipe :

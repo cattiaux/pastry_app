@@ -2,7 +2,7 @@ import pytest, json
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from rest_framework import status
-from pastry_app.models import Ingredient, Category
+from pastry_app.models import Ingredient, Category, Label
 from pastry_app.tests.utils import normalize_case
 from pastry_app.tests.base_api_test import api_client, base_url
 
@@ -192,3 +192,38 @@ def test_category_type_for_ingredient_api(api_client, base_url, user):
     data2 = {"ingredient_name": "My Ingredient", "categories": [cat_ingredient.id, cat_both.id]}
     response = api_client.post(url, data2, format="json")
     assert response.status_code in [200, 201]
+
+def test_label_type_for_ingredient_api(api_client, base_url, user):
+    """API: label type=recipe interdit pour Ingredient, type=both autorisé."""
+    lab_recipe = Label.objects.create(label_name="Lab Recipe", label_type="recipe", created_by=user)
+    lab_both = Label.objects.create(label_name="Lab Both", label_type="both", created_by=user)
+    api_client.force_authenticate(user=user)
+    url = base_url(model_name)
+    bad = {"ingredient_name": "X1", "labels": [lab_recipe.id]}
+    ok = {"ingredient_name": "X2", "labels": [lab_both.id]}
+    r_bad = api_client.post(url, bad, format="json")
+    assert r_bad.status_code == 400 and "n'est pas valide pour un ingrédient" in str(r_bad.data)
+    r_ok = api_client.post(url, ok, format="json")
+    assert r_ok.status_code in (200, 201)
+
+def test_recipe_rejects_ingredient_only_category_api(api_client, base_url, user):
+    """API: catégorie type=ingredient interdite pour Recipe."""
+    api_client.force_authenticate(user=user)
+    cat_ing = Category.objects.create(category_name="Cat Ing", category_type="ingredient", created_by=user)
+    payload = {
+        "recipe_name": "R1", "chef_name": "C", "recipe_type": "BASE",
+        "servings_min": 1, "servings_max": 1, "categories": [cat_ing.id]
+    }
+    r = api_client.post(base_url("recipes"), payload, format="json")
+    assert r.status_code == 400 and "n'est pas valide pour une recette" in str(r.data)
+
+def test_recipe_rejects_ingredient_only_label_api(api_client, base_url, user):
+    """API: label type=ingredient interdit pour Recipe."""
+    api_client.force_authenticate(user=user)
+    lab_ing = Label.objects.create(label_name="Lab Ing", label_type="ingredient", created_by=user)
+    payload = {
+        "recipe_name": "R2", "chef_name": "C", "recipe_type": "BASE",
+        "servings_min": 1, "servings_max": 1, "labels": [lab_ing.id]
+    }
+    r = api_client.post(base_url("recipes"), payload, format="json")
+    assert r.status_code == 400 and "n'est pas valide pour une recette" in str(r.data)

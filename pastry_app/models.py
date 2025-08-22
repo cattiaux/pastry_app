@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import GinIndex
-from django.db.models.signals import post_delete
+from django.db.models.signals import post_delete, m2m_changed
 from django.dispatch import receiver
 from .text_utils import normalize_case
 from .constants import UNIT_CHOICES, SUBRECIPE_UNIT_CHOICES
@@ -312,6 +312,10 @@ class RecipeCategory(models.Model):
         verbose_name = "recipe category"
         verbose_name_plural = "categories"
 
+    def clean(self):
+        if self.category.category_type not in ("recipe", "both"):
+            raise ValidationError(f"Catégorie '{self.category.category_name}' (type '{self.category.category_type}') invalide pour Recipe.")
+
 class IngredientLabel(models.Model):
     ingredient = models.ForeignKey("Ingredient", on_delete=models.CASCADE)
     label = models.ForeignKey("Label", on_delete=models.PROTECT)  # Empêche la suppression d'un label utilisé
@@ -323,6 +327,10 @@ class RecipeLabel(models.Model):
     class Meta:
         verbose_name = "recipe labels"
         verbose_name_plural = "labels"
+
+    def clean(self):
+        if self.label.label_type not in ("recipe", "both"):
+            raise ValidationError(f"Label '{self.label.label_name}' (type '{self.label.label_type}') invalide pour Recipe.")
 
 class Recipe(models.Model):
     RECIPE_TYPE_CHOICES = [("BASE", "Recette de base"), ("VARIATION", "Variante"),]
@@ -910,6 +918,25 @@ class Ingredient(models.Model):
             return  # On évite un deuxième `save()` si l’objet est déjà en base
         
         super().save(*args, **kwargs)  # Une seule sauvegarde pour éviter `IntegrityError`
+
+# --- Ingredient: validations M2M via signaux (pas de through explicite) ---
+@receiver(m2m_changed, sender=Ingredient.categories.through)
+def _validate_ingredient_categories(sender, instance, action, pk_set, **kwargs):
+    """Empêche d’associer à Ingredient des Category dont category_type ∉ {ingredient,both}. Déclenchement pre_add/pre_set."""
+    if action in {"pre_add", "pre_set"} and pk_set:
+        bad = Category.objects.filter(id__in=pk_set).exclude(category_type__in=["ingredient", "both"])
+        if bad.exists():
+            names = ", ".join(b.category_name for b in bad[:3])
+            raise ValidationError(f"Catégories invalides pour Ingredient: {names}")
+
+@receiver(m2m_changed, sender=Ingredient.labels.through)
+def _validate_ingredient_labels(sender, instance, action, pk_set, **kwargs):
+    """Empêche d’associer à Ingredient des Label dont label_type ∉ {ingredient,both}. Déclenchement pre_add/pre_set."""
+    if action in {"pre_add", "pre_set"} and pk_set:
+        bad = Label.objects.filter(id__in=pk_set).exclude(label_type__in=["ingredient", "both"])
+        if bad.exists():
+            names = ", ".join(b.label_name for b in bad[:3])
+            raise ValidationError(f"Labels invalides pour Ingredient: {names}")
 
 class Store(models.Model):
     store_name = models.CharField(max_length=200) #default="Non renseigné")

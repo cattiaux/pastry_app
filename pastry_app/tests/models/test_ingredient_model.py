@@ -66,13 +66,13 @@ def test_ingredient_deletion(ingredient):
 
 def test_ingredient_can_have_categories(ingredient, user):
     """ Vérifie qu'un ingrédient peut être associé à des catégories."""
-    category = Category.objects.create(category_name="TestCaté", category_type='recipe', created_by=user) 
+    category = Category.objects.create(category_name="TestCaté", category_type='ingredient', created_by=user) 
     ingredient.categories.add(category)  # Assigner une catégorie
     assert category in ingredient.categories.all()  # Vérifier l’association
 
 def test_ingredient_can_have_labels(ingredient, user):
     """ Vérifie qu'un ingrédient peut être associé à des labels."""
-    label = Label.objects.create(label_name="Bio", label_type='recipe', created_by=user)
+    label = Label.objects.create(label_name="Bio", label_type='ingredient', created_by=user)
     ingredient.labels.add(label)  # Assigner un label
     assert label in ingredient.labels.all()  # Vérifier l’association
 
@@ -95,10 +95,18 @@ def test_ingredient_cannot_have_recipe_only_category(user):
     ing.full_clean()  # Doit passer sans erreur
 
     # Test avec une catégorie "recipe" (interdit)
-    ing.categories.add(cat_recipe)
     with pytest.raises(ValidationError) as excinfo:
-        ing.full_clean()
-    assert "n'est pas valide pour un ingrédient" in str(excinfo.value)
+        ing.categories.add(cat_recipe)  # signal m2m_changed -> pre_add
+    assert "Catégories invalides" in str(excinfo.value)
+
+def test_ingredient_cannot_have_recipe_only_label(user):
+    """Interdit: label type=recipe sur Ingredient."""
+    lab_recipe = Label.objects.create(label_name="Lab Recipe", label_type="recipe", created_by=user)
+    ing = Ingredient.objects.create(ingredient_name="My Ingredient 2")
+
+    with pytest.raises(ValidationError) as excinfo:
+        ing.labels.add(lab_recipe)  # signal m2m_changed -> pre_add
+    assert "Labels invalides" in str(excinfo.value)
 
 @pytest.mark.parametrize(
     "with_user, with_guest_id, should_raise",
@@ -118,3 +126,4 @@ def test_ingredient_user_and_guest_id(user, with_user, with_guest_id, should_rai
             ingredient.full_clean()
     else:
         ingredient.full_clean()
+

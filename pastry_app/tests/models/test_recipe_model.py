@@ -1,7 +1,7 @@
 import pytest
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
-from pastry_app.models import Recipe, Pan, RecipeIngredient, Ingredient, RecipeStep, IngredientUnitReference, UserRecipeVisibility
+from pastry_app.models import Recipe, Pan, RecipeIngredient, Ingredient, RecipeStep, IngredientUnitReference, UserRecipeVisibility, Category, Label
 from pastry_app.tests.utils import validate_constraint, validate_field_normalization, normalize_case
 
 pytestmark = pytest.mark.django_db
@@ -27,7 +27,10 @@ def recipe(pan):
 
 @pytest.fixture
 def user():
-    return User.objects.create_user(username="user1", password="testpass123")
+    admin = User.objects.create_user(username="user1", password="testpass123")
+    admin.is_staff = True
+    admin.save()
+    return admin
 
 @pytest.fixture
 def recipe_with_conversions(pan):
@@ -282,6 +285,24 @@ def test_total_quantity_force_recompute(recipe_with_conversions):
     recipe_with_conversions.total_recipe_quantity = first + 1
     recipe_with_conversions.save(update_fields=["total_recipe_quantity"])
     assert recipe_with_conversions.compute_and_set_total_quantity(force=True) == pytest.approx(first)
+
+def test_recipe_cannot_link_category_type_ingredient_via_through(pan, user):
+    """Modèle: RecipeCategory.clean() refuse category_type=ingredient."""
+    recipe = Recipe.objects.create(recipe_name="Recipe", chef_name="Chef", recipe_type="BASE", servings_min=1, servings_max=1, pan=pan)
+    cat_ing = Category.objects.create(category_name="Cat Ing", category_type="ingredient", created_by=user)
+    Through = Recipe.categories.through
+    link = Through(recipe_id=recipe.id, category_id=cat_ing.id)
+    with pytest.raises(ValidationError):
+        link.full_clean()
+
+def test_recipe_cannot_link_label_type_ingredient_via_through(pan, user):
+    """Modèle: RecipeLabel.clean() refuse label_type=ingredient."""
+    recipe = Recipe.objects.create(recipe_name="Recipe2", chef_name="Chef", recipe_type="BASE", servings_min=1, servings_max=1, pan=pan)
+    lab_ing = Label.objects.create(label_name="Lab Ing", label_type="ingredient", created_by=user)
+    Through = Recipe.labels.through
+    link = Through(recipe_id=recipe.id, label_id=lab_ing.id)
+    with pytest.raises(ValidationError):
+        link.full_clean()
 
 # --- test pour UserRecipeVisibility ---
 
