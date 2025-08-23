@@ -1,0 +1,15 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{# Injecte les URLs d’API calculées côté serveur pour tous les écrans admin #}
+{% block extrahead %}
+  {{ block.super }}
+  <script>
+    // Source de vérité côté serveur. Disponible globalement pour les JS de l'admin.
+    // Nécessite d’avoir nommé la route dans urls.py : name="adapt-recipe"
+    (function () {
+      window.APP_API_RECIPES_ADAPT = "{% url 'adapt-recipe' %}";
+    })();
+  </script>
+{% endblock %}
+

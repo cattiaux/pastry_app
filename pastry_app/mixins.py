@@ -1,4 +1,6 @@
 from django.db.models import Q
+from django.urls import reverse, path
+from django.http import JsonResponse
 from rest_framework.exceptions import PermissionDenied
 
 class GuestUserRecipeMixin:
@@ -119,4 +121,101 @@ class OverridableReferenceQuerysetMixin:
             global_qs = global_qs.exclude(q_objects)
         # 4. Union (queryset combiné)
         return private_qs | global_qs
-    
+
+class AdminSuggestMixin:
+    """
+    Factorise:
+      - l’endpoint JSON /suggest/ protégé par l’admin
+      - l’injection de son URL dans le changelist via data-attribute
+    Usage: class MyAdmin(AdminSuggestMixin, admin.ModelAdmin): pass
+    """
+    change_list_template = "admin/with_endpoints_change_list.html"
+    suggest_limit = 10  # max résultats
+    suggest_route_suffix = "suggest"  # segment d’URL
+
+    # ---------- wiring UI ----------
+    def get_suggest_url(self, request):
+        """URL absolue nommée de l’endpoint /suggest/ de ce ModelAdmin."""
+        return reverse(
+            f"admin:{self.model._meta.app_label}_{self.model._meta.model_name}_{self.suggest_route_suffix}",
+            current_app=self.admin_site.name,
+        )
+
+    def changelist_view(self, request, extra_context=None):
+        """Injecte l’URL /suggest/ dans le template de liste."""
+        extra_context = extra_context or {}
+        extra_context["admin_api"] = {"suggest": self.get_suggest_url(request)}
+        return super().changelist_view(request, extra_context=extra_context)
+
+    # ---------- endpoint ----------
+    def get_urls(self):
+        """
+        Ajoute l’endpoint JSON `/suggest/` (protégé par admin_view) pour l’autocomplétion
+        de la barre de recherche du changelist courant.
+        """
+        urls = super().get_urls()
+        extra = [
+            path(
+                f"{self.suggest_route_suffix}/",
+                self.admin_site.admin_view(self.suggest_view),
+                name=f"{self.model._meta.app_label}_{self.model._meta.model_name}_{self.suggest_route_suffix}",
+            )
+        ]
+        return extra + urls
+
+    # ---------- logique de suggestion ----------
+    def get_suggest_fields(self):
+        """
+        Champs interrogés. Par défaut: self.search_fields.
+        Surcharger si besoin (retourner un iterable de champs).
+        """
+        return getattr(self, "search_fields", ())
+
+    def get_suggest_queryset(self):
+        """QS de base pour les suggestions. Surcharge possible (ex: .only())."""
+        return self.model.objects.all()
+
+    def suggest_view(self, request):
+        """
+        Retourne JSON {"results": [...]}
+        - Aggregue les suggestions issues de TOUS les champs de get_suggest_fields()
+        - Gère les préfixes Django: '^'→istartswith, '='→iexact, sinon→icontains
+        - Déduplique, tronque à suggest_limit
+        """
+        q = (request.GET.get("q") or "").strip()
+
+        if len(q) < 2:
+            return JsonResponse({"results": []})
+        
+        fields = list(self.get_suggest_fields())
+        if not q or not fields:
+            return JsonResponse({"results": []})
+
+        limit = int(getattr(self, "suggest_limit", 10))
+        base_qs = self.get_suggest_queryset()
+        out = []
+
+        for f in fields:
+            raw = f.lstrip("^=@")
+            if f.startswith("^"):
+                flt = {f"{raw}__istartswith": q}
+            elif f.startswith("="):
+                flt = {f"{raw}__iexact": q}
+            else:
+                flt = {f"{raw}__icontains": q}
+
+            vals = (base_qs.filter(**flt)
+                            .values_list(raw, flat=True)
+                            .distinct()
+                            .order_by(raw)[:limit])
+            out.extend(v for v in vals if v)
+
+        seen, results = set(), []
+        for v in out:
+            s = str(v)
+            if s not in seen:
+                seen.add(s); results.append(s)
+            if len(results) >= limit:
+                break
+
+        return JsonResponse({"results": results})

@@ -42,16 +42,33 @@
             }
 
             /**
-             * Appelle l'endpoint JSON des suggestions (GET /suggest/?q=...) et renvoie les résultats au callback.
-             * @param {string} q - Terme de recherche.
-             * @param {(results: string[]) => void} cb - Callback recevant un tableau de libellés.
+             * Retourne l’URL de l’endpoint de suggestion.
+             * Priorité: data-suggest injecté par le template (calculé via reverse()).
+             * Fallback: URL relative "suggest/" basée sur la page courante.
+             */
+            function apiSuggest() {
+                // Priorité au data-suggest injecté par le template, sinon fallback relatif
+                const n = document.getElementById('admin-api');
+                return (n && n.dataset && n.dataset.suggest) ? n.dataset.suggest : new URL('suggest/', location.href).toString();
+            }
+            const SUGGEST_URL = apiSuggest();
+
+            /**
+             * Appelle l’endpoint JSON des suggestions et transmet les résultats.
+             * @param {string} q Terme de recherche.
+             * @param {(results: string[]) => void} cb Callback recevant la liste de libellés.
              */
             function fetchSuggestions(q, cb) {
-                const url = 'suggest/?q=' + encodeURIComponent(q);
-                fetch(url, {credentials: 'same-origin'})
-                    .then(r => r.ok ? r.json() : {results: []})
+                if (!SUGGEST_URL) { console.warn('[suggest JS] empty suggest URL'); return cb([]); }
+
+                // IMPORTANT: fournir une base à new URL() si on reçoit un chemin absolu "/…"
+                const u = new URL(SUGGEST_URL, window.location.href);
+                u.searchParams.set('q', q);
+                fetch(u.toString(), {credentials: 'same-origin', headers: { 'Accept': 'application/json'} })
+                    .then(r => (!r.ok ? Promise.reject() : r))
+                    .then(r => (r.headers.get('content-type') || '').includes('application/json') ? r.json() : Promise.reject())
                     .then(data => cb(Array.isArray(data.results) ? data.results : []))
-                    .catch(() => cb([]));
+                    .catch(() => cb([]))
             }
 
             /**
@@ -62,7 +79,7 @@
              */
             function init() {
                 // Ne s'active que si on est sur une page admin list (présence #searchbar)
-                const input = document.getElementById('searchbar'); // barre admin
+                const input = document.getElementById('searchbar') || document.querySelector('input[name="q"]'); // barre admin
                 if (!input) return;
 
                 const dl = ensureDatalist(input);

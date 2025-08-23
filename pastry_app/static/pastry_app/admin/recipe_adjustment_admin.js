@@ -120,12 +120,23 @@
                     target_servings: servingsMin,  // À adapter selon la logique réelle
                 };
 
+                // URL robuste: injectée via base_site.html, sinon fallback
+                const RECIPES_ADAPT_ENDPOINT = window.APP_API_RECIPES_ADAPT || '/api/recipes-adapt/';
+
+                // CSRF (si vue non exemptée)
+                function getCookie(name){
+                const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+                return m ? m.pop() : '';
+                }
+
                 // Appel AJAX vers /api/recipes-adapt/
                 $.ajax({
                     type: "POST",
-                    url: "/api/recipes-adapt/",
+                    url: RECIPES_ADAPT_ENDPOINT,
                     data: JSON.stringify(data),
                     contentType: "application/json",
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                    xhrFields: { withCredentials: true },
                     success: function (response) {
                         // Mise à jour des quantités dans la page (inlines ingrédients)
                         updateQuantitiesFromResponse(response);

@@ -44,14 +44,30 @@
                 });
             }
 
+            // Champ de recherche natif du changelist admin.
+            // Si absent (autre vue admin), on stoppe proprement.
+            const input = document.getElementById('searchbar');
+            if (!input) return;
+
             /**
-             * Appelle l'endpoint JSON des suggestions et renvoie les résultats au callback.
-             * @param {string} q - Terme de recherche.
-             * @param {(results: string[]) => void} cb - Callback recevant un tableau de libellés.
+             * Retourne l’URL de l’endpoint de suggestion.
+             * Priorité: data-suggest injecté par le template (calculé via reverse()).
+             * Fallback: URL relative "suggest/" basée sur la page courante.
+             */
+            function apiSuggest() {
+                const n = document.getElementById('admin-api');
+                return (n && n.dataset && n.dataset.suggest) ? n.dataset.suggest : new URL('suggest/', location.href).toString();
+            }
+
+            /**
+             * Appelle l’endpoint JSON des suggestions et transmet les résultats.
+             * @param {string} q Terme de recherche.
+             * @param {(results: string[]) => void} cb Callback recevant la liste de libellés.
              */
             function fetchSuggestions(q, cb) {
-                const url = 'suggest/?q=' + encodeURIComponent(q);
-                fetch(url, {credentials: 'same-origin'})
+                const u = new URL(apiSuggest());
+                u.searchParams.set('q', q);
+                fetch(u, {credentials: 'same-origin'})
                 .then(r => r.ok ? r.json() : {results: []})
                 .then(data => cb(Array.isArray(data.results) ? data.results : []))
                 .catch(() => cb([]));
