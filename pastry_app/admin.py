@@ -1,12 +1,10 @@
 import json, subprocess, sys, os
 from pathlib import Path
 from django.contrib import admin, messages
-from django.contrib.admin.utils import quote
 from django.contrib.admin import RelatedOnlyFieldListFilter
 from django import forms
 from django.forms.models import BaseInlineFormSet
-from django.db.models import Exists, OuterRef, Q
-from django.db.models.functions import Lower
+from django.db.models import Exists, OuterRef
 from django.urls import reverse, path
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
