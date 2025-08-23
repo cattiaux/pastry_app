@@ -531,6 +531,8 @@ class StoreAdmin(admin.ModelAdmin):
 @admin.register(Pan)
 class PanAdmin(admin.ModelAdmin):
     list_display = ('pan_name', 'id', 'pan_brand', 'pan_type', 'units_in_mold', 'visibility', 'is_default')
+    search_fields = ('pan_name', 'pan_brand')
+    list_filter = ('pan_type', ('pan_brand', admin.AllValuesFieldListFilter), 'visibility')
 
     fieldsets = (
         ('Caractéristiques du moule', {
@@ -1185,7 +1187,11 @@ class RecipeIngredientAdmin(admin.ModelAdmin):
 
 @admin.register(RecipeStep)
 class RecipeStepAdmin(admin.ModelAdmin):
+
     list_display = ('recipe_name', 'id', 'step_number')
+    search_fields = ('recipe__recipe_name',)
+    list_select_related = ('recipe',) 
+    list_filter = ('recipe__recipe_name',)
 
     class Media:
         css = {'all': ('pastry_app/admin/required_fields.css',)}
@@ -1292,6 +1298,8 @@ class RecipeStepAdmin(admin.ModelAdmin):
 @admin.register(SubRecipe)
 class SubRecipeAdmin(admin.ModelAdmin):
     list_display = ('subrecipe_name', 'recipe_name', 'id')
+    search_fields = ('recipe__recipe_name', 'sub_recipe__recipe_name')
+    list_select_related = ('recipe', 'sub_recipe')  # Perf: évite des JOINs supplémentaires
 
     class Media:
         js = ('pastry_app/admin/search_suggest.js',)
@@ -1368,7 +1376,7 @@ class SubRecipeAdmin(admin.ModelAdmin):
 @admin.register(IngredientUnitReference)
 class IngredientUnitReferenceAdmin(admin.ModelAdmin):
     list_display = ('ingredient', 'unit', 'weight_in_grams', 'notes', 'is_hidden', "provenance")
-    list_filter = ('unit', 'ingredient', 'is_hidden')
+    list_filter = (('unit', admin.AllValuesFieldListFilter), ('ingredient', admin.RelatedOnlyFieldListFilter), 'is_hidden')  # ne liste que les unit et ingrédients présents dans IUR
     search_fields = ('ingredient__ingredient_name', 'unit', 'notes')
     autocomplete_fields = ['ingredient']
     ordering = ('ingredient', 'unit')
@@ -1471,4 +1479,3 @@ class IngredientUnitReferenceAdmin(admin.ModelAdmin):
                 break
 
         return JsonResponse({"results": results})
-    
