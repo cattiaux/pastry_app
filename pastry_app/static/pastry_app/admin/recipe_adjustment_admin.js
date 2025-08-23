@@ -1,6 +1,6 @@
 /**
  * ==============================================================
- * JS ADMIN : RECIPE - MODE AJUSTEMENT (Pan & Portions)
+ * JS ADMIN : RECIPE - MODE AJUSTEMENT (Pan & Portions) + Synthèse arborescente
  * ==============================================================
  * Ce fichier gère le mode d'ajustement dans l'admin Django :
  * - Tous les champs deviennent gris/inactifs sauf pan, servings_min, servings_max et la case à cocher elle-même.
@@ -13,6 +13,16 @@
  *   - Collecte des entrées (servings, pan, contraintes)
  *   - POST d’adaptation
  *   - Rendu récursif de la synthèse
+ * 
+ *   - Accepte une réponse JSON arborescente:
+ *      {
+ *        ingredients: [...],
+ *        subrecipes: [
+ *          { recipe_name: "...", ingredients: [...], subrecipes: [...] },
+ *          ...
+ *        ]
+ *      }
+ *    Compatibilité: supporte aussi les variantes {tree:{...}} ou {children:[...]}.
  */
 
 
@@ -23,6 +33,10 @@
     if(typeof window.django !== "undefined" && typeof django.jQuery !== "undefined") {
 
         (function($) {
+
+            // -------------------------------
+            // 1) Gestion "mode ajustement"
+            // -------------------------------
 
             /**
             * Désactive tous les champs du formulaire sauf exceptions.
@@ -83,6 +97,10 @@
                 setFieldsState($adjustmentCheckbox.is(':checked'));
             }           
 
+            // ----------------------------------------
+            // 2) Bouton "Calculer les ajustements"
+            // ----------------------------------------
+
             // Ajoute dynamiquement le bouton après les boutons d'envoi classiques
             function addAdjustButton() {
                 const $row = $('.submit-row');
@@ -105,29 +123,32 @@
                 }
             }
 
+            // ----------------------------------------
+            // 3) Appel API d’adaptation 
+            // ----------------------------------------
+
+            // Extrait l’ID de recette depuis l’URL admin Django (ex: /admin/pastry_app/recipe/123/change/)
+            function getRecipeIdFromURL() {
+                const match = window.location.pathname.match(/\/recipe\/(\d+)\/change\//);
+                return match ? match[1] : null;
+            }
+
+            // CSRF (si vue non exemptée)
+            function getCookie(name){
+                const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+                return m ? m.pop() : '';
+            }
+
             // Logique d’ajustement (à coder selon tes besoins)
             function ajusterQuantites() {
                 // Récupère valeurs actuelles du pan/servings
                 const recipeId = $('#id_recipe_id').val() || getRecipeIdFromURL();
                 const pan = $('#id_pan').val();
                 const servingsMin = $('#id_servings_min').val();
-                const servingsMax = $('#id_servings_max').val();
-
                 // Construire le payload
-                const data = {
-                    recipe_id: recipeId,
-                    target_pan_id: pan,
-                    target_servings: servingsMin,  // À adapter selon la logique réelle
-                };
-
+                const data = {recipe_id: recipeId, target_pan_id: pan, target_servings: servingsMin};
                 // URL robuste: injectée via base_site.html, sinon fallback
                 const RECIPES_ADAPT_ENDPOINT = window.APP_API_RECIPES_ADAPT || '/api/recipes-adapt/';
-
-                // CSRF (si vue non exemptée)
-                function getCookie(name){
-                const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
-                return m ? m.pop() : '';
-                }
 
                 // Appel AJAX vers /api/recipes-adapt/
                 $.ajax({
@@ -147,55 +168,95 @@
                 });
             }
 
-            // Extrait l’ID de recette depuis l’URL admin Django (ex: /admin/pastry_app/recipe/123/change/)
-            function getRecipeIdFromURL() {
-                const match = window.location.pathname.match(/\/recipe\/(\d+)\/change\//);
-                return match ? match[1] : null;
+            // ----------------------------------------
+            // 4) Màj des inlines + Synthèse arborescente
+            // ----------------------------------------
+
+            // Normalise la réponse pour accepter plat ou arbre
+            function normalizeTree(resp) {
+                if (!resp) return { ingredients: [], subrecipes: [] };
+                if (resp.tree) return resp.tree;
+                return {
+                ingredients: resp.ingredients || [],
+                subrecipes:  resp.subrecipes || resp.children || []
+                };
             }
 
-            // Mise à jour des quantités affichées dans les inlines et la synthèse de l’admin Django
-            /**
-             * Met à jour dynamiquement les champs quantités dans l’admin Django
-             * en fonction des données retournées par l’API d’ajustement.
-             *
-             * @param {Object} response - La réponse JSON de l’API d’ajustement (doit contenir "ingredients")
-             */
-            function updateQuantitiesFromResponse(response) {
-                if (!response.ingredients) {
-                    console.warn("Réponse API inattendue : pas de clé 'ingredients'");
-                    return;
+            // Met à jour une ligne inline pour un ingrédient, logique d’origine conservée :contentReference[oaicite:1]{index=1}
+            function updateInlineRow(adapted) {
+                var ingredientId = adapted.ingredient;
+                var displayName  = (adapted.display_name || '').trim();
+                var newQuantity  = adapted.scaled_quantity;
+
+                $('tr.form-row[id^="recipe_ingredients-"]').each(function () {
+                var $row = $(this);
+                var $ingredientSelect = $row.find('select[name$="-ingredient"]');
+                var currentIngredientId = parseInt($ingredientSelect.val());
+                var currentDisplayName  = $row.find('td.field-display_name p').text().trim();
+
+                if (currentIngredientId === ingredientId && currentDisplayName === displayName) {
+                    var $qty = $row.find('input[name$="-quantity"]');
+                    $qty.val(newQuantity);
+                    $qty.css('background-color', '#e5ffe5').animate({ backgroundColor: '#fff' }, 1000);
                 }
+                });
+            }
 
-                response.ingredients.forEach(function(adapted) {
-                    var ingredientId = adapted.ingredient;
-                    var displayName = (adapted.display_name || "").trim();
-                    var newQuantity = adapted.scaled_quantity;
+            // Parcours récursif: met à jour inlines pour tous les niveaux
+            function walkAndUpdate(node) {
+                (node.ingredients || []).forEach(updateInlineRow);
+                (node.subrecipes || []).forEach(function (sr) { walkAndUpdate(sr); });
+            }
 
-                    // Parcours chaque ligne du formset des ingrédients
-                    $('tr.form-row[id^="recipe_ingredients-"]').each(function() {
-                        var $row = $(this);
-                        // ID ingrédient de la ligne
-                        var $ingredientSelect = $row.find('select[name$="-ingredient"]');
-                        var currentIngredientId = parseInt($ingredientSelect.val());
+            // Rendu HTML arborescent dans le fieldset de synthèse (non intrusif)
+            function renderSynthesis(root) {
+                var $fs = $('.field-recipe_subrecipes_synthesis').closest('fieldset'); // fieldset déjà présent côté admin :contentReference[oaicite:2]{index=2}
+                if ($fs.length === 0) return;
 
-                        // Display name de la ligne (texte)
-                        var currentDisplayName = $row.find('td.field-display_name p').text().trim();
+                var $box = $('#synthesis-tree');
+                if ($box.length === 0) {
+                $box = $('<div id="synthesis-tree" class="module aligned" style="margin-top:8px;"></div>');
+                $fs.append($box);
+                }
+                $box.html(buildTreeHTML(root));
+            }
 
-                        // Correspondance double : id + display_name
-                        if (currentIngredientId === ingredientId && currentDisplayName === displayName) {
-                            // Champ quantité à mettre à jour
-                            var $qtyInput = $row.find('input[name$="-quantity"]');
-                            $qtyInput.val(newQuantity);
-                            $qtyInput.css('background-color', '#e5ffe5').animate({backgroundColor: "#fff"}, 1000);
-                        }
-                    });
+            function esc(s){ 
+                return String(s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); 
+            }
+
+            function buildTreeHTML(node) {
+                var html = '<ul>';
+
+                (node.ingredients || []).forEach(function(i){
+                var name = esc(i.display_name || i.name || '');
+                var qty  = (i.scaled_quantity != null ? i.scaled_quantity : i.quantity);
+                var unit = esc(i.unit || '');
+                html += '<li>' + name + (qty != null ? ' — ' + qty : '') + (unit ? ' ' + unit : '') + '</li>';
                 });
 
-                // feedback visuel
-                $(".messages").append('<div class="success">Quantités ajustées !</div>');
+                (node.subrecipes || []).forEach(function(sr){
+                var title = esc(sr.recipe_name || sr.name || ('Sous-recette ' + (sr.id || sr.recipe_id || '')));
+                html += '<li><strong>' + title + '</strong>' + buildTreeHTML(sr) + '</li>';
+                });
 
+                html += '</ul>';
+                return html;
             }
-    
+
+            // Entrée unique appelée après succès API
+            function updateQuantitiesFromResponse(response) {
+                var root = normalizeTree(response);
+                // Compat plat: si aucune structure et pas d’ingrédients, on ne fait rien
+                if (!root.ingredients && !root.subrecipes) return;
+
+                walkAndUpdate(root);     // met à jour toutes les lignes inline
+                renderSynthesis(root);   // affiche la synthèse hiérarchique
+
+                // feedback visuel comme avant
+                $('.messages').append('<div class="success">Quantités ajustées !</div>'); // :contentReference[oaicite:3]{index=3}
+            }
+
             // =====================================
             // Initialisation globale au chargement
             // =====================================
