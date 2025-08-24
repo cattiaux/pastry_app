@@ -303,13 +303,13 @@ def test_recipe_update_optimistic_locking(api_client, base_url, user):
 
 # --- Tests de validation métier : adaptation de recettes ---
 
-def test_adaptation_note_requires_parent(api_client, base_url, user):
-    """On ne peut ajouter adaptation_note que si parent_recipe est défini (ici, que via l’endpoint adapté)."""
+def test_version_note_requires_parent(api_client, base_url, user):
+    """On ne peut ajouter version_note que si parent_recipe est défini (ici, que via l’endpoint adapté)."""
     api_client.force_authenticate(user=user)
-    # Essaye de créer une recette sans parent, avec adaptation_note
-    payload = base_recipe_data(recipe_name="BadAdapt", adaptation_note="Doit échouer")
+    # Essaye de créer une recette sans parent, avec version_note
+    payload = base_recipe_data(recipe_name="BadAdapt", version_note="Doit échouer")
     resp = api_client.post(base_url(model_name), payload, format="json")
-    assert "adaptation_note" in resp.json() or resp.status_code == 400
+    assert "version_note" in resp.json() or resp.status_code == 400
 
 def test_adaptation_of_adaptation_points_to_mother(api_client, base_url, user):
     """Adapter une adaptation rattache bien la nouvelle adaptation à la recette mère, pas à l'adaptation."""

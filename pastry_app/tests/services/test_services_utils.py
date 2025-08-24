@@ -611,9 +611,9 @@ def test_scale_recipe_globally_deep_recursion_and_rounding(base_ingredients):
 
     # multiplicateur local attendu = (quantité utilisée de B en g) / (total B en g)
     used_qty_B = 20.0 * multiplier                           # B est utilisé à 20 g dans A
-    total_B = sum(ri.quantity for ri in B.recipe_ingredients.all())  # 3.333 g avec ce setup
+    total_B = B.compute_and_set_total_quantity(force=False, save=False, include_subrecipes=True)  # (3.333 + 12.5) 15.833 g avec ce setup
     expected_local_B = used_qty_B / total_B                           # ≈ 7.407740774
-    assert B_node["scaling_multiplier"] == pytest.approx(expected_local_B, rel=1e-9)
+    assert B_node["scaling_multiplier"] == pytest.approx(expected_local_B, rel=1e-9) 
 
     # Ingrédient B1 dans B → multiplié par le local de B
     b1 = next(i for i in B_node["ingredients"] if i["ingredient_id"] == B.recipe_ingredients.first().ingredient_id)
@@ -630,7 +630,7 @@ def test_scale_recipe_globally_deep_recursion_and_rounding(base_ingredients):
     assert C_node["quantity"] == round(12.5 * expected_local_B, 2)
 
     # multiplicateur local attendu pour C = (quantité utilisée de C dans B) / (total standalone de C)
-    total_C = sum(ri.quantity for ri in C.recipe_ingredients.all())   # 7.777 g
+    total_C = C.compute_and_set_total_quantity(force=False, save=False, include_subrecipes=True)   # 7.777 g
     expected_local_C = (12.5 * expected_local_B) / total_C
     assert C_node["scaling_multiplier"] == pytest.approx(expected_local_C, rel=1e-9)
 

@@ -34,6 +34,32 @@
 
         (function($) {
 
+            // ------------ Helpers sélecteurs robustes ------------
+
+            function getInlinePrefix(defaultPrefix){
+                // Tente de lire le prefix depuis data-inline-formset si présent
+                var grp = document.getElementById(defaultPrefix + '-group');
+                if (grp && grp.dataset && grp.dataset.inlineFormset) {
+                try { return JSON.parse(grp.dataset.inlineFormset).options.prefix || defaultPrefix; } catch(e){}
+                }
+                return defaultPrefix;
+            }
+
+            function findInlineRows(prefix){
+                // tabular: tr.form-row ; stacked: div.form-row
+                return $('.inline-related .form-row').filter(function(){
+                var id = this.id || '';
+                return id.indexOf(prefix + '-') === 0;
+                });
+            }
+
+            function findField($row, field){ return $row.find('[name$="-' + field + '"]'); }
+
+            function getFieldText($row, field){
+                // tabular: td.field-xxx ; stacked: .field-xxx (texte brut)
+                return $row.find('td.field-' + field + ', .field-' + field).text().trim();
+            }
+
             // -------------------------------
             // 1) Gestion "mode ajustement"
             // -------------------------------
@@ -162,9 +188,7 @@
                         // Mise à jour des quantités dans la page (inlines ingrédients)
                         updateQuantitiesFromResponse(response);
                     },
-                    error: function (xhr) {
-                        alert("Erreur lors de l’ajustement : " + xhr.responseText);
-                    }
+                    error: function (xhr) {alert("Erreur lors de l’ajustement : " + xhr.responseText); }
                 });
             }
 
@@ -184,18 +208,18 @@
 
             // Met à jour une ligne inline pour un ingrédient, logique d’origine conservée :contentReference[oaicite:1]{index=1}
             function updateInlineRow(adapted) {
-                var ingredientId = adapted.ingredient;
-                var displayName  = (adapted.display_name || '').trim();
-                var newQuantity  = adapted.scaled_quantity;
+                const ingredientId = adapted.ingredient;
+                const displayName  = (adapted.display_name || '').trim();
+                const newQuantity  = adapted.scaled_quantity;
 
                 $('tr.form-row[id^="recipe_ingredients-"]').each(function () {
-                var $row = $(this);
-                var $ingredientSelect = $row.find('select[name$="-ingredient"]');
-                var currentIngredientId = parseInt($ingredientSelect.val());
-                var currentDisplayName  = $row.find('td.field-display_name p').text().trim();
+                const $row = $(this);
+                const $ingredientSelect = $row.find('select[name$="-ingredient"]');
+                const currentIngredientId = parseInt($ingredientSelect.val());
+                const currentDisplayName  = $row.find('td.field-display_name p').text().trim();
 
                 if (currentIngredientId === ingredientId && currentDisplayName === displayName) {
-                    var $qty = $row.find('input[name$="-quantity"]');
+                    const $qty = $row.find('input[name$="-quantity"]');
                     $qty.val(newQuantity);
                     $qty.css('background-color', '#e5ffe5').animate({ backgroundColor: '#fff' }, 1000);
                 }
@@ -226,18 +250,18 @@
             }
 
             function buildTreeHTML(node) {
-                var html = '<ul>';
+                const html = '<ul>';
 
                 (node.ingredients || []).forEach(function(i){
-                var name = esc(i.display_name || i.name || '');
-                var qty  = (i.scaled_quantity != null ? i.scaled_quantity : i.quantity);
-                var unit = esc(i.unit || '');
-                html += '<li>' + name + (qty != null ? ' — ' + qty : '') + (unit ? ' ' + unit : '') + '</li>';
+                    const name = esc(i.display_name || i.name || '');
+                    const qty  = (i.scaled_quantity != null ? i.scaled_quantity : i.quantity);
+                    const unit = esc(i.unit || '');
+                    html += '<li>' + name + (qty != null ? ' — ' + qty : '') + (unit ? ' ' + unit : '') + '</li>';
                 });
 
                 (node.subrecipes || []).forEach(function(sr){
-                var title = esc(sr.recipe_name || sr.name || ('Sous-recette ' + (sr.id || sr.recipe_id || '')));
-                html += '<li><strong>' + title + '</strong>' + buildTreeHTML(sr) + '</li>';
+                    const title = esc(sr.recipe_name || sr.name || ('Sous-recette ' + (sr.id || sr.recipe_id || '')));
+                    html += '<li><strong>' + title + '</strong>' + buildTreeHTML(sr) + '</li>';
                 });
 
                 html += '</ul>';
@@ -246,7 +270,7 @@
 
             // Entrée unique appelée après succès API
             function updateQuantitiesFromResponse(response) {
-                var root = normalizeTree(response);
+                const root = normalizeTree(response);
                 // Compat plat: si aucune structure et pas d’ingrédients, on ne fait rien
                 if (!root.ingredients && !root.subrecipes) return;
 
@@ -254,7 +278,7 @@
                 renderSynthesis(root);   // affiche la synthèse hiérarchique
 
                 // feedback visuel comme avant
-                $('.messages').append('<div class="success">Quantités ajustées !</div>'); // :contentReference[oaicite:3]{index=3}
+                $('.messages').append('<div class="success">Quantités ajustées !</div>'); 
             }
 
             // =====================================

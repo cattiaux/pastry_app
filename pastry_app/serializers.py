@@ -668,7 +668,7 @@ class RecipeSerializer(serializers.ModelSerializer):
     servings_min = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     servings_max = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     parent_recipe_name = serializers.SerializerMethodField()
-    adaptation_note = serializers.CharField(allow_blank=True, allow_null=True, required=False)
+    version_note = serializers.CharField(allow_blank=True, allow_null=True, required=False)
     tags = serializers.ListField(child=serializers.CharField(max_length=50), required=False, allow_empty=True)
 
     # Relations simples
@@ -692,7 +692,7 @@ class RecipeSerializer(serializers.ModelSerializer):
         fields = ["id", 
                   "recipe_name", "chef_name", "context_name", 
                   "source", "recipe_type", "parent_recipe", "parent_recipe_name", "owned_by_recipe", 
-                  "adaptation_note", "tags",
+                  "version_note", "tags",
                   "servings_min", "servings_max", "total_recipe_quantity", 
                   "description", "trick", "image", 
                   "pan", "categories", "labels", "ingredients", "steps", "sub_recipes", 
@@ -797,8 +797,8 @@ class RecipeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Le nombre de portions minimum ne peut pas être supérieur au maximum.")
 
         # 3. Note adaptation cohérente
-        if data.get("adaptation_note") and not data.get("parent_recipe"):
-            raise serializers.ValidationError({"adaptation_note": "Ce champ n'est permis que pour une adaptation (parent_recipe doit être défini)."})
+        if data.get("version_note") and not data.get("parent_recipe"):
+            raise serializers.ValidationError({"version_note": "Ce champ n'est permis que pour un versioning (parent_recipe doit être défini)."})
 
         # 4. Validation d’unicité logique (soft-match insensible à la casse)
         # Fusion champ par champ pour obtenir l'état final du triplet unique

@@ -286,7 +286,7 @@ def test_adapt_recipe_api(api_client, base_url, base_recipe_data, user):
     payload = {
         "recipe_name": "Tarte Normande Adaptée",
         "servings_min": 4,
-        "adaptation_note": "Pour un moule plus petit",
+        "version_note": "Pour un moule plus petit",
         "steps": [{"step_number": 1, "instruction": "Nouveau préchauffage"}],
         "ingredients": base_recipe_data["ingredients"],
     }
@@ -294,7 +294,7 @@ def test_adapt_recipe_api(api_client, base_url, base_recipe_data, user):
     assert adapt_resp.status_code == status.HTTP_201_CREATED
     data = adapt_resp.data
     assert data["parent_recipe"] == mother_id
-    assert data["adaptation_note"] == "Pour un moule plus petit"
+    assert data["version_note"] == "Pour un moule plus petit"
     assert data["recipe_name"] == "tarte normande adaptée"
 
 def test_adapt_recipe_appears_in_list(api_client, base_url, base_recipe_data, user):

@@ -432,7 +432,7 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         data["guest_id"] = request.headers.get("X-Guest-Id") if not request.user.is_authenticated else None
         # Champs personnalisables par l'utilisateur
         data["recipe_name"] = request.data.get("recipe_name", f"Adaptation de {original.recipe_name}")
-        data["adaptation_note"] = request.data.get("adaptation_note", "")
+        data["version_note"] = request.data.get("version_note", "")
         data["visibility"] = "private"  # L'adaptation est toujours privée à la création
         data["is_default"] = False      # Jamais recette de base
 

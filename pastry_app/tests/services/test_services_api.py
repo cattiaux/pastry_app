@@ -708,7 +708,7 @@ def test_recipe_adapt_action__guest_clones_everything(api_client, recettes_choux
     guest = "guest-42"
 
     url = f"{API_PREFIX}/recipes/{original.id}/adapt/"
-    payload = {"recipe_name": "Ma variation PB", "adaptation_note": "test note"}
+    payload = {"recipe_name": "Ma variation PB", "version_note": "test note"}
     resp = _post(api_client, url, payload, guest_id=guest)
     assert resp.status_code == status.HTTP_201_CREATED, resp.data
 

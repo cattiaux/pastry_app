@@ -360,7 +360,7 @@ class Recipe(models.Model):
     description = models.TextField(blank=True, null=True)
     trick = models.TextField(null=True, blank=True)
     image = models.ImageField(upload_to="recipes/", null=True, blank=True)
-    adaptation_note = models.CharField(max_length=255, blank=True, null=True)
+    version_note = models.CharField(max_length=255, blank=True, null=True)
     tags = ArrayField(models.CharField(max_length=50), default=list, blank=True)
 
     # Tracking
@@ -691,8 +691,8 @@ class Recipe(models.Model):
             raise ValidationError("Une recette de type VARIATION doit avoir une parent_recipe.")
 
         # Note adaptation que si il existe un parent_recipe
-        if self.adaptation_note and not self.parent_recipe:
-            raise ValidationError({"adaptation_note": "Ce champ n'est permis que pour une adaptation (parent_recipe doit être défini)."})
+        if self.version_note and not self.parent_recipe:
+            raise ValidationError({"version_note": "Ce champ n'est permis que pour un versioning (parent_recipe doit être défini)."})
 
         # Anti boucle directe
         if self.parent_recipe and self.parent_recipe == self:

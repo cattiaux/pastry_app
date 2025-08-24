@@ -204,12 +204,12 @@ def test_no_duplicate_recipe_same_name_chef_no_context(existing_context, new_con
         r.full_clean()
 
 @pytest.mark.parametrize("data,expected_msg", [
-    ({"recipe_type": "VARIATION", "parent_recipe": None, "adaptation_note": None}, "doit avoir une parent_recipe"),
-    ({"recipe_type": "BASE", "parent_recipe": 1, "adaptation_note": None}, "doit être de type VARIATION"),
-    ({"recipe_type": "BASE", "parent_recipe": None, "adaptation_note": "Adaptation"}, "Ce champ n'est permis que pour une adaptation"),
+    ({"recipe_type": "VARIATION", "parent_recipe": None, "version_note": None}, "doit avoir une parent_recipe"),
+    ({"recipe_type": "BASE", "parent_recipe": 1, "version_note": None}, "doit être de type VARIATION"),
+    ({"recipe_type": "BASE", "parent_recipe": None, "version_note": "Adaptation"}, "Ce champ n'est permis que pour un versioning"),
 ])
 def test_recipe_adaptation_rules(recipe, pan, data, expected_msg):
-    """Vérifie les règles d'adaptation (VARIATION, parent_recipe, adaptation_note)."""
+    """Vérifie les règles d'adaptation (VARIATION, parent_recipe, version_note)."""
     # On récupère une recette existante pour tester parent_recipe
     parent = recipe if data.get("parent_recipe") else None
     r = Recipe(
@@ -217,15 +217,15 @@ def test_recipe_adaptation_rules(recipe, pan, data, expected_msg):
         servings_min=1, servings_max=1, pan=pan,
         recipe_type=data["recipe_type"],
         parent_recipe=parent,
-        adaptation_note=data.get("adaptation_note"),
+        version_note=data.get("version_note"),
     )
     with pytest.raises(ValidationError, match=expected_msg):
         r.full_clean()
 
-def test_valid_variation_with_adaptation_note(recipe, pan):
-    """VARIATION avec parent_recipe ET adaptation_note : OK."""
+def test_valid_variation_with_version_note(recipe, pan):
+    """VARIATION avec parent_recipe ET version_note : OK."""
     r = Recipe(recipe_name="Variante Flan", chef_name="Michalak", recipe_type="VARIATION", servings_min=3, servings_max=3, 
-               pan=pan, parent_recipe=recipe, adaptation_note="Test")
+               pan=pan, parent_recipe=recipe, version_note="Test")
     r.full_clean()
     r.save()
     assert r.id is not None

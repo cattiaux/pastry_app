@@ -3,7 +3,7 @@
  * JS ADMIN : RECIPE - UX & UI ENHANCEMENTS
  * ==============================================================
  * Ce fichier gère plusieurs améliorations UX pour l'admin Django :
- * 1. Affichage conditionnel du champ "adaptation_note" selon le type de recette et la présence d'une parent_recipe.
+ * 1. Affichage conditionnel du champ "version_note" selon le type de recette et la présence d'une parent_recipe.
  * 2. Affichage conditionnel du champ "pan quantity" uniquement si un "pan" est sélectionné. 
  * 3. Affichage de messages d'alerte/information sous les blocs inlines "étapes", "ingrédients", "sous-recettes".
  * 4. Hide synthesis fieldset and its title on "add recipe" only
@@ -19,27 +19,35 @@
 
         (function($) {
 
+            // helpers génériques
+            function qField(name){               // input/select par id exact, nom simple, ou suffixe inline
+            return document.querySelector(`#id_${name}, [name="${name}"], [name$="-${name}"]`);
+            }
+            function qFieldRow(name){            // cellule/row tabular ou bloc stacked
+            return document.querySelector(`td.field-${name}, .field-${name}`);
+            }
+
             // -------------------------------------------------------------------
-            // 1. Affichage/Masquage de adaptation_note
+            // 1. Affichage/Masquage de version_note
             // -------------------------------------------------------------------
 
-            // Affiche/masque le champ adaptation_note selon le contexte (tu peux garder ta logique !)
+            // Affiche/masque le champ version_note selon le contexte
             function toggleAdaptationNoteField() {
-                var typeField = $('#id_recipe_type');
-                var adaptationField = $('#id_adaptation_note').closest('.form-row');
-                var parentRecipeField = $('#id_parent_recipe');
+                const typeField = $('#id_recipe_type');
+                const adaptationField = $('#id_version_note').closest('.form-row');
+                const parentRecipeField = $('#id_parent_recipe');
 
                 function updateField() {
                     if (typeField.val() === 'VARIATION' && parentRecipeField.val()) {
                         adaptationField.show();
                     } else {
                         adaptationField.hide();
-                        $('#id_adaptation_note').val('');
+                        $('#id_version_note').val('');
                     }
                 }
 
-                typeField.on('change', updateField);
-                parentRecipeField.on('change', updateField);
+                typeField.off('change.adaptNote').on('change.adaptNote', updateField);
+                parentRecipeField.off('change.adaptNote').on('change.adaptNote', updateField);
                 updateField();
             }
 
@@ -59,7 +67,7 @@
                     }
                 }
 
-                panField.on('change', updateField);
+                panField.off('change.panQuantity').on('change.panQuantity', updateField);
                 updateField();
             }
 
@@ -147,7 +155,7 @@
             // 6. Utilisation de Tagify pour le rendu visuel du champ tags
             // -------------------------------------------------------------------
             function setupTagifyOnTagsField() {
-                var tagsInput = document.querySelector('#id_tags');
+                const tagsInput = document.querySelector('#id_tags');
                 if (!tagsInput) return;
 
                 // Si déjà initialisé, on ne refait pas

@@ -35,9 +35,9 @@
             function updateOptions(dl, items) {
                 dl.innerHTML = '';
                 items.forEach(function(name){
-                const opt = document.createElement('option');
-                opt.value = name;
-                dl.appendChild(opt);
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    dl.appendChild(opt);
                 });
             }
 
@@ -80,7 +80,7 @@
             function init() {
                 // Ne s'active que si on est sur une page admin list (présence #searchbar)
                 const input = document.getElementById('searchbar') || document.querySelector('input[name="q"]'); // barre admin
-                if (!input) return;
+                if (!input) return;  // pas de search_fields → rien à faire
 
                 const dl = ensureDatalist(input);
                 let last = '', timer = null;
@@ -114,3 +114,5 @@
         setTimeout(waitForDjangoJQuery, 100);
     }
 })();
+
+

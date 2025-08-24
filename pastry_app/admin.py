@@ -563,9 +563,9 @@ class RecipeAdmin(AdminSuggestMixin, admin.ModelAdmin):
         css = {'all': ('pastry_app/admin/required_fields.css',
                        'pastry_app/admin/recipe_admin.css', 
                        'pastry_app/admin/tagify.css')}
-        js = ('pastry_app/admin/recipe_admin.js', 
+        js = ('pastry_app/admin/tagify.min.js',
+              'pastry_app/admin/recipe_admin.js', 
               'pastry_app/admin/recipe_adjustment_admin.js',
-              'pastry_app/admin/tagify.min.js',
               'pastry_app/admin/search_suggest.js',)
     
     fieldsets = (
@@ -576,7 +576,7 @@ class RecipeAdmin(AdminSuggestMixin, admin.ModelAdmin):
             'description': "Vue synthétique ingrédients et étapes (recette + sous-recettes)."
         }),
         ('Caractéristiques principales de la recette', {
-            'fields': ('recipe_type', 'recipe_name', 'chef_name', 'parent_recipe', 'adaptation_note',
+            'fields': ('recipe_type', 'recipe_name', 'chef_name', 'parent_recipe', 'version_note',
                        'servings_min', 'servings_max', 'pan', 'pan_quantity', 'total_recipe_quantity')
         }),
         ('Contenu', {
