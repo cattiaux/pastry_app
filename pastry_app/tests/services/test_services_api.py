@@ -228,6 +228,7 @@ URL_RECIPES_ADAPT_BY_ING = f"{API_PREFIX}/recipes-adapt/by-ingredient/"
 URL_RECIPES_LIST = f"{API_PREFIX}/recipes/"
 URL_RECIPES_LEGO_CANDIDATES = f"{API_PREFIX}/recipes/lego-candidates/"
 URL_RECIPES_REFERENCE_USES = f"{API_PREFIX}/recipes/{{id}}/reference-uses/"
+URL_RECIPES_FULL = f"{API_PREFIX}/recipes/{{id}}/full/"
 
 # -------------------------------------------------------------------
 # Helpers
@@ -272,7 +273,7 @@ def test_recipes_adapt__pan_to_pan(api_client, recettes_choux, base_pans):
     for name, qty in got.items():
         assert qty == pytest.approx(exp[name], rel=1e-2)
 
-def test_recipes_adapt__servings_to_pan(api_client, recettes_choux, base_pans):
+def test_recipes_adapt__servings_to_pan(api_client, recettes_choux, base_pans, base_ingredients):
     """
     Source sans pan (éclair café) → cible pan.
     On calcule le multiplicateur manuellement :
@@ -301,10 +302,12 @@ def test_recipes_adapt__servings_to_pan(api_client, recettes_choux, base_pans):
     print("Response data:", resp.json())  # DEBUG
 
     # vérif sur l’ingrédient 'café'
-    cafe = next(i for i in resp.json()["ingredients"] if i["ingredient_name"].lower().startswith("cafe"))
-    assert cafe["quantity"] == pytest.approx(expected_cafe_qty, rel=1e-2)
+    flat = resp.json()["flat_ingredients"]
+    cafe_items = [i for i in flat if i["ingredient_id"] == base_ingredients["cafe"].id]
+    direct_cafe = next(i for i in cafe_items if i["source_recipe_id"] == src.id)  # l’ingrédient direct
+    assert direct_cafe["quantity"] == pytest.approx(expected_cafe_qty, rel=1e-2)
 
-def test_recipes_adapt__pan_to_servings(api_client, recettes_choux):
+def test_recipes_adapt__pan_to_servings(api_client, recettes_choux, base_ingredients):
     """
     Source avec pan (éclair choco) mais sans servings (on désactive les servings de l'éclair choco ici) → cible servings.
     Calcul manuel :
@@ -336,10 +339,12 @@ def test_recipes_adapt__pan_to_servings(api_client, recettes_choux):
     assert resp.json()["scaling_multiplier"] == pytest.approx(mult)
     assert resp.json()["scaling_multiplier"] == pytest.approx(expected_multiplier)
 
-    choco = next(i for i in resp.json()["ingredients"] if i["ingredient_name"].lower().startswith("chocolat"))
-    assert choco["quantity"] == pytest.approx(expected_choco_qty, rel=1e-2)
+    flat = resp.json()["flat_ingredients"]
+    choco_items = [i for i in flat if i["ingredient_id"] == base_ingredients["chocolat"].id]
+    direct_choco = next(i for i in choco_items if i["source_recipe_id"] == src.id)  # l’ingrédient direct
+    assert direct_choco["quantity"] == pytest.approx(expected_choco_qty, rel=1e-2)
 
-def test_recipes_adapt__servings_to_servings(api_client, recettes_choux):
+def test_recipes_adapt__servings_to_servings(api_client, recettes_choux, base_ingredients):
     """
     Source servings → cible servings (éclair café).
     Calcul manuel :
@@ -365,8 +370,10 @@ def test_recipes_adapt__servings_to_servings(api_client, recettes_choux):
     assert resp.json()["scaling_multiplier"] == pytest.approx(mult)
     assert resp.json()["scaling_multiplier"] == pytest.approx(expected_multiplier)
 
-    cafe = next(i for i in resp.json()["ingredients"] if i["ingredient_name"].lower().startswith("cafe"))
-    assert cafe["quantity"] == pytest.approx(expected_cafe_qty, rel=1e-2)
+    flat = resp.json()["flat_ingredients"]
+    cafe_items = [i for i in flat if i["ingredient_id"] == base_ingredients["cafe"].id]
+    direct_cafe = next(i for i in cafe_items if i["source_recipe_id"] == src.id)  # l’ingrédient direct
+    assert direct_cafe["quantity"] == pytest.approx(expected_cafe_qty, rel=1e-2)
 
 @pytest.mark.parametrize(
     "use_target_pan, use_target_servings, expected_mode",
@@ -375,7 +382,7 @@ def test_recipes_adapt__servings_to_servings(api_client, recettes_choux):
         (False, True,  "reference_recipe_servings"),
     ]
 )
-def test_recipes_adapt__reference_recipe_modes(api_client, recettes_choux, base_pans, use_target_pan, use_target_servings, expected_mode):
+def test_recipes_adapt__reference_recipe_modes(api_client, recettes_choux, base_pans, use_target_pan, use_target_servings, expected_mode, base_ingredients):
     """
     Calcul manuel via densité de la recette de référence :
       - Si expected_mode == reference_recipe_pan:
@@ -445,8 +452,10 @@ def test_recipes_adapt__reference_recipe_modes(api_client, recettes_choux, base_
     assert resp.json()["scaling_multiplier"] == pytest.approx(mult)
     assert resp.json()["scaling_multiplier"] == pytest.approx(expected_multiplier)
 
-    choco = next(i for i in resp.json()["ingredients"] if i["ingredient_name"].lower().startswith("chocolat"))
-    assert choco["quantity"] == pytest.approx(expected_choco_qty, rel=1e-2)
+    flat = resp.json()["flat_ingredients"]
+    choco_items = [i for i in flat if i["ingredient_id"] == base_ingredients["chocolat"].id]
+    direct_choco = next(i for i in choco_items if i["source_recipe_id"] == src.id)  # l’ingrédient direct
+    assert direct_choco["quantity"] == pytest.approx(expected_choco_qty, rel=1e-2)
     
 def test_recipes_adapt__validation_errors(api_client, recettes_choux):
     src = recettes_choux["eclair_choco"]
@@ -1337,5 +1346,41 @@ def test_reference_uses__alias_params_equivalence(api_client, subrecipes):
     ids_d = {it["host_recipe_id"] for it in _extract_uses(r_d) if it["usage_type"] == "as_preparation"}
     assert ids_c == ids_d
 
+# =========================
+# /recipes/{id}/full/ — GET
+# =========================
+
+def test_recipe_full__basic_shape_and_status(api_client, recettes_choux):
+    """Vérifie la structure de base et le statut HTTP de l’endpoint recipe_full."""
+    host = recettes_choux["eclair_choco"]
+    resp = _get(api_client, URL_RECIPES_FULL.format(id=host.id))
+    assert resp.status_code == 200, resp.data
+    data = resp.json()
+    assert {"recipe_id", "recipe_name", "tree", "flat_ingredients", "flat_steps"} <= set(data.keys())
+    assert isinstance(data["tree"], dict)
+    assert isinstance(data["flat_ingredients"], list)
+    assert isinstance(data["flat_steps"], list)
+
+def test_recipe_full__includes_subrecipe_ingredients(api_client, recettes_choux, base_ingredients):
+    """Vérifie que les ingrédients des sous-recettes apparaissent bien dans flat_ingredients."""
+    host = recettes_choux["eclair_choco"]  # sous-recettes: pâte à choux (farine), crème choco (chocolat)
+    resp = _get(api_client, URL_RECIPES_FULL.format(id=host.id))
+    assert resp.status_code == 200
+    flat = resp.json()["flat_ingredients"]
+    ing_ids = {it["ingredient_id"] for it in flat}
+    assert base_ingredients["farine"].id in ing_ids   # vient d'une sous-recette
+    assert base_ingredients["chocolat"].id in ing_ids # présent direct et en sous-recette
+
+def test_recipe_full__steps_provenance_path(api_client, recettes_choux):
+    """Vérifie que chaque étape possède une provenance valide avec un chemin non vide."""
+    host = recettes_choux["paris_brest_choco"]
+    r = _get(api_client, URL_RECIPES_FULL.format(id=host.id))
+    assert r.status_code == 200
+    steps = r.json()["flat_steps"]
+    assert steps, "Au moins une étape attendue"
+    # Chaque step doit exposer une provenance avec un chemin non vide
+    for s in steps:
+        assert "source_recipe_id" in s
+        assert isinstance(s.get("source_path"), list) and s["source_path"]
 
 

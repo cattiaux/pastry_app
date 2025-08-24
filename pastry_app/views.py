@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
+from rest_framework.throttling import ScopedRateThrottle
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_headers
@@ -782,6 +783,25 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         ser = ReferenceUseSerializer(items, many=True)
         return Response(ser.data)
 
+    @action(detail=True, methods=["get"], url_path="full")
+    def full(self, request, pk=None):
+        """
+        Retourne la représentation canonique d’une recette pour le front.
+
+        Contenu:
+        - tree: hiérarchie {ingredients, steps, subrecipes}
+        - flat_ingredients: liste aplatie avec provenance (source_path, source_recipe_id)
+        - flat_steps: liste aplatie avec provenance
+
+        Usage:
+        - lecture et édition front (vue “tout à plat” ou sectionnée)
+        - aucune adaptation/scaling n’est effectuée ici
+        """
+        recipe = self.get_object()
+        payload = compose_full(recipe)
+        serializer = self.get_serializer(payload)  # => RecipeFullSerializer
+        return Response(serializer.data, 200)
+    
     def get_filter_backends(self):
         if getattr(self, "action", None) in {"reference_uses"}:
             return []
@@ -836,8 +856,12 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
             return qs.prefetch_related("categories","labels")
 
     def get_serializer_class(self):
-        return RecipeListSerializer if self.action == "list" else RecipeSerializer
-
+        mapping = {
+            "list": RecipeListSerializer,  
+            "full": RecipeFullSerializer,   # projection front-ready
+        }
+        return mapping.get(self.action, RecipeSerializer)
+    
     def destroy(self, request, *args, **kwargs):
         """
         - Empêche la suppression d'une recette mère si elle a des adaptations (versions) ou si elle est utilisée comme sous-recette.
@@ -1299,6 +1323,8 @@ class RecipeAdaptationAPIView(APIView):
       - Aucune persistance ici. Pour créer une variation, utiliser POST /api/recipes/{id}/adapt/.
     """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "adapt"
 
     def post(self, request, *args, **kwargs):
         """
@@ -1384,11 +1410,15 @@ class RecipeAdaptationAPIView(APIView):
             logger.info("scaling recipe_id=%s mode=%s multiplier=%.6f", recipe.id, scaling_mode, float(multiplier))
             # 2. Application du scaling partout
             cache = {}
-            data = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache, return_warnings=include_warnings)
-            # 3. Infos utiles en plus
-            data["scaling_mode"] = scaling_mode
-            data["scaling_multiplier"] = float(multiplier)  
-            return Response(data, status=status.HTTP_200_OK)
+            scaled = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache, return_warnings=include_warnings)
+            # 3. sortie canonique: tree + flats, + méta d’adaptation
+            payload = compose_full(recipe, scaled_data=scaled)
+            payload["scaling_mode"] = scaling_mode
+            payload["scaling_multiplier"] = float(multiplier)
+            if include_warnings and isinstance(scaled, dict) and scaled.get("warnings") is not None:
+                payload["warnings"] = scaled["warnings"]
+
+            return Response(payload, status=status.HTTP_200_OK)
 
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -1436,8 +1466,8 @@ class PanSuggestionAPIView(APIView):
 
 class RecipeAdaptationByIngredientAPIView(APIView):
     """
-    API pour adapter une recette en fonction des quantités disponibles
-    d’un ou plusieurs ingrédients.
+    API pour adapter une recette en fonction des quantités disponibles d’un ou plusieurs ingrédients.
+    Retourne le format canonique (tree + flats) + méta d’adaptation.
     """
 
     def post(self, request):
@@ -1477,15 +1507,19 @@ class RecipeAdaptationByIngredientAPIView(APIView):
             # 1. Normalise vers l’unité attendue par la recette (via IngredientUnitReference)
             normalized_constraints = normalize_constraints_for_recipe(recipe, ingredient_constraints, user=user, guest_id=guest_id, cache=cache)
             # 2. Calcul du multiplicateur limitant
-            multiplier, limiting_ingredient_id = get_limiting_multiplier(recipe, ingredient_constraints)
-            # 3. Adaptation globale
-            result = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache, return_warnings=include_warnings)
-            # 4. Ajoute les infos utiles au retour
-            result["limiting_ingredient_id"] = limiting_ingredient_id
-            result["multiplier"] = float(multiplier)
-            result["scaling_mode"] = "limiting_ingredient"
+            multiplier, limiting_ingredient_id = get_limiting_multiplier(recipe, normalized_constraints)
+            # 3. Scaling global
+            scaled = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache, return_warnings=include_warnings)
+            # 4. Sortie canonique + méta
+            payload = compose_full(recipe, scaled_data=scaled)
+            payload["limiting_ingredient_id"] = limiting_ingredient_id
+            payload["multiplier"] = float(multiplier)
+            payload["scaling_mode"] = "limiting_ingredient"
+            if include_warnings and isinstance(scaled, dict) and scaled.get("warnings") is not None:
+                payload["warnings"] = scaled["warnings"]
+
             logger.info("limit-scale recipe_id=%s limiting_ingredient_id=%s multiplier=%.6f", recipe.id, limiting_ingredient_id, float(multiplier))
-            return Response(result, status=status.HTTP_200_OK)
+            return Response(payload, status=status.HTTP_200_OK)
 
         except ValidationError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

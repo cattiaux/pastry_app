@@ -956,6 +956,33 @@ class RecipeSerializer(serializers.ModelSerializer):
         # Cas 2 : c'est sa propre recette (user ou guest_id)
         return super().destroy(request, *args, **kwargs)
 
+class RecipeFullSerializer(serializers.Serializer):
+    """
+    Serializer de projection "full" d'une recette.
+
+    Contrairement à `RecipeSerializer` (qui sert pour les CRUD classiques),
+    ce serializer est strictement **read-only** et reflète la structure 
+    enrichie construite par `compose_full`.
+
+    La structure attendue correspond exactement au payload du builder :
+      {
+        "recipe_id": int,
+        "recipe_name": str|None,
+        "tree": { ... hiérarchie complète avec ingrédients, étapes, sous-recettes ... },
+        "flat_ingredients": [ ... liste aplanie avec provenance ... ],
+        "flat_steps": [ ... liste aplanie avec provenance ... ]
+      }
+
+    Il ne redéfinit pas de sous-serializers : chaque champ est validé comme 
+    dict ou liste, ce qui permet de renvoyer la projection directement au 
+    front sans duplication de la logique métier.
+    """
+    recipe_id = serializers.IntegerField()
+    recipe_name = serializers.CharField(allow_null=True, required=False)
+    tree = serializers.DictField()
+    flat_ingredients = serializers.ListField(child=serializers.DictField())
+    flat_steps = serializers.ListField(child=serializers.DictField())
+
 class RecipeListSerializer(serializers.ModelSerializer):
     """
     Liste/recherche des recettes.

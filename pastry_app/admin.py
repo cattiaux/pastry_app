@@ -8,11 +8,12 @@ from django.db.models import Exists, OuterRef
 from django.urls import reverse, path
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
-from django.utils.html import format_html
+from django.utils.html import format_html, escape
 from django.conf import settings
 from django.http import JsonResponse
 from .models import *
 from .mixins import *
+from .utils import compose_full
 
 class StoreCityListFilter(admin.SimpleListFilter):
     """
@@ -616,39 +617,44 @@ class RecipeAdmin(AdminSuggestMixin, admin.ModelAdmin):
         return ""
 
     def recipe_subrecipes_synthesis(self, obj):
-        html = "<div class='recipe-columns-container'>"
-
-        # Main recipe (always first column)
-        html += """
-        <div class='recipe-card'>
-        <h3 class='main-title'>Main recipe</h3>
-        <b>Ingredients:</b>
-        <ul>
         """
-        for ri in obj.recipe_ingredients.all():
-            html += f"<li>{ri.quantity} {ri.unit} of <b>{ri.ingredient}</b></li>"
-        html += "</ul><b>Steps:</b><ol>"
-        for step in obj.steps.all().order_by('step_number'):
-            html += f"<li>{step.instruction}</li>"
-        html += "</ol></div>"
+        Rendu de synthèse basé sur le contrat canonique:
+        tree {ingredients, steps, subrecipes} fourni par compose_full().
 
-        # Subrecipes (one column per subrecipe)
-        for sub in obj.main_recipes.all():
-            html += f"""
-            <div class='recipe-card'>
-                <h4 class='sub-title'>Sub-recipe: {sub.sub_recipe.recipe_name}</h4>
-                <b>Ingredients:</b>
-                <ul>
-            """
-            for ri in sub.sub_recipe.recipe_ingredients.all():
-                html += f"<li>{ri.quantity} {ri.unit} of <b>{ri.ingredient}</b></li>"
-            html += "</ul><b>Steps:</b><ol>"
-            for step in sub.sub_recipe.steps.all().order_by('step_number'):
-                html += f"<li>{step.instruction}</li>"
-            html += "</ol></div>"
+        Cartes alignées horizontalement: une carte par recette/sous-recette,
+        toutes comme enfants directs de .recipe-columns-container.
+        """
+        payload = compose_full(obj)
+        tree = payload.get("tree") or {}
 
-        html += "</div>"  # end of flex container
+        def render_card(n, is_root=False):
+            title = escape(n.get("recipe_name") or f"Recipe #{n.get('recipe_id')}")
+            header = (
+                f"<h3 class='main-title'>{title}</h3>"
+                if is_root else
+                f"<h4 class='sub-title'>Sub-recipe: {title}</h4>"
+            )
+            parts = [f"<div class='recipe-card'>", header]
+            parts += ["<b>Ingredients:</b><ul>"]
+            for i in n.get("ingredients", []):
+                qty  = i.get("quantity") or ""
+                unit = i.get("unit") or ""
+                name = escape(i.get("display_name") or str(i.get("ingredient_id") or ""))
+                parts.append(f"<li>{qty} {unit} of <b>{name}</b></li>")
+            parts += ["</ul><b>Steps:</b><ol>"]
+            for s in n.get("steps", []):
+                txt = escape(s.get("text") or s.get("instruction") or "")
+                parts.append(f"<li>{txt}</li>")
+            parts += ["</ol></div>"]
+            return "".join(parts)
 
+        # 1) Carte racine
+        cards = [render_card(tree, is_root=True)]
+        # 2) Une carte par sous-recette de 1er niveau (comme avant)
+        for ch in tree.get("subrecipes", []) or []:
+            cards.append(render_card(ch, is_root=False))
+
+        html = "<div class='recipe-columns-container'>" + "".join(cards) + "</div>"
         return mark_safe(html)
     recipe_subrecipes_synthesis.short_description = ""
 

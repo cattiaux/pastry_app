@@ -1133,4 +1133,51 @@ def test_variant_modifs_source_not_impact_variant(base_ingredients):
     assert B.recipe_ingredients.get(ingredient_id=far.ingredient_id).quantity == 999.0
     assert v.recipe_ingredients.get(ingredient_id=far.ingredient_id).quantity == 111.0
 
+# =========================
+# Groupe 7 — Tests unitaires sur full recipe, création tree
+# =========================
 
+def test_build_tree_from_db__structure(recettes_choux):
+    """Vérifie que l’arbre construit depuis la BDD contient id, ingrédients, étapes et sous-recettes."""
+    host = recettes_choux["eclair_cafe"]
+    tree = build_tree_from_db(host)
+    assert tree["recipe_id"] == host.id
+    assert isinstance(tree["ingredients"], list)
+    assert isinstance(tree["steps"], list)
+    # au moins un enfant
+    assert isinstance(tree["subrecipes"], list) and tree["subrecipes"]
+
+def test_flatten_ingredients__provenance_and_fields(recettes_choux, base_ingredients):
+    """Teste l’aplatissement des ingrédients avec champs attendus et provenance correcte."""
+    host = recettes_choux["religieuse_cafe"]
+    tree = build_tree_from_db(host)
+    flat = flatten_ingredients(tree)
+    assert flat and {"ri_id","ingredient_id","quantity","unit","source_recipe_id","source_path"} <= set(flat[0].keys())
+    # farine présente via pâte à choux
+    assert base_ingredients["cafe"].id in {fi["ingredient_id"] for fi in flat}
+
+def test_compose_full__with_scaled_override(recettes_choux):
+    """Vérifie que compose_full applique bien une quantité surchargée via scaled_data."""
+    host = recettes_choux["eclair_choco"]
+    # stub "scaled" minimal: on remplace quantité d'un ingrédient direct
+    # on prend le premier ingrédient direct du host
+    tree_db = build_tree_from_db(host)
+    assert tree_db["ingredients"], "Recette attendue avec au moins un ingrédient direct"
+    base_ri = tree_db["ingredients"][0]
+    scaled_stub = {
+        "id": host.id,
+        "name": host.recipe_name,
+        "ingredients": [{
+            "id": base_ri["ri_id"],
+            "ingredient_id": base_ri["ingredient_id"],
+            "display_name": base_ri["display_name"],
+            "original_quantity": base_ri["quantity"],
+            "scaled_quantity": base_ri["quantity"] * 2.0,
+            "unit": base_ri["unit"],
+        }],
+        "children": [], "steps": []
+    }
+    payload = compose_full(host, scaled_data=scaled_stub)
+    # vérifie que la quantité aplatie reflète bien la valeur scalée
+    entry = next(fi for fi in payload["flat_ingredients"] if fi["ri_id"] == base_ri["ri_id"])
+    assert entry["quantity"] == pytest.approx(base_ri["quantity"] * 2.0)

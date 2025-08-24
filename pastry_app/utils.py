@@ -1341,3 +1341,213 @@ def create_variant_for_host_and_rewire(subrecipe: SubRecipe, host: Recipe, *, us
     subrecipe.sub_recipe = variant
     subrecipe.save(update_fields=["sub_recipe"])
     return variant
+
+# ============================================================
+# 8. UTILS FRONT : CREATION TREE
+# ============================================================
+
+def build_tree_from_db(recipe):
+    """
+    Construit l’arbre hiérarchique d’une recette depuis l’ORM.
+    Utilise:
+      - Recipe.recipe_ingredients (quantity, unit, display_name)
+      - Recipe.steps (step_number, instruction, trick)
+      - Recipe.main_recipes → SubRecipe (sub_recipe, quantity, unit)
+    Retour:
+      {
+        "recipe_id": int,
+        "recipe_name": str|None,
+        "ingredients": [{"ri_id": int, "ingredient_id": int, "display_name": str|None,
+                         "original_quantity": float, "quantity": float, "unit": str}],
+        "steps": [{"step_id": int, "step_number": int|None, "instruction": str, "trick": str|None}],
+        "subrecipes": [ {**<noeud enfant>, "link_quantity": float, "link_unit": str} ]
+      }
+    """
+    node = {
+        "recipe_id": recipe.id,
+        "recipe_name": getattr(recipe, "recipe_name", None),
+        "ingredients": [
+            {
+                "ri_id": ri.id,
+                "ingredient_id": ri.ingredient_id,
+                "display_name": getattr(ri, "display_name", None),
+                "original_quantity": ri.quantity,
+                "quantity": ri.quantity,  # non-scalé
+                "unit": ri.unit,
+            }
+            for ri in recipe.recipe_ingredients.select_related("ingredient").all()
+        ],
+        "steps": [
+            {
+                "step_id": s.id,
+                "step_number": s.step_number,
+                "instruction": s.instruction,
+                "trick": getattr(s, "trick", None),
+            }
+            for s in recipe.steps.order_by("step_number", "id").all()
+        ],
+        "subrecipes": [],
+    }
+
+    # Liens vers sous-recettes avec méta du lien (quantity, unit)
+    for link in recipe.main_recipes.select_related("sub_recipe").all():
+        child = build_tree_from_db(link.sub_recipe)
+        child["link_quantity"] = link.quantity
+        child["link_unit"] = link.unit
+        node["subrecipes"].append(child)
+
+    return node
+
+def build_tree_from_scaled(scaled_node):
+    """
+    Normalise un nœud déjà scalé en structure uniforme.
+    Tolère:
+      - clés 'subrecipes' ou 'children'
+      - steps avec 'step_number' OU 'order' (fallback)
+      - ingrédients avec 'scaled_quantity' OU 'quantity'
+      - méta de lien: 'link_quantity', 'link_unit' si présents
+    """
+    # steps normalisés
+    steps_src = scaled_node.get("steps") or []
+    norm_steps = []
+    for s in steps_src:
+        norm_steps.append({
+            "step_id": s.get("step_id") or s.get("id"),
+            "step_number": s.get("step_number", s.get("order")),
+            "instruction": s.get("instruction") or s.get("text"),
+            "trick": s.get("trick"),
+        })
+
+    # ingrédients normalisés
+    ings_src = scaled_node.get("ingredients") or []
+    norm_ings = []
+    for i in ings_src:
+        norm_ings.append({
+            "ri_id": i.get("ri_id") or i.get("id"),
+            "ingredient_id": i.get("ingredient_id"),
+            "display_name": i.get("display_name"),
+            "original_quantity": i.get("original_quantity"),
+            "quantity": i.get("scaled_quantity", i.get("quantity")),
+            "unit": i.get("unit"),
+        })
+
+    # enfants
+    children = scaled_node.get("subrecipes") or scaled_node.get("children") or []
+    norm_children = []
+    for ch in children:
+        child = build_tree_from_scaled(ch)
+        # propage éventuelle méta de lien si déjà présente
+        if "link_quantity" in ch:
+            child["link_quantity"] = ch["link_quantity"]
+        if "link_unit" in ch:
+            child["link_unit"] = ch["link_unit"]
+        norm_children.append(child)
+
+    return {
+        "recipe_id": scaled_node.get("recipe_id") or scaled_node.get("id"),
+        "recipe_name": scaled_node.get("recipe_name") or scaled_node.get("name"),
+        "ingredients": norm_ings,
+        "steps": norm_steps,
+        "subrecipes": norm_children,
+    }
+
+def flatten_ingredients(tree):
+    """
+    Aplati l’arbre en liste d’ingrédients avec provenance.
+    Ajoute:
+      - source_recipe_id: id du nœud contenant l’ingrédient
+      - source_path: chemin depuis la racine [{id,name}, ...]
+      - link_quantity/link_unit si le nœud provient d’un lien SubRecipe
+    """
+    out = []
+
+    def walk(n, path, edge_meta=None):
+        cur = path + (
+            [{"id": n.get("recipe_id"), "name": n.get("recipe_name")}]
+            if n.get("recipe_id") or n.get("recipe_name") else []
+        )
+        for i in n.get("ingredients", []):
+            row = {
+                "ri_id": i["ri_id"],
+                "ingredient_id": i["ingredient_id"],
+                "display_name": i["display_name"],
+                "quantity": i["quantity"],
+                "original_quantity": i.get("original_quantity"),
+                "unit": i["unit"],
+                "source_recipe_id": n.get("recipe_id"),
+                "source_path": cur,
+            }
+            if edge_meta:
+                row["link_quantity"] = edge_meta.get("link_quantity")
+                row["link_unit"] = edge_meta.get("link_unit")
+            out.append(row)
+
+        for ch in n.get("subrecipes", []):
+            ch_meta = {
+                "link_quantity": ch.get("link_quantity"),
+                "link_unit": ch.get("link_unit"),
+            }
+            walk(ch, cur, ch_meta)
+
+    walk(tree, [], None)
+    return out
+
+def flatten_steps(tree):
+    """
+    Aplati l’arbre en liste d’étapes avec provenance.
+    Ajoute:
+      - source_recipe_id
+      - source_path
+      - link_quantity/link_unit si le nœud provient d’un lien SubRecipe
+    """
+    out = []
+
+    def walk(n, path, edge_meta=None):
+        cur = path + (
+            [{"id": n.get("recipe_id"), "name": n.get("recipe_name")}]
+            if n.get("recipe_id") or n.get("recipe_name") else []
+        )
+        for s in n.get("steps", []):
+            row = {
+                "step_id": s["step_id"],
+                "step_number": s.get("step_number"),
+                "instruction": s.get("instruction"),
+                "trick": s.get("trick"),
+                "source_recipe_id": n.get("recipe_id"),
+                "source_path": cur,
+            }
+            if edge_meta:
+                row["link_quantity"] = edge_meta.get("link_quantity")
+                row["link_unit"] = edge_meta.get("link_unit")
+            out.append(row)
+
+        for ch in n.get("subrecipes", []):
+            ch_meta = {
+                "link_quantity": ch.get("link_quantity"),
+                "link_unit": ch.get("link_unit"),
+            }
+            walk(ch, cur, ch_meta)
+
+    walk(tree, [], None)
+    return out
+
+def compose_full(recipe, scaled_data=None):
+    """
+    Compose le payload front-ready.
+    - Si scaled_data est fourni: normalise via build_tree_from_scaled().
+    - Sinon: construit via build_tree_from_db().
+    Retourne:
+      {
+        "recipe_id": int, "recipe_name": str|None,
+        "tree": <noeud>,
+        "flat_ingredients": [..], "flat_steps": [..]
+      }
+    """
+    tree = build_tree_from_scaled(scaled_data) if scaled_data else build_tree_from_db(recipe)
+    return {
+        "recipe_id": recipe.id,
+        "recipe_name": getattr(recipe, "recipe_name", None),
+        "tree": tree,
+        "flat_ingredients": flatten_ingredients(tree),
+        "flat_steps": flatten_steps(tree),
+    }

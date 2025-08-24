@@ -148,6 +148,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
+    "DEFAULT_THROTTLE_RATES": {"adapt": "20/min"},
 }
 
 DATE_INPUT_FORMATS = ["%Y-%m-%d"]  # Format standard ISO (AAAA-MM-JJ)

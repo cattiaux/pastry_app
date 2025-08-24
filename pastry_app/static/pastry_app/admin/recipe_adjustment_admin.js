@@ -206,25 +206,45 @@
                 };
             }
 
-            // Met à jour une ligne inline pour un ingrédient, logique d’origine conservée :contentReference[oaicite:1]{index=1}
-            function updateInlineRow(adapted) {
-                const ingredientId = adapted.ingredient;
-                const displayName  = (adapted.display_name || '').trim();
+            const ING_PREFIX = getInlinePrefix('recipe_ingredients');
+
+            function updateInlineRow(adapted){
+                const ingredientId   = Number(adapted.ingredient);
+                const displayName = String(adapted.display_name || '').trim();
                 const newQuantity  = adapted.scaled_quantity;
 
-                $('tr.form-row[id^="recipe_ingredients-"]').each(function () {
-                const $row = $(this);
-                const $ingredientSelect = $row.find('select[name$="-ingredient"]');
-                const currentIngredientId = parseInt($ingredientSelect.val());
-                const currentDisplayName  = $row.find('td.field-display_name p').text().trim();
-
+                findInlineRows(ING_PREFIX).each(function(){
+                const row = (this);
+                const currentIngredientId   = Number(findField(row, 'ingredient').val());
+                const currentDisplayName = getFieldText(row, 'display_name');
                 if (currentIngredientId === ingredientId && currentDisplayName === displayName) {
-                    const $qty = $row.find('input[name$="-quantity"]');
-                    $qty.val(newQuantity);
-                    $qty.css('background-color', '#e5ffe5').animate({ backgroundColor: '#fff' }, 1000);
+                    const qty = findField(row, 'quantity');
+                    qty.val(newQuantity);
+                    qty.css('background-color', '#e5ffe5').animate({ backgroundColor: '#fff' }, 1000);
                 }
                 });
             }
+
+            // Met à jour une ligne inline pour un ingrédient, logique d’origine conservée
+
+            // function updateInlineRow(adapted) {
+            //     const ingredientId = adapted.ingredient;
+            //     const displayName  = (adapted.display_name || '').trim();
+            //     const newQuantity  = adapted.scaled_quantity;
+
+            //     $('tr.form-row[id^="recipe_ingredients-"]').each(function () {
+            //     const $row = $(this);
+            //     const $ingredientSelect = $row.find('select[name$="-ingredient"]');
+            //     const currentIngredientId = parseInt($ingredientSelect.val());
+            //     const currentDisplayName  = $row.find('td.field-display_name p').text().trim();
+
+            //     if (currentIngredientId === ingredientId && currentDisplayName === displayName) {
+            //         const $qty = $row.find('input[name$="-quantity"]');
+            //         $qty.val(newQuantity);
+            //         $qty.css('background-color', '#e5ffe5').animate({ backgroundColor: '#fff' }, 1000);
+            //     }
+            //     });
+            // }
 
             // Parcours récursif: met à jour inlines pour tous les niveaux
             function walkAndUpdate(node) {
