@@ -19,31 +19,27 @@
 
         (function($) {
 
-            // helpers génériques
-            function qField(name){               // input/select par id exact, nom simple, ou suffixe inline
-            return document.querySelector(`#id_${name}, [name="${name}"], [name$="-${name}"]`);
-            }
-            function qFieldRow(name){            // cellule/row tabular ou bloc stacked
-            return document.querySelector(`td.field-${name}, .field-${name}`);
-            }
-
             // -------------------------------------------------------------------
             // 1. Affichage/Masquage de version_note
             // -------------------------------------------------------------------
-
+            
             // Affiche/masque le champ version_note selon le contexte
-            function toggleAdaptationNoteField() {
+            function toggleVersionNoteField() {
                 const typeField = $('#id_recipe_type');
-                const adaptationField = $('#id_version_note').closest('.form-row');
+                const versionField = $('#id_version_note')
                 const parentRecipeField = $('#id_parent_recipe');
 
+                // vise directement la ligne de champ par classe admin standard
+                let row = $('td.field-version_note, .field-version_note').first();
+                if (!row.length && versionField.length) {
+                    // fallback si thème différent
+                    row = versionField.closest('td.field-version_note, .field-version_note, .form-row, tr');
+                }
+
                 function updateField() {
-                    if (typeField.val() === 'VARIATION' && parentRecipeField.val()) {
-                        adaptationField.show();
-                    } else {
-                        adaptationField.hide();
-                        $('#id_version_note').val('');
-                    }
+                    const show = (typeField.val() === 'VARIATION') && !!parentRecipeField.val();
+                    if (row.length) row.toggle(show);
+                    if (!show && versionField.length) versionField.val('');
                 }
 
                 typeField.off('change.adaptNote').on('change.adaptNote', updateField);
@@ -177,9 +173,8 @@
             // Initialisation globale au chargement
             // =====================================
             $(document).ready(function () {
-
-                // 1. Adaptation note display/hide Adaptation note field and pan quantity field
-                toggleAdaptationNoteField();
+                // 1. Version note display/hide Version note field and pan quantity field
+                toggleVersionNoteField();
                 togglePanQuantityField();
 
                 // 2. Hide synthesis fieldset and mode adjustment on recipe creation
