@@ -801,7 +801,62 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         payload = compose_full(recipe)
         serializer = self.get_serializer(payload)  # => RecipeFullSerializer
         return Response(serializer.data, 200)
-    
+
+    @action(detail=True, methods=["post"], url_path="convert-units", permission_classes=[AllowAny])
+    def convert_units(self, request, pk=None):
+        """
+        Prévisualise la conversion d’unités pour 1..N ingrédients de la recette, sans persistance.
+
+        Entrée:
+          - targets: {"ING_ID": "to_unit", ...}  (1 ou N)
+          - soft (bool, optionnel): True => ignore les ingrédients non convertibles et ajoute un warning.
+
+        Résolution:
+          - g/kg/mg: direct. Autres unités (ex: unit, ml): nécessite IngredientUnitReference (user/guest → globale).
+
+        Réponses:
+          200: {recipe_id, units_applied, ingredients:[{ingredient_id, unit, quantity}], warnings}
+          404: si un ING_ID n’appartient pas à la recette.
+          400: si conversion impossible et soft=False.
+
+        Remarques:
+        - Aucun write. La persistance reste gérée par le flux d’adaptation/clone existant.
+        """
+        # lookup limité aux recettes visibles (public/is_default/owned user/guest, soft-hide respecté)
+        recipe = get_object_or_404(_visible_recipes(request), pk=pk)
+        
+        s = ConvertUnitsSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+
+        ris = {ri.ingredient_id: ri for ri in recipe.recipe_ingredients.select_related("ingredient")}
+        user = request.user if getattr(request.user, "is_authenticated", False) else None
+        guest_id = request.headers.get("X-Guest-Id") or request.headers.get("X-GUEST-ID")
+
+        cache = {}
+        applied, out_items, warnings = {}, [], []
+        for ing_id, to_unit in s.validated_data["targets"].items():
+            ri = ris.get(ing_id)
+            if ri is None:
+                return Response({"error": "ingredient not in recipe", "ingredient_id": ing_id}, status=404)
+            try:
+                new_qty = convert_amount_for_ingredient(ing_id, ri.quantity, ri.unit, to_unit, user=user, guest_id=guest_id, cache=cache)
+            except DjangoValidationError as e:
+                if s.validated_data["soft"]:
+                    warnings.append({"ingredient_id": ing_id, "error": str(e)})
+                    continue
+                return Response({"error": str(e), "ingredient_id": ing_id}, status=400)
+
+            factor = float(new_qty) / float(ri.quantity) if ri.quantity else None
+            applied[ing_id] = {"from": ri.unit, "to": to_unit, "factor": factor}
+            out_items.append({"ingredient_id": ing_id, "unit": to_unit, "quantity": float(new_qty)})
+
+        return Response({
+            "recipe_id": recipe.id,
+            "units_applied": applied,
+            "ingredients": out_items,
+            "warnings": warnings
+        }, status=200)
+
     def get_filter_backends(self):
         if getattr(self, "action", None) in {"reference_uses"}:
             return []
@@ -1503,17 +1558,14 @@ class RecipeAdaptationByIngredientAPIView(APIView):
 
         # Conversion des clés en entier pour correspondre aux IDs en base
         ingredient_constraints = {int(k): v for k, v in serializer.validated_data["ingredient_constraints"].items()} 
-        # ingredient_constraints = serializer.validated_data["ingredient_constraints"]  # {int: (unit, qty)}
 
         try:
             cache = {}
-            # 1. Normalise vers l’unité attendue par la recette (via IngredientUnitReference)
-            # normalized_constraints = normalize_constraints_for_recipe(recipe, ingredient_constraints, user=user, guest_id=guest_id, cache=cache)
-            # 2. Calcul du multiplicateur limitant (on suppose ici "mêmes unités que la recette")
+            # 1. Calcul du multiplicateur limitant (on suppose ici "mêmes unités que la recette")
             multiplier, limiting_ingredient_id = get_limiting_multiplier(recipe, ingredient_constraints)
-            # 3. Scaling global
+            # 2. Scaling global
             scaled = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache, return_warnings=include_warnings)
-            # 4. Sortie canonique + méta
+            # 3. Sortie canonique + méta
             payload = compose_full(recipe, scaled_data=scaled)
             payload["limiting_ingredient_id"] = limiting_ingredient_id
             payload["multiplier"] = float(multiplier)

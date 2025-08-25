@@ -1193,6 +1193,43 @@ class ReferenceUseSerializer(serializers.Serializer):
     suggested_quantity_for_target = serializers.FloatField(required=False, allow_null=True)
     unit = serializers.CharField(required=False, allow_null=True)
 
+class ConvertUnitsSerializer(serializers.Serializer):
+    """
+    Convertit les unités d’un ou plusieurs ingrédients d’une recette **en aperçu**.
+
+    Entrée:
+      - targets: dict {ingredient_id -> to_unit}. 1 ou N entrées. Clés castées en int, unités normalisées en minuscule.
+      - soft: bool. Si True, ignore les ingrédients non convertibles et renvoie un warning. Sinon 400.
+
+    Hypothèses:
+      - Aucune écriture BD. Cet endpoint retourne un *patch* d’affichage.
+      - Masses g/kg/mg converties sans référence. Pièces/volumes requièrent une IngredientUnitReference.
+
+    Sortie:
+      - recipe_id
+      - units_applied: {ingredient_id: {from, to, factor}}
+      - ingredients: [{ingredient_id, unit, quantity}]  # quantités converties non persistées
+      - warnings: [{ingredient_id, error}] si soft=True
+
+    Erreurs:
+      - 404 si un ingredient_id n’appartient pas à la recette.
+      - 400 si conversion impossible et soft=False.
+    """
+    targets = serializers.DictField(
+        child=serializers.CharField(allow_blank=False), allow_empty=False
+    )
+    soft = serializers.BooleanField(required=False, default=False)
+
+    def validate_targets(self, value):
+        out = {}
+        for k, v in value.items():
+            try:
+                ik = int(k)
+            except Exception:
+                raise serializers.ValidationError({k: "invalid ingredient id"})
+            out[ik] = str(v).strip().lower()
+        return out
+
 
 
 class RecipeOmniSerializer(serializers.ModelSerializer):

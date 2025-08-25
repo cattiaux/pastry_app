@@ -231,6 +231,7 @@ URL_RECIPES_LIST = f"{API_PREFIX}/recipes/"
 URL_RECIPES_LEGO_CANDIDATES = f"{API_PREFIX}/recipes/lego-candidates/"
 URL_RECIPES_REFERENCE_USES = f"{API_PREFIX}/recipes/{{id}}/reference-uses/"
 URL_RECIPES_FULL = f"{API_PREFIX}/recipes/{{id}}/full/"
+URL_RECIPES_CONVERT_UNITS = f"{API_PREFIX}/recipes/{{id}}/convert-units/"
 
 # -------------------------------------------------------------------
 # Helpers
@@ -1438,3 +1439,97 @@ def test_recipes_full__flat_steps_with_provenance(api_client, recettes_choux):
     # contenu minimal d'une étape (tolère 'text' ou 'instruction')
     has_text = ("text" in nested[0]) or ("instruction" in nested[0])
     assert has_text
+
+# =========================
+# /recipes/{{id}}/convert-units/ — POST
+# =========================
+
+def test_convert_units_single_preview_success(api_client, base_ingredients):
+    """Conversion unitaire en aperçu, sans persistance, avec IUR disponible."""
+    r = make_recipe(name="omelette")
+    oeuf = base_ingredients["oeuf"]
+    add_ingredient(r, ingredient=oeuf, qty=60.0, unit="g")
+    IngredientUnitReference.objects.create(ingredient=oeuf, unit="unit", weight_in_grams=55)
+
+    url = URL_RECIPES_CONVERT_UNITS.format(id=r.id)
+    resp = _post(api_client, url, {"targets": {oeuf.id: "unit"}})
+    assert resp.status_code == 200, resp.data
+    payload = resp.json()
+
+    item = next(i for i in payload["ingredients"] if i["ingredient_id"] == oeuf.id)
+    assert item["unit"] == "unit"
+    assert item["quantity"] == pytest.approx(60.0/55.0, rel=1e-6)
+
+    # vérifie non-persist
+    ri = r.recipe_ingredients.get(ingredient=oeuf)
+    assert ri.unit == "g" and ri.quantity == 60.0
+
+def test_convert_units_missing_iur_hard_error(api_client, base_ingredients):
+    """Erreur 400/422 si IUR manquante et soft=False (comportement strict)."""
+    r = make_recipe(name="omelette")
+    oeuf = base_ingredients["oeuf"]
+    add_ingredient(r, ingredient=oeuf, qty=60.0, unit="g")
+    # pas de IUR pour 'unit'
+    url = URL_RECIPES_CONVERT_UNITS.format(id=r.id)
+    resp = _post(api_client, url, {"targets": {oeuf.id: "unit"}})
+    assert resp.status_code in (400, 422)
+
+def test_convert_units_missing_iur_soft_warning(api_client, base_ingredients):
+    """Soft=True: ignore l’ingrédient non convertible et renvoie un warning."""
+    r = make_recipe(name="omelette")
+    oeuf = base_ingredients["oeuf"]
+    add_ingredient(r, ingredient=oeuf, qty=60.0, unit="g")
+    url = URL_RECIPES_CONVERT_UNITS.format(id=r.id)
+    resp = _post(api_client, url, {"targets": {oeuf.id: "unit"}, "soft": True})
+    assert resp.status_code == 200, resp.data
+    data = resp.json()
+    assert data["warnings"] and any(w["ingredient_id"] == oeuf.id for w in data["warnings"])
+    # pas d'entrée convertie pour cet id
+    assert not any(i["ingredient_id"] == oeuf.id for i in data["ingredients"])
+
+def test_convert_units_bulk_preview_mixed(api_client, base_ingredients):
+    """Bulk: conversion de plusieurs ingrédients (g→kg et unit→g) en aperçu."""
+    r = make_recipe(name="bulk")
+    farine = base_ingredients["farine"]
+    oeuf = base_ingredients["oeuf"]
+    add_ingredient(r, ingredient=farine, qty=200.0, unit="g")
+    add_ingredient(r, ingredient=oeuf, qty=3.0, unit="unit")
+    IngredientUnitReference.objects.create(ingredient=oeuf, unit="unit", weight_in_grams=55)
+
+    url = URL_RECIPES_CONVERT_UNITS.format(id=r.id)
+    resp = _post(api_client, url, {"targets": {farine.id: "kg", oeuf.id: "g"}})
+    assert resp.status_code == 200, resp.data
+    data = resp.json()
+
+    i_far = next(i for i in data["ingredients"] if i["ingredient_id"] == farine.id)
+    assert i_far["unit"] == "kg"
+    assert i_far["quantity"] == pytest.approx(0.2, rel=1e-9)
+
+    i_egg = next(i for i in data["ingredients"] if i["ingredient_id"] == oeuf.id)
+    assert i_egg["unit"] == "g"
+    assert i_egg["quantity"] == pytest.approx(3.0*55.0, rel=1e-9)
+
+def test_convert_units_404_when_not_in_recipe(api_client, base_ingredients):
+    """404 si l’ingrédient visé n’appartient pas à la recette."""
+    r = make_recipe(name="not-in-recipe")
+    farine = base_ingredients["farine"]
+    # recette sans farine
+    oeuf = base_ingredients["oeuf"]
+    add_ingredient(r, ingredient=oeuf, qty=60.0, unit="g")
+
+    url = URL_RECIPES_CONVERT_UNITS.format(id=r.id)
+    resp = _post(api_client, url, {"targets": {farine.id: "kg"}})
+    assert resp.status_code == 404
+
+def test_convert_units_noop_same_unit_returns_current_qty(api_client, base_ingredients):
+    r = make_recipe(name="noop")
+    sucre = base_ingredients["sucre"]
+    add_ingredient(r, ingredient=sucre, qty=50.0, unit="g")
+
+    url = URL_RECIPES_CONVERT_UNITS.format(id=r.id)
+    resp = _post(api_client, url, {"targets": {sucre.id: "g"}})
+    assert resp.status_code == 200, resp.data
+    data = resp.json()
+    entry = next(i for i in data["ingredients"] if i["ingredient_id"] == sucre.id)
+    assert entry["unit"] == "g"
+    assert entry["quantity"] == pytest.approx(50.0)
