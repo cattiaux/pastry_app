@@ -1162,10 +1162,8 @@ class PanSuggestionSerializer(serializers.Serializer):
 
 class RecipeAdaptationByIngredientSerializer(serializers.Serializer):
     recipe_id = serializers.IntegerField(required=True)
-    ingredient_constraints = serializers.DictField(
-        child=serializers.FloatField(),
-        help_text="Dictionnaire sous la forme {ingredient_id: quantité_disponible}"
-    )
+    ingredient_constraints = serializers.DictField(child=serializers.FloatField())
+    guest_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 class RecipeReferenceSuggestionSerializer(serializers.ModelSerializer):
     category = serializers.StringRelatedField()

@@ -844,7 +844,7 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         # --- Étape enrichissement conditionnel ---
         qs = qs.select_related("pan").order_by("recipe_name","chef_name")
 
-        heavy = {"retrieve","adapt_recipe","reference_suggestions","bulk_edit_subrecipe_ingredients"}
+        heavy = {"retrieve","full","adapt_recipe","reference_suggestions","bulk_edit_subrecipe_ingredients"}
         if getattr(self, "action", None) in heavy:
             return qs.prefetch_related(
                 "categories","labels",
@@ -1469,6 +1469,8 @@ class RecipeAdaptationByIngredientAPIView(APIView):
     API pour adapter une recette en fonction des quantités disponibles d’un ou plusieurs ingrédients.
     Retourne le format canonique (tree + flats) + méta d’adaptation.
     """
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "adapt"
 
     def post(self, request):
         """
@@ -1500,14 +1502,15 @@ class RecipeAdaptationByIngredientAPIView(APIView):
                     or request.query_params.get("guest_id"))
 
         # Conversion des clés en entier pour correspondre aux IDs en base
-        ingredient_constraints = {int(k): v for k, v in serializer.validated_data["ingredient_constraints"].items()}
+        ingredient_constraints = {int(k): v for k, v in serializer.validated_data["ingredient_constraints"].items()} 
+        # ingredient_constraints = serializer.validated_data["ingredient_constraints"]  # {int: (unit, qty)}
 
         try:
             cache = {}
             # 1. Normalise vers l’unité attendue par la recette (via IngredientUnitReference)
-            normalized_constraints = normalize_constraints_for_recipe(recipe, ingredient_constraints, user=user, guest_id=guest_id, cache=cache)
-            # 2. Calcul du multiplicateur limitant
-            multiplier, limiting_ingredient_id = get_limiting_multiplier(recipe, normalized_constraints)
+            # normalized_constraints = normalize_constraints_for_recipe(recipe, ingredient_constraints, user=user, guest_id=guest_id, cache=cache)
+            # 2. Calcul du multiplicateur limitant (on suppose ici "mêmes unités que la recette")
+            multiplier, limiting_ingredient_id = get_limiting_multiplier(recipe, ingredient_constraints)
             # 3. Scaling global
             scaled = scale_recipe_globally(recipe, multiplier, user=user, guest_id=guest_id, cache=cache, return_warnings=include_warnings)
             # 4. Sortie canonique + méta

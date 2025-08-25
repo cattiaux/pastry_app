@@ -96,10 +96,17 @@ def normalize_constraints_for_recipe(recipe, constraints, *, user=None, guest_id
     """
     if cache is None:
         cache = {}
-
     normalized = {}
-    # Map des unités cibles (celles de la recette) par ingrédient
-    target_units = {ri.ingredient_id: ri.unit for ri in recipe.recipe_ingredients.all()}
+
+    def _target_units_for_tree(recipe):
+        # map {ingredient_id: unit_attendue_par_la_recette_ou_la_sous_recette}
+        m = {ri.ingredient_id: ri.unit for ri in recipe.recipe_ingredients.all()}
+        for link in recipe.main_recipes.all():              # descend récursivement
+            m.update(_target_units_for_tree(link.sub_recipe))
+        return m
+
+    # Map des unités cibles (celles de la recette et de ses sous-recettes) par ingrédient
+    target_units = _target_units_for_tree(recipe)
 
     for ing_id, provided in constraints.items():
         if ing_id not in target_units:
@@ -678,9 +685,12 @@ def get_limiting_multiplier(recipe, ingredient_constraints):
             multiplier = available / float(recipe_ingredient.quantity)
             multipliers.append((multiplier, ing_id))
 
-    # Sous-recettes (récursif)
+    # Sous-recettes (récursif) — on NE propage PAS l'erreur "aucune correspondance"
     for main_sub in recipe.main_recipes.all():
-        sub_multipliers = get_limiting_multiplier(main_sub.sub_recipe, ingredient_constraints)
+        try :
+            sub_multipliers = get_limiting_multiplier(main_sub.sub_recipe, ingredient_constraints)
+        except ValidationError as e:
+            sub_multipliers = None  # pas de match dans cette branche
         if sub_multipliers:  # sub_multipliers est soit None, soit un tuple
             multipliers.append(sub_multipliers)
 

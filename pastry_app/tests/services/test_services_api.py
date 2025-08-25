@@ -1,6 +1,8 @@
 import pytest
 from typing import Optional
 from django.contrib.auth import get_user_model
+from django.test import override_settings
+from django.core.cache import cache
 from pastry_app.utils import *
 from pastry_app.text_utils import *
 from pastry_app.models import Recipe, Pan, Ingredient, RecipeIngredient, RecipeStep, SubRecipe, Category
@@ -508,6 +510,41 @@ def test_recipes_adapt__smoke_all_modes(api_client, recettes_choux, base_pans, r
     assert r_serv.status_code == 200
     assert r_serv.json()["scaling_mode"] in ("servings",)
 
+def test_recipes_adapt__requires_one_criterion(api_client, recettes_choux):
+    """400 si aucun critère (pan/servings/reference) n'est fourni."""
+    host = recettes_choux["eclair_cafe"]
+    resp = _post(api_client, URL_RECIPES_ADAPT, {"recipe_id": host.id})
+    assert resp.status_code == 400
+    assert "fournir un moule" in resp.json().get("error", "").lower()
+
+def test_recipes_adapt__throttled(api_client, recettes_choux, base_pans):
+    """429 si le taux 'adapt' est dépassé."""
+    cache.clear()
+    
+    host = recettes_choux["eclair_choco"]
+    pan  = base_pans["round_small"]
+    payload = {"recipe_id": host.id, "target_pan_id": pan.id}
+
+    r1 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r2 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r3 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r4 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r5 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r6 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r7 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r8 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r9 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r10 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r11 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r12 = _post(api_client, URL_RECIPES_ADAPT, payload)
+    r13 = _post(api_client, URL_RECIPES_ADAPT, payload) 
+    r14 = _post(api_client, URL_RECIPES_ADAPT, payload) 
+    r15 = _post(api_client, URL_RECIPES_ADAPT, payload) 
+    r16 = _post(api_client, URL_RECIPES_ADAPT, payload) 
+    assert r1.status_code == 200
+    assert r15.status_code == 200
+    assert r16.status_code == 429
+
 # ===================================================================
 # /pan-estimation/ — POST
 # ===================================================================
@@ -592,11 +629,12 @@ def test_pan_suggestion__invalid_target_servings(api_client):
 # /recipes-adapt/by-ingredient/ — POST
 # ===================================================================
 
-def test_recipes_adapt_by_ingredient__limits_and_scales(api_client, base_ingredients):
+def test_recipes_adapt_by_ingredient__limits(api_client, base_ingredients):
     """
     Serializer n'accepte que des floats → on transmet des quantités numériques
     **dans les unités attendues par la recette**.
     """
+    cache.clear()
     r = make_recipe(name="brioche-API")
     farine = base_ingredients["farine"]
     oeuf = Ingredient.objects.create(ingredient_name="oeuf2")
@@ -614,8 +652,7 @@ def test_recipes_adapt_by_ingredient__limits_and_scales(api_client, base_ingredi
     }
 
     # Attente calculée côté utils
-    normalized = normalize_constraints_for_recipe(r, constraints)
-    limiting_mult, limiting_ing_id = get_limiting_multiplier(r, normalized)
+    limiting_mult, limiting_ing_id = get_limiting_multiplier(r, constraints)
     expected = scale_recipe_globally(r, limiting_mult)
 
     resp = _post(api_client, URL_RECIPES_ADAPT_BY_ING, {"recipe_id": r.id, "ingredient_constraints": constraints}, guest_id="guest-42")
@@ -945,6 +982,8 @@ def test_recipe_adaptation__reference_recipe_error_message(api_client, recettes_
     On force un cas vraisemblable (ex: référence inutilisable) selon l'implémentation interne.
     Ici on appelle avec prefer_reference=True mais sans cible exploitable → l'interne peut lever.
     """
+    from django.core.cache import cache
+    cache.clear()
     src = recettes_choux["paris_brest_choco"]
     ref = make_recipe(name="ref-incomplete")  # référence minimaliste
     # pas d'info de scaling sur ref → utils peut lever ValueError
@@ -1383,4 +1422,19 @@ def test_recipe_full__steps_provenance_path(api_client, recettes_choux):
         assert "source_recipe_id" in s
         assert isinstance(s.get("source_path"), list) and s["source_path"]
 
+def test_recipes_full__flat_steps_with_provenance(api_client, recettes_choux):
+    """flat_steps présent et au moins une étape issue d'une sous-recette (provenance)."""
+    host = recettes_choux["paris_brest_choco"]
+    url  = URL_RECIPES_FULL.format(id=host.id)
+    resp = _get(api_client, url)
+    assert resp.status_code == 200, resp.data
+    data = resp.json()
 
+    assert isinstance(data.get("flat_steps"), list)
+    # au moins une step avec un chemin de provenance > 1 niveau
+    nested = [s for s in data["flat_steps"]
+              if isinstance(s.get("source_path"), list) and len(s["source_path"]) > 1]
+    assert nested, "Aucune étape de sous-recette détectée"
+    # contenu minimal d'une étape (tolère 'text' ou 'instruction')
+    has_text = ("text" in nested[0]) or ("instruction" in nested[0])
+    assert has_text

@@ -1181,3 +1181,14 @@ def test_compose_full__with_scaled_override(recettes_choux):
     # vérifie que la quantité aplatie reflète bien la valeur scalée
     entry = next(fi for fi in payload["flat_ingredients"] if fi["ri_id"] == base_ri["ri_id"])
     assert entry["quantity"] == pytest.approx(base_ri["quantity"] * 2.0)
+
+def test_compose_full__flat_steps_provenance(recettes_choux):
+    """compose_full produit des steps à plat avec provenance correcte."""
+    from pastry_app.utils import compose_full
+    host = recettes_choux["paris_brest_choco"]
+    payload = compose_full(host)
+
+    steps = payload.get("flat_steps", [])
+    assert steps, "flat_steps vide"
+    assert any(len(s.get("source_path") or []) > 1 for s in steps), \
+        "pas de step provenant d'une sous-recette"
