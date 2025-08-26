@@ -54,5 +54,3 @@ urlpatterns = [
     path("api/pan-estimation/", PanEstimationAPIView.as_view(), name="estimate-pan"),
     path("api/pan-suggestion/", PanSuggestionAPIView.as_view(), name="suggest-pans"),
 ]
-
-

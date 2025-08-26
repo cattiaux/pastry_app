@@ -406,6 +406,10 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
     ordering_fields = ["recipe_name", "chef_name", "recipe_type", "created_at", "updated_at", "parent_recipe"]
     ordering = ["recipe_name", "chef_name"]
 
+    def _is_admin_context(self, request):
+        # staff connecté + en-tête posé par le JS admin
+        return bool(getattr(request.user, "is_staff", False) and request.headers.get("X-Admin-Context") == "1")
+
     @action(detail=True, methods=["post"], url_path="adapt", permission_classes=[AllowAny])
     @transaction.atomic  # Pour que tout soit fait ou rien si une étape échoue
     def adapt_recipe(self, request, pk=None):
@@ -797,9 +801,17 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         - lecture et édition front (vue “tout à plat” ou sectionnée)
         - aucune adaptation/scaling n’est effectuée ici
         """
+        # try:
+        #     obj = self.get_queryset().get(pk=pk)   # respecte tes filtres habituels
+        # except Recipe.DoesNotExist:
+        #     if request.user.is_staff:              # admin: on lit sans filtre
+        #         obj = get_object_or_404(Recipe.objects.all(), pk=pk)
+        #     else:
+        #         raise
         recipe = self.get_object()
         payload = compose_full(recipe)
         serializer = self.get_serializer(payload)  # => RecipeFullSerializer
+        print('[full API]', 'pk=', pk, 'user=', request.user, 'admin_ctx=', request.headers.get('X-Admin-Context'))
         return Response(serializer.data, 200)
 
     @action(detail=True, methods=["post"], url_path="convert-units", permission_classes=[AllowAny])
@@ -872,16 +884,30 @@ class RecipeViewSet(GuestUserRecipeMixin, viewsets.ModelViewSet):
         2) Ajoute select_related/prefetch selon le contexte:
         - list: léger
         - retrieve/actions: complet
-        """    
+
+        Bypass admin: staff + X-Admin-Context:1 → accès total pour l’UI admin.
+        """ 
+        # Bypass admin
+        request = self.request
+        admin_ctx = bool(getattr(request.user, "is_staff", False) and request.headers.get("X-Admin-Context") == "1")
+        heavy = {"retrieve", "full", "adapt_recipe", "reference_suggestions", "bulk_edit_subrecipe_ingredients"}
+
+        if admin_ctx:
+            qs = Recipe.objects.all().select_related("pan").order_by("recipe_name", "chef_name")
+            return (qs.prefetch_related("categories","labels","recipe_ingredients__ingredient","steps","main_recipes__sub_recipe")
+                    if getattr(self, "action", None) in heavy
+                    else qs.prefetch_related("categories","labels"))
+    
         # Étape 1 : Récupère le queryset de base (incluant user/guest_id/public/de base)
         qs = super().get_queryset()
         user = self.request.user
-        guest_id = (
-            self.request.headers.get("X-Guest-Id")
-            or self.request.headers.get("X-GUEST-ID")
-            or self.request.data.get("guest_id")
-            or self.request.query_params.get("guest_id")
-        )
+        guest_id = self.get_guest_id()
+        # guest_id = (
+        #     self.request.headers.get("X-Guest-Id")
+        #     or self.request.headers.get("X-GUEST-ID")
+        #     or self.request.data.get("guest_id")
+        #     or self.request.query_params.get("guest_id")
+        # )
 
         # Étape 2 : Exclure les recettes explicitement masquées par ce user ou guest_id
         if user.is_authenticated:

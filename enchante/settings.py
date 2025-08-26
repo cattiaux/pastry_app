@@ -149,6 +149,10 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     "DEFAULT_THROTTLE_RATES": {"adapt": "15/minute"},
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",   # admin: cookie de session
+        "pastry_app.auth.GuestIdAuthentication",                 # front: header guest
+    ],
 }
 
 DATE_INPUT_FORMATS = ["%Y-%m-%d"]  # Format standard ISO (AAAA-MM-JJ)

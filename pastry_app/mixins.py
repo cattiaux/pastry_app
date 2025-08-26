@@ -13,6 +13,9 @@ class GuestUserRecipeMixin:
     """
     def get_guest_id(self):
         """Récupère le guest_id depuis le header, les données du body ou les query params."""
+        gid = getattr(self.request, "guest_id", None)
+        if gid:
+            return gid
         return (
             self.request.headers.get("X-Guest-Id")
             or self.request.headers.get("X-GUEST-ID")  # Certains navigateurs upper-case tout

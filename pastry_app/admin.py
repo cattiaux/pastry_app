@@ -4,13 +4,15 @@ from django.contrib import admin, messages
 from django.contrib.admin import RelatedOnlyFieldListFilter
 from django import forms
 from django.forms.models import BaseInlineFormSet
+from django.db import transaction
 from django.db.models import Exists, OuterRef
 from django.urls import reverse, path
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
 from django.utils.html import format_html, escape
 from django.conf import settings
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseBadRequest
+from django.views.decorators.csrf import csrf_protect
 from .models import *
 from .mixins import *
 from .utils import compose_full
@@ -860,3 +862,120 @@ class IngredientUnitReferenceAdmin(AdminSuggestMixin, admin.ModelAdmin):
             msg += f" Log: {proc.stdout.splitlines()[-1][:200]}"
         self.message_user(request, msg)    
     run_iur_loader.short_description = "Charger/mettre à jour via load_base_ingredientUnitReference.py"
+
+@admin.register(RecipeFull)
+class RecipeFullAdmin(AdminSuggestMixin, admin.ModelAdmin):
+    # mêmes filtres/recherche que RecipeAdmin, sans inlines
+    list_display  = ('recipe_name','id','chef_name','context_name','parent_recipe','visibility','is_default')
+    list_filter   = (RecipeAdmin.ShowFilter, 'recipe_type', CategoryDrilldownFilter, ("labels", RecipeAdmin._LabelForRecipeFilter), 'visibility')
+    search_fields = ('recipe_name','categories__category_name','labels__label_name')
+    inlines = []  # ← pas d’inlines
+
+    # champs “méta” conservés + montage full
+    readonly_fields = ['full_editor_mount']
+    fieldsets = (
+        ('Éditeur Full', {'fields': ('full_editor_mount',), 'classes': ('hide-label',)}),
+        ('Caractéristiques', {'fields': ('recipe_type','recipe_name','chef_name','parent_recipe','version_note',
+                                         'servings_min','servings_max','pan','pan_quantity','total_recipe_quantity')}),
+        ('Contenu', {'fields': ('description','trick','image','tags')}),
+        ('Source', {'fields': ('context_name','source')}),
+        ('Droits', {'fields': ('visibility','is_default','user','guest_id')}),
+    )
+
+    class Media:
+        css = {'all': ('pastry_app/admin/recipe_full_editor.css',)}
+        js  = ('pastry_app/admin/recipe_full_admin.js',) 
+
+    def get_urls(self):
+        urls = super().get_urls()
+        extra = [
+            path("<path:object_id>/full-apply/", self.admin_site.admin_view(self.full_apply_view),
+                 name="pastry_app_recipefull_apply"),
+        ]
+        return extra + urls
+
+    def get_fieldsets(self, request, obj=None):
+        fs = super().get_fieldsets(request, obj)
+        if obj is None:  # création
+            return tuple(f for f in fs if f[0] != 'Éditeur Full')
+        return fs
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = super().get_readonly_fields(request, obj)
+        if obj is None:
+        # ne pas afficher le mount en création
+            return tuple(f for f in ro if f != 'full_editor_mount')
+        return ro
+
+    def full_editor_mount(self, obj):
+        # Pas de template: on monte un conteneur + data-attrs
+        if not obj or not obj.pk:
+            return mark_safe("<em>Enregistrez la recette pour activer l’éditeur full.</em>")
+
+        full_url  = f"/api/recipes/{obj.pk}/full/"
+        apply_url = reverse("admin:pastry_app_recipefull_apply", args=[obj.pk])
+        html = f"""
+        <div id="full-editor" data-root-id="{obj.pk}" data-full-url="{full_url}" data-apply-url="{apply_url}">
+          <div class="fe-toolbar">
+            <button type="button" id="fe-add-ingredient">Ajouter ingrédient</button>
+            <button type="button" id="fe-add-step">Ajouter étape</button>
+            <button type="button" id="fe-save" class="default">Enregistrer</button>
+            <span id="fe-status" aria-live="polite"></span>
+          </div>
+          <div class="fe-columns">
+            <div class="fe-col"><h3>Ingrédients</h3><ul id="fe-ingredients"></ul></div>
+            <div class="fe-col"><h3>Étapes</h3><ol id="fe-steps"></ol></div>
+          </div>
+        </div>
+        """
+        return mark_safe(html)
+    full_editor_mount.short_description = ""
+
+    @transaction.atomic
+    @csrf_protect
+    def full_apply_view(self, request, object_id):
+        obj = self.get_object(request, object_id)
+        if not self.has_change_permission(request, obj):
+            raise PermissionDenied("Vous n'avez pas la permission de modifier cette recette.")
+
+        if not obj:
+            return HttpResponseBadRequest("Recette introuvable.")
+        try:
+            payload = json.loads(request.body.decode("utf-8"))
+        except Exception:
+            return HttpResponseBadRequest("JSON invalide.")
+        try:
+            self._apply_full_payload(obj, payload)
+        except Exception as e:
+            transaction.set_rollback(True)
+            return JsonResponse({"ok": False, "error": str(e)}, status=400)
+        return JsonResponse({"ok": True})
+
+    # sync minimale (recette principale + cible via source_recipe_id si présent)
+    def _apply_full_payload(self, recipe: Recipe, payload: dict):
+        seen_ri = set()
+        for it in payload.get("flat_ingredients", []):
+            rid  = it.get("ri_id")
+            tgt  = it.get("source_recipe_id") or recipe.id
+            data = dict(recipe_id=tgt, ingredient_id=it["ingredient_id"],
+                        quantity=it.get("quantity") or 0, unit=it.get("unit") or "")
+            if rid:
+                RecipeIngredient.objects.filter(id=rid).update(**{k:v for k,v in data.items() if k!="recipe_id"})
+                seen_ri.add(rid)
+            else:
+                new = RecipeIngredient.objects.create(**data); seen_ri.add(new.id)
+        # suppr “non vus” sur la recette principale
+        RecipeIngredient.objects.filter(recipe=recipe).exclude(id__in=seen_ri).delete()
+
+        seen_steps = set()
+        for s in payload.get("flat_steps", []):
+            sid  = s.get("step_id")
+            tgt  = s.get("source_recipe_id") or recipe.id
+            data = dict(recipe_id=tgt, step_number=int(s.get("order") or s.get("step_number") or 0),
+                        instruction=s.get("text") or s.get("instruction") or "")
+            if sid:
+                RecipeStep.objects.filter(id=sid).update(**{k:v for k,v in data.items() if k!="recipe_id"})
+                seen_steps.add(sid)
+            else:
+                st = RecipeStep.objects.create(**data); seen_steps.add(st.id)
+        RecipeStep.objects.filter(recipe=recipe).exclude(id__in=seen_steps).delete()

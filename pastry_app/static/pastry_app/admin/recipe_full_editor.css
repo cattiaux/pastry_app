@@ -1,0 +1,7 @@
+#full-editor { margin: 0 0 1rem; }
+.fe-toolbar { display:flex; gap:.5rem; align-items:center; margin-bottom: .75rem; }
+.fe-columns { display:flex; gap:1rem; flex-wrap:wrap; }
+.fe-col { flex:1 1 420px; min-width:320px; background:#fff; border:1px solid #ddd; padding:.75rem; }
+.fe-item { display:flex; gap:.5rem; align-items:center; margin:.25rem 0; }
+.fe-item input[type="text"]{ flex:1 1 auto; }
+.fe-item .fe-del { border:none; background:#eee; cursor:pointer; padding:.25rem .5rem; }

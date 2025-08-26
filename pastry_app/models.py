@@ -730,6 +730,12 @@ class Recipe(models.Model):
             self.context_name = f"Variante de {self.parent_recipe.recipe_name}"
         super().save(*args, **kwargs)
 
+class RecipeFull(Recipe):
+    class Meta:
+        proxy = True
+        verbose_name = "Recette (éditeur full)"
+        verbose_name_plural = "Recettes (éditeur full)"
+
 class RecipeStep(models.Model):
     recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name="steps")
     step_number = models.IntegerField(validators=[MinValueValidator(1)], null=True, blank=True)
